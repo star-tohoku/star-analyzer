@@ -17,6 +17,7 @@ EventCutConfig::~EventCutConfig() {
 }
 
 void EventCutConfig::SetDefaults() {
+  minVz = -100.0;
   maxVz = 100.0;
   maxVr = 2.0;
   minRefMult = 0.0;
@@ -39,8 +40,14 @@ Bool_t EventCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   
   // Load values from map
+  if (values.find("minVz") != values.end()) {
+    minVz = YamlParser::ToDouble(values["minVz"], minVz);
+  }
   if (values.find("maxVz") != values.end()) {
     maxVz = YamlParser::ToDouble(values["maxVz"], maxVz);
+    if (values.find("minVz") == values.end()) {
+      minVz = -maxVz;  // backward compat: only maxVz given => symmetric window
+    }
   }
   if (values.find("maxVr") != values.end()) {
     maxVr = YamlParser::ToDouble(values["maxVr"], maxVr);

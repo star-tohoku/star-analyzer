@@ -96,6 +96,22 @@ axes:
     nBins: 400
     min: -0.5
     max: 1.5
+  PQ: &PQ
+    nBins: 200
+    min: -4.0
+    max: 4.0
+  PQ_positive: &PQ_positive
+    nBins: 300
+    min: 0.0
+    max: 6.0
+  M2Q2: &M2Q2
+    nBins: 200
+    min: -0.4
+    max: 1.4
+  DedxKeVcm: &DedxKeVcm
+    nBins: 400
+    min: 0.0
+    max: 80.0
   Psi2: &Psi2
     nBins: 100
     min: 0.0
@@ -197,6 +213,16 @@ histograms:
     xAxis: *Momentum
     yAxis: *DedxY
     title: "dE/dx vs Momentum;p [GeV/c];dE/dx [GeV/cm]"
+
+  hM2q2VsPq:
+    xAxis: *PQ
+    yAxis: *M2Q2
+    title: "m^{2}/q^{2} vs p/q;p/q [GeV/c];m^{2}/q^{2} [(GeV/c^{2})^{2}]"
+
+  hDedxVsPq:
+    xAxis: *PQ_positive
+    yAxis: *DedxKeVcm
+    title: "dE/dx vs p/q;p/q (GeV/c);dE/dx (KeV/cm)"
 
   hNSigmaPionVsP:
     xAxis: *Momentum

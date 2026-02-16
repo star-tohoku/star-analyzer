@@ -1,7 +1,8 @@
 # Event Level Cuts (Lambda analysis)
 # For Lambda: skip event when nTracks > maxNTr only (other cuts same as default)
 
-maxVz: 100.0          # cm, |Vz| < maxVz
+minVz: -100.0         # cm, minVz <= Vz <= maxVz
+maxVz: 100.0          # cm
 maxVr: 2.0            # cm, Vr < maxVr
 minRefMult: 0.0       # Minimum RefMult
 maxRefMult: 1000.0    # Maximum RefMult

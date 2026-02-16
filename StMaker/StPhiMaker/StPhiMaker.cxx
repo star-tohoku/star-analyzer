@@ -148,6 +148,7 @@ Int_t StPhiMaker::Make() {
     Float_t pt = pMom.Perp();
     Float_t eta = pMom.PseudoRapidity();
     Float_t phi = pMom.Phi();
+    Int_t btofIndex = trk->bTofPidTraitsIndex();
 
     if (m_histManager) {
       m_histManager->Fill("hPt", pt);
@@ -162,6 +163,20 @@ Int_t StPhiMaker::Make() {
       m_histManager->Fill("hNSigmaPionVsP", pMom.Mag(), trk->nSigmaPion());
       m_histManager->Fill("hNSigmaKaonVsP", pMom.Mag(), trk->nSigmaKaon());
       m_histManager->Fill("hNSigmaProtonVsP", pMom.Mag(), trk->nSigmaProton());
+      if (trk->charge() != 0) {
+        Double_t pOverQ = pMom.Mag() / (Double_t)trk->charge();
+        m_histManager->Fill("hDedxVsPq", pOverQ, trk->dEdx());
+        if (btofIndex >= 0) {
+          StPicoBTofPidTraits* tof = mPicoDst->btofPidTraits(btofIndex);
+          if (tof) {
+            Double_t beta = tof->btofBeta();
+            if (beta > 1e-4) {
+              Double_t mass2 = pMom.Mag2() * (1.0 / (beta * beta) - 1.0);
+              m_histManager->Fill("hM2q2VsPq", pOverQ, mass2);
+            }
+          }
+        }
+      }
     }
 
     if (pt >= phiCfg.minPtEp && pt <= phiCfg.maxPtEp && TMath::Abs(eta) < phiCfg.maxEtaEp) {
@@ -169,7 +184,6 @@ Int_t StPhiMaker::Make() {
       Qy += TMath::Sin(2.0 * phi);
     }
 
-    Int_t btofIndex = trk->bTofPidTraitsIndex();
     if (btofIndex >= 0) nTofMatch++;
 
     if (!PassKaonCuts(trk, pVtx)) continue;
@@ -318,9 +332,9 @@ Bool_t StPhiMaker::PassEventCuts(Float_t vz, Float_t vr, Int_t refMult, Float_t 
   EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
   static Int_t s_debugFailCount = 0;
 
-  if (TMath::Abs(vz) > ev.maxVz) {
+  if (vz < ev.minVz || vz > ev.maxVz) {
     if (kDebugPhiMaker && s_debugFailCount++ < kDebugPhiMakerMaxEvents)
-      std::cout << "[StPhiMaker] CUT: maxVz |vz|=" << TMath::Abs(vz) << " max=" << ev.maxVz << std::endl;
+      std::cout << "[StPhiMaker] CUT: Vz range vz=" << vz << " min=" << ev.minVz << " max=" << ev.maxVz << std::endl;
     return kFALSE;
   }
   if (vr > ev.maxVr) {

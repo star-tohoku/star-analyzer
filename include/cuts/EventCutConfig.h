@@ -9,6 +9,7 @@ public:
   Bool_t LoadFromFile(const Char_t* filename);
   
   // Cut values (public member variables)
+  Double_t minVz;  // cm; event accepted when minVz <= vz <= maxVz
   Double_t maxVz;
   Double_t maxVr;
   Double_t minRefMult;

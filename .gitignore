@@ -29,8 +29,8 @@ output
 share
 
 # editor setting
-.cursor/
-.vscode/
+.cursor
+.vscode
 
 # system file
 .DS_Store

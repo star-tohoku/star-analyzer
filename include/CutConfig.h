@@ -23,6 +23,7 @@ namespace CutConfig {
       return ConfigManager::GetInstance().GetEventCuts();
     }
     // Accessor functions for backward compatibility
+    inline Double_t minVz() { return Get().minVz; }
     inline Double_t maxVz() { return Get().maxVz; }
     inline Double_t maxVr() { return Get().maxVr; }
     inline Double_t minRefMult() { return Get().minRefMult; }

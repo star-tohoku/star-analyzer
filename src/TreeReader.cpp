@@ -136,7 +136,7 @@ void TreeReader::LoadTracksForEvent(Long64_t eventIndex) {
 
 Bool_t TreeReader::PassEventCuts(const EventCandidate& evt) const {
   const auto& eventCuts = CutConfig::Event::Get();
-  if (TMath::Abs(evt.Vz) > eventCuts.maxVz) return kFALSE;
+  if (evt.Vz < eventCuts.minVz || evt.Vz > eventCuts.maxVz) return kFALSE;
   if (evt.Vr > eventCuts.maxVr) return kFALSE;
   if (evt.refMult < eventCuts.minRefMult) return kFALSE;
   if (evt.refMult > eventCuts.maxRefMult) return kFALSE;
