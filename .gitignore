@@ -17,7 +17,7 @@ bin/
 *.root
 rootfile
 
-# ログ・出力テキスト
+# log,text
 *.log
 *.out
 *.pdf
@@ -28,10 +28,11 @@ err
 output
 share
 
-# エディタ設定（VSCode）
+# editor setting
+.cursor/
 .vscode/
 
-# システムファイル
+# system file
 .DS_Store
 
 # job/run: symlinks created by setup_symlinks.sh (do not track)

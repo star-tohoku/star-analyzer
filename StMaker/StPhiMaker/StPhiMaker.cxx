@@ -25,6 +25,9 @@
 
 namespace {
   const Double_t kKaonMass = 0.493677;
+  /** Set to 1 to print which cut rejects each event (first kDebugPhiMakerMaxEvents failures only). */
+  const Int_t kDebugPhiMaker = 1;
+  const Int_t kDebugPhiMakerMaxEvents = 200;
 }
 
 //-----------------------------------------------------------------------------
@@ -127,6 +130,9 @@ Int_t StPhiMaker::Make() {
   Int_t nTracks = mPicoDst->numberOfTracks();
   PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
   if (phiCfg.maxNTr > 0 && nTracks > phiCfg.maxNTr) {
+    if (kDebugPhiMaker && mEventCounter <= kDebugPhiMakerMaxEvents) {
+      std::cout << "[StPhiMaker] event=" << mEventCounter << " CUT: maxNTr nTracks=" << nTracks << " max=" << phiCfg.maxNTr << std::endl;
+    }
     return kStOK;
   }
 
@@ -202,6 +208,14 @@ Int_t StPhiMaker::Make() {
 
   if (m_histManager) m_histManager->Fill("hTofMatchMult", nTofMatch);
 
+  Int_t nKaonPlus = (Int_t)kaonsPlus.size();
+  Int_t nKaonMinus = (Int_t)kaonsMinus.size();
+  if (m_histManager) {
+    m_histManager->Fill("hNKaonPlusVsNKaonMinus", (Double_t)nKaonPlus, (Double_t)nKaonMinus);
+    m_histManager->Fill("hNKaonPlus", (Double_t)nKaonPlus);
+    m_histManager->Fill("hNKaonMinus", (Double_t)nKaonMinus);
+  }
+
   // Phi reconstruction: ReconstructPhi pairs
   for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
     for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
@@ -227,14 +241,32 @@ Int_t StPhiMaker::Make() {
       PhiCutConfig& phiCut = ConfigManager::GetInstance().GetPhiCuts();
       Bool_t passAngle = (openingAngle >= phiCut.minOpeningAngle && openingAngle <= phiCut.maxOpeningAngle);
       Bool_t passRapidity = (pairRapidity >= phiCut.minPairRapidity && pairRapidity <= phiCut.maxPairRapidity);
+      Bool_t passRapidity_0p4 = (pairRapidity >= -0.4 && pairRapidity <= 0.4);
+      Bool_t passRapidity_0p3 = (pairRapidity >= -0.3 && pairRapidity <= 0.3);
+      Bool_t passRapidity_0p2 = (pairRapidity >= -0.2 && pairRapidity <= 0.2);
+      Bool_t passRapidity_0p1 = (pairRapidity >= -0.1 && pairRapidity <= 0.1);
       if (m_histManager) {
-        if (passAngle) m_histManager->Fill("hMKK_OpeningAngleCut", invMass);
-        if (passRapidity) m_histManager->Fill("hMKK_RapidityCut", invMass);
+        if (passAngle) {
+          m_histManager->Fill("hMKK_OpeningAngleCut", invMass);
+          if (passRapidity) m_histManager->Fill("hMKK_RapidityCut", invMass);
+          if (passRapidity_0p4) m_histManager->Fill("hMKK_RapidityCut_0p4", invMass);
+          if (passRapidity_0p3) m_histManager->Fill("hMKK_RapidityCut_0p3", invMass);
+          if (passRapidity_0p2) m_histManager->Fill("hMKK_RapidityCut_0p2", invMass);
+          if (passRapidity_0p1) m_histManager->Fill("hMKK_RapidityCut_0p1", invMass);
+        }
         if (passAngle && passRapidity) {
           m_histManager->Fill("hMKK_BothCuts", invMass);
           m_histManager->Fill("hOpeningAngle_AfterCuts", openingAngle);
           m_histManager->Fill("hPairRapidity_AfterCuts", pairRapidity);
           m_histManager->Fill("hPairPt_AfterCuts", phiMom.Pt());
+          if (nKaonPlus < 5) m_histManager->Fill("hMKK_Mult0to5_KPlus", invMass);
+          else if (nKaonPlus < 10) m_histManager->Fill("hMKK_Mult5to10_KPlus", invMass);
+          else if (nKaonPlus < 20) m_histManager->Fill("hMKK_Mult10to20_KPlus", invMass);
+          else m_histManager->Fill("hMKK_Mult20up_KPlus", invMass);
+          if (nKaonMinus < 5) m_histManager->Fill("hMKK_Mult0to5_KMinus", invMass);
+          else if (nKaonMinus < 10) m_histManager->Fill("hMKK_Mult5to10_KMinus", invMass);
+          else if (nKaonMinus < 20) m_histManager->Fill("hMKK_Mult10to20_KMinus", invMass);
+          else m_histManager->Fill("hMKK_Mult20up_KMinus", invMass);
         }
       }
     }
@@ -284,11 +316,34 @@ void StPhiMaker::WriteHistograms() {
 //-----------------------------------------------------------------------------
 Bool_t StPhiMaker::PassEventCuts(Float_t vz, Float_t vr, Int_t refMult, Float_t vzVpd) {
   EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
-  if (TMath::Abs(vz) > ev.maxVz) return kFALSE;
-  if (vr > ev.maxVr) return kFALSE;
-  if (refMult < ev.minRefMult) return kFALSE;
-  if (refMult > ev.maxRefMult) return kFALSE;
-  if (TMath::Abs(vz - vzVpd) > ev.maxVzDiff && TMath::Abs(vzVpd) < ev.maxAbsVzVpd) return kFALSE;
+  static Int_t s_debugFailCount = 0;
+
+  if (TMath::Abs(vz) > ev.maxVz) {
+    if (kDebugPhiMaker && s_debugFailCount++ < kDebugPhiMakerMaxEvents)
+      std::cout << "[StPhiMaker] CUT: maxVz |vz|=" << TMath::Abs(vz) << " max=" << ev.maxVz << std::endl;
+    return kFALSE;
+  }
+  if (vr > ev.maxVr) {
+    if (kDebugPhiMaker && s_debugFailCount++ < kDebugPhiMakerMaxEvents)
+      std::cout << "[StPhiMaker] CUT: maxVr vr=" << vr << " max=" << ev.maxVr << std::endl;
+    return kFALSE;
+  }
+  if (refMult < ev.minRefMult) {
+    if (kDebugPhiMaker && s_debugFailCount++ < kDebugPhiMakerMaxEvents)
+      std::cout << "[StPhiMaker] CUT: minRefMult refMult=" << refMult << " min=" << ev.minRefMult << std::endl;
+    return kFALSE;
+  }
+  if (refMult > ev.maxRefMult) {
+    if (kDebugPhiMaker && s_debugFailCount++ < kDebugPhiMakerMaxEvents)
+      std::cout << "[StPhiMaker] CUT: maxRefMult refMult=" << refMult << " max=" << ev.maxRefMult << std::endl;
+    return kFALSE;
+  }
+  if (TMath::Abs(vz - vzVpd) > ev.maxVzDiff && TMath::Abs(vzVpd) < ev.maxAbsVzVpd) {
+    if (kDebugPhiMaker && s_debugFailCount++ < kDebugPhiMakerMaxEvents)
+      std::cout << "[StPhiMaker] CUT: maxVzDiff |vz-vzVpd|=" << TMath::Abs(vz - vzVpd) << " max=" << ev.maxVzDiff
+                << " vzVpd=" << vzVpd << std::endl;
+    return kFALSE;
+  }
   return kTRUE;
 }
 

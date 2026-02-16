@@ -4,6 +4,7 @@
 #include "Rtypes.h"
 #include <map>
 #include <string>
+#include <vector>
 
 // Forward declarations
 class EventCutConfig;
@@ -47,6 +48,8 @@ private:
 
   Bool_t ParseMainConfig(const Char_t* filename);
   Bool_t LoadConfigFile(const Char_t* basePath, const Char_t* relativePath, const Char_t* configType);
+  /** Check that all paths in m_mainConfigValues exist. On failure, optional missing list gets relative paths (as in main). */
+  Bool_t ValidateReferencedFiles(std::vector<std::string>* missing = 0);
 
   EventCutConfig* eventCuts;
   TrackCutConfig* trackCuts;

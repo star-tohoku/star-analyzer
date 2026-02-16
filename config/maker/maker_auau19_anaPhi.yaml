@@ -8,9 +8,9 @@ maxDCAKK: 999.0            # cm, max DCA between K+ and K- at decay point
 minInvMass: 0.99           # GeV/c^2, Minimum KK invariant mass
 maxInvMass: 1.05           # GeV/c^2, Maximum KK invariant mass
 minOpeningAngle: 0.0       # rad, KK opening angle cut
-maxOpeningAngle: 0.5
-minPairRapidity: -0.8      # pair rapidity cut
-maxPairRapidity: 0.8
+maxOpeningAngle: 0.4
+minPairRapidity: -0.4      # pair rapidity cut
+maxPairRapidity: 0.4
 
 # Event-plane (Q-vector) track selection
 minPtEp: 0.15              # GeV/c

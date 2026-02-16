@@ -6,7 +6,7 @@
   __MAINCONF__, __WORK_DIR__, __CATALOG_URL__, __N_FILES__, __ANA_SO_PREFIX__
 -->
 
-<job name="__JOB_NAME__" simulateSubmission="false" maxFilesPerProcess="1" fileListSyntax="xrootd" copyInputLocally="true">
+<job name="__JOB_NAME__" simulateSubmission="false" maxFilesPerProcess="5" fileListSyntax="xrootd" copyInputLocally="true">
 
   <command>
     rm -f analysis/__ANA_SO_PREFIX___C.so analysis/__ANA_SO_PREFIX___C.d 2>/dev/null; pwd &amp;&amp; ls -la config &amp;&amp; starver __STARVER__ &amp;&amp; mkdir -p $SCRATCH/__SCRATCH_SUBDIR__ &amp;&amp; setenv LD_LIBRARY_PATH ${PWD}/lib:${LD_LIBRARY_PATH} &amp;&amp; root4star -q -b analysis/__RUN_MACRO__\(\"$FILELIST\",\"$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root\",\"$JOBID\",-1,\"__MAINCONF__\"\)

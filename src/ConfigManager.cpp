@@ -11,6 +11,7 @@
 #include "YamlParser.h"
 #include <map>
 #include <string>
+#include <vector>
 #include <iostream>
 #include <fstream>
 #include <cstring>
@@ -84,6 +85,15 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
   m_mainConfigValues = values;
   m_configBasePath = basePath;
   m_anaName.clear();
+
+  std::vector<std::string> missing;
+  if (!ValidateReferencedFiles(&missing)) {
+    std::cerr << "ERROR: The following config files are missing:" << std::endl;
+    for (size_t i = 0; i < missing.size(); i++) {
+      std::cerr << "  " << missing[i] << std::endl;
+    }
+    return kFALSE;
+  }
 
   // Load each config file (relativePath is under config/; fullPath = basePath + "config/" + relativePath)
   Bool_t success = kTRUE;
@@ -205,6 +215,32 @@ Bool_t ConfigManager::ParseAnalysisInfoAnaName(const std::string& analysisInfoPa
   }
   file.close();
   return kTRUE;
+}
+
+Bool_t ConfigManager::ValidateReferencedFiles(std::vector<std::string>* missing) {
+  Bool_t allExist = kTRUE;
+  for (std::map<std::string, std::string>::const_iterator it = m_mainConfigValues.begin();
+       it != m_mainConfigValues.end(); ++it) {
+    std::string value = trimWhitespace(it->second);
+    if (value.empty()) continue;
+
+    std::string fullPath;
+    if (m_configBasePath.empty()) {
+      fullPath = std::string("config/") + value;
+    } else {
+      fullPath = m_configBasePath;
+      if (fullPath[fullPath.length() - 1] != '/') fullPath += "/";
+      fullPath += "config/";
+      fullPath += value;
+    }
+
+    std::ifstream f(fullPath.c_str());
+    if (!f.is_open()) {
+      allExist = kFALSE;
+      if (missing) missing->push_back(value);
+    }
+  }
+  return allExist;
 }
 
 std::string ConfigManager::GetAnaName() const {

@@ -69,6 +69,16 @@ def get_ana_name_from_file_no_yaml(analysis_path):
     return None
 
 
+def get_all_pico_dst_list_no_yaml(analysis_path):
+    """When PyYAML is missing: grep for 'allPicoDstList:' in analysis file."""
+    with open(analysis_path, 'r') as f:
+        for line in f:
+            m = re.search(r'allPicoDstList\s*:\s*["\']?([^"\'\s]+)["\']?', line)
+            if m:
+                return m.group(1).strip()
+    return None
+
+
 def get_analysis_path_from_mainconf(mainconf_path, config_base):
     """mainconf has 'analysis: path'; path is relative to config/."""
     data = load_yaml(mainconf_path)
@@ -114,6 +124,8 @@ def main():
     parser.add_argument('--project-root', default=project_root, help='Project root directory')
     parser.add_argument('--library-tag', action='store_true', help='Print starTag.libraryTag to stdout')
     parser.add_argument('--ana-name', action='store_true', help='Print analysis anaName from analysis_info to stdout')
+    parser.add_argument('--pico-dst-list', action='store_true', help='Print default picoDst list path (config/...) for run script')
+    parser.add_argument('--output-rootfile', action='store_true', help='Print default output root path: rootfile/anaName/anaName_temp.root')
     parser.add_argument('--generate-joblist', action='store_true', help='Generate joblist XML from template')
     args = parser.parse_args()
 
@@ -171,6 +183,27 @@ def main():
         print(name)
         return
 
+    if args.pico_dst_list:
+        if yaml is not None:
+            dataset = info.get('dataset') or {}
+            list_rel = dataset.get('allPicoDstList', 'picoDstList/auau19GeV.list')
+        else:
+            list_rel = get_all_pico_dst_list_no_yaml(analysis_path)
+            if list_rel is None:
+                list_rel = 'picoDstList/auau19GeV.list'
+        print(os.path.join('config', list_rel))
+        return
+
+    if args.output_rootfile:
+        if yaml is not None:
+            name = analysis.get('anaName') or analysis.get('name') or 'auau19_anaPhi'
+        else:
+            name = get_ana_name_from_file_no_yaml(analysis_path)
+            if name is None:
+                name = 'auau19_anaPhi'
+        print(os.path.join('rootfile', name, name + '_temp.root'))
+        return
+
     if args.generate_joblist:
         if yaml is None:
             print("ERROR: --generate-joblist requires PyYAML. Install with: pip install pyyaml", file=sys.stderr)
@@ -191,7 +224,7 @@ def main():
         job_name = analysis.get('jobName') or ana_name
         scratch_subdir = analysis.get('scratchSubdir') or ana_name
         output_stem = analysis.get('outputFileStem') or ana_name
-        n_files = analysis.get('nFiles', 40)
+        n_files = analysis.get('nFiles', 1000)
         work_dir = analysis.get('workDir', '/star/u/$USER/Path/To/star-analyzer')
         starver = star_tag.get('libraryTag', 'SL24y')
         catalog_url = build_catalog_url(star_tag)
@@ -218,7 +251,7 @@ def main():
         for placeholder, value in replacements:
             content = content.replace(placeholder, value)
 
-        out_basename = 'joblist_' + base_run + '.xml'
+        out_basename = 'joblist_' + ana_name + '.xml'
         out_dir = os.path.join(project_root, 'job', 'joblist')
         out_path = os.path.join(out_dir, out_basename)
         with open(out_path, 'w') as f:
@@ -226,7 +259,7 @@ def main():
         print("Wrote {}".format(out_path))
         return
 
-    print("ERROR: specify --library-tag, --ana-name, or --generate-joblist", file=sys.stderr)
+    print("ERROR: specify --library-tag, --ana-name, --pico-dst-list, --output-rootfile, or --generate-joblist", file=sys.stderr)
     sys.exit(1)
 
 

@@ -9,7 +9,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [ -z "${1:-}" ]; then
     echo "Usage: $0 MAINCONF_PATH" >&2
     echo "  MAINCONF_PATH  e.g. config/mainconf/main_auau19_anaLambda.yaml" >&2
-    echo "  Output: job/joblist/joblist_<baseRunMacro>.xml (e.g. joblist_run_anaLambda.xml, from analysis info baseRunMacro)" >&2
+    echo "  Output: job/joblist/joblist_<anaName>.xml (e.g. joblist_auau19_anaLambda.xml)" >&2
     exit 1
 fi
 

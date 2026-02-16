@@ -151,6 +151,42 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(3); h1 = (TH1*)fin->Get("hK_NSigma"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
+  // Page 10: Rapidity window variations (|y| < 0.4, 0.3, 0.2, 0.1)
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hMKK_RapidityCut_0p4"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hMKK_RapidityCut_0p3"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hMKK_RapidityCut_0p2"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hMKK_RapidityCut_0p1"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 11: M_KK in K+ multiplicity bins (angle+rapidity cut)
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hMKK_Mult0to5_KPlus"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hMKK_Mult5to10_KPlus"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hMKK_Mult10to20_KPlus"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hMKK_Mult20up_KPlus"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 12: M_KK in K- multiplicity bins (angle+rapidity cut)
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hMKK_Mult0to5_KMinus"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hMKK_Mult5to10_KMinus"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hMKK_Mult10to20_KMinus"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hMKK_Mult20up_KMinus"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 13: K+ and K- multiplicity (per event) and correlation
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h2 = (TH2*)fin->Get("hNKaonPlusVsNKaonMinus"); if (h2) h2->Draw("colz");
+  c1->cd(2); h1 = (TH1*)fin->Get("hNKaonPlus"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hNKaonMinus"); if (h1) h1->Draw();
+  c1->cd(4); /* spare */;
+  c1->Print(pdfName);
+
   PdfHeader::ClosePdf(pdfName);
 
   delete c1;
