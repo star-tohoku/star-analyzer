@@ -1,0 +1,22 @@
+# φ(1020) → K⁺K⁻ Analysis Cuts
+
+nSigmaKaon: 2.0            # TPC nSigma cut for K
+minMass2Kaon: 0.15         # TOF mass2 cut for K
+maxMass2Kaon: 0.35
+maxDCAKaon: 2.0            # cm, max DCA for single kaon
+maxDCAKK: 999.0            # cm, max DCA between K+ and K- at decay point
+minInvMass: 0.99           # GeV/c^2, Minimum KK invariant mass
+maxInvMass: 1.05           # GeV/c^2, Maximum KK invariant mass
+minOpeningAngle: 0.0       # rad, KK opening angle cut
+maxOpeningAngle: 0.4
+minPairRapidity: -0.4      # pair rapidity cut
+maxPairRapidity: 0.4
+
+# Event-plane (Q-vector) track selection
+minPtEp: 0.15              # GeV/c
+maxPtEp: 2.0
+maxEtaEp: 1.0               # |eta| < maxEtaEp
+
+# Event-level: skip event if nTracks > maxNTr (0 = no limit)
+maxNTr: 500
+

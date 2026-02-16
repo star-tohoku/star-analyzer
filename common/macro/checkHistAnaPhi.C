@@ -1,7 +1,7 @@
 // checkHistAnaPhi.C - Draw histograms from run_anaPhi.C output and write PDF.
 // Usage: root4star -l -b -q 'common/macro/checkHistAnaPhi.C("rootfile/auau19_anaPhi/xxx.root","auau19_anaPhi")'
-// anaName is typically obtained by: script/analysis_info_helper.py --ana-name --mainconf config/mainconf/main_auau19_anaPhi.yaml
-// PDF: share/figure/anaName/anaName_checkHistAnaPhi.pdf
+//        root4star -l -b -q 'common/macro/checkHistAnaPhi.C("rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root")'
+// If input is anaName_jobid_merge.root, jobid (32 hex) is parsed and PDF becomes anaName_checkHistAnaPhi_jobid.pdf.
 
 #include <TROOT.h>
 #include <TSystem.h>
@@ -16,8 +16,18 @@
 
 #include "../../include/PdfIOMan.h"
 
+static Bool_t isHex32(const TString& s) {
+  if (s.Length() != 32) return kFALSE;
+  for (Int_t i = 0; i < 32; i++) {
+    Char_t c = s[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
+      return kFALSE;
+  }
+  return kTRUE;
+}
+
 void checkHistAnaPhi(const Char_t* inputRootFile,
-                     const Char_t* anaName = "auau19_anaPhi")
+                     const Char_t* anaNameArg = "auau19_anaPhi")
 {
   gROOT->SetBatch(kTRUE);
 
@@ -35,12 +45,38 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
     return;
   }
 
+  // Parse input basename for anaName_jobid_merge.root -> anaName, jobid (32 hex)
+  TString anaName(anaNameArg);
+  TString jobid;
+  TString base = gSystem->BaseName(inputRootFile);
+  base.ReplaceAll(".root", "");
+  std::vector<TString> tokens;
+  for (Int_t i = 0; i < base.Length(); ) {
+    Int_t j = base.Index("_", i);
+    if (j < 0) {
+      tokens.push_back(TString(base(i, base.Length() - i)));
+      break;
+    }
+    tokens.push_back(TString(base(i, j - i)));
+    i = j + 1;
+  }
+  for (size_t k = 0; k < tokens.size(); k++) {
+    if (isHex32(tokens[k])) {
+      jobid = tokens[k];
+      anaName = tokens[0];
+      for (size_t m = 1; m < k; m++) anaName += "_" + tokens[m];
+      break;
+    }
+  }
+
   TString outDir = TString("share/figure/") + anaName + "/";
   if (gSystem->AccessPathName(outDir)) {
     gSystem->mkdir(outDir, kTRUE);
   }
 
-  TString pdfName = TString(outDir) + anaName + "_checkHistAnaPhi.pdf";
+  TString pdfName = TString(outDir) + anaName + "_checkHistAnaPhi";
+  if (jobid.Length()) pdfName += "_" + jobid;
+  pdfName += ".pdf";
   std::cout << "Output PDF: " << pdfName.Data() << std::endl;
 
   PdfHeader::OpenPdf(pdfName);
