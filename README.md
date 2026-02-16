@@ -9,6 +9,7 @@ STAR PicoDst-based analysis using the StChain/StMaker pattern: analysis macros d
 - **Makers are compiled.** Maker code lives in `StMaker/StXXXMaker/` and is built into `lib/libStXXXMaker.so`. This keeps heavy logic out of the interpreter and allows reuse.
 - **Macros run under root4star.** The entry point is a ROOT macro invoked with `root4star -b -q "..."`. A small shell script (`script/run_anaXxx.sh`) sets the environment and calls the macro.
 - **YAML-driven config.** Cuts and histogram definitions are read from YAML via `ConfigManager`, so you can change them without recompiling Makers when using existing cut/hist keys.
+- **Mainconf as the single entry point.** The main config (`config/mainconf/main_<anaName>.yaml`) references all other configs (paths relative to `config/`). Analysis should be fully reproducible using only the files referenced there. Scripts and workflows take mainconf as the primary argument so that setup, execution, I/O, and outputs are tied to one mainconf.
 
 ## Why two macros per analysis (run_anaXxx.C and anaXxx.C)
 
@@ -36,10 +37,10 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **analysis/** | ROOT macros: `run_anaXxx.C` (runner: loads libs, compiles `anaXxx.C+`, calls analysis) and `anaXxx.C` (StChain + event loop). One pair per analysis (e.g. Lambda, Phi). |
 | **config/** | YAML configs. **Templates/samples only** tracked. Subdirs: `mainconf/` (main YAML that includes the rest), `maker/`, `hist/`, `cuts/` (event, track, pid, v0reco, mixing), `analysis/` (e.g. **analysis_info_temp.yaml** — used by setup.sh and joblist generator), `picoDstList/` (input file lists; user lists are typically untracked). |
 | **include/** | Framework headers: `ConfigManager.h`, `HistManager.h`, cut configs (`cuts/*.h`). Used by StMaker and `src/`. |
-| **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, generated/copied files). Files under `job/run/*.xml` and SUMS outputs are git-ignored. |
+| **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, generated/copied files). On successful submit, config is written to `job/run/configlog/config_<anaName>_<jobid>.txt`. Files under `job/run/*.xml` and SUMS outputs are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. |
-| **script/** | Environment and run scripts: `setup.sh` (starver from analysis info), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `analysis_info_helper.py` (libraryTag + joblist generation), and helpers (e.g. `get_file_list_*.sh`). |
+| **script/** | Environment and run scripts: `setup.sh` (starver from analysis info), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `analysis_info_helper.py` (libraryTag + joblist generation), and helpers (e.g. `get_file_list_*.sh`). |
 
 ## Prerequisites and setup
 
@@ -172,6 +173,22 @@ root4star -b -q "analysis/run_anaLambda.C(\"$INPUT\",\"$OUTPUT\",\"$JOBID\",$NEV
 
 `run_anaLambda.C` loads STAR libs, `libStarAnaConfig.so`, and `libStLambdaMaker.so`, compiles `anaLambda.C+`, and calls `anaLambda(...)`.
 
+### Result QA (Phi): checkHistAnaPhi.sh
+
+After running the Phi analysis (locally or after merging batch output), you can produce a histogram QA PDF from the output ROOT file:
+
+```bash
+./script/checkHistAnaPhi.sh <root_file> <mainconf_path>
+```
+
+Example (single or merged ROOT file):
+
+```bash
+./script/checkHistAnaPhi.sh rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
+```
+
+If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`.
+
 ### Batch (star-submit)
 
 First-time flow (after git clone): customize analysis info → setup → build → generate joblist → submit.
@@ -201,7 +218,10 @@ First-time flow (after git clone): customize analysis info → setup → build �
    cd job/run
    ./submit.sh ../joblist/joblist_run_anaLambda.xml
    ```
-   If your generated XML uses `__PROJECT_ROOT__`, `submit.sh` will replace it with the actual project path. Log and output URLs come from **analysis.workDir** in the analysis info. See `job/run/README.md` for more. 
+   If your generated XML uses `__PROJECT_ROOT__`, `submit.sh` will replace it with the actual project path. Log and output URLs come from **analysis.workDir** in the analysis info. On successful submit, the mainconf and all referenced config files are written to **job/run/configlog/config_<anaName>_<jobid>.txt** (one text file per job) for reproducibility. See `job/run/README.md` for more.
+
+5. **Cleaning up job/run**  
+   After submission, `job/run/` is filled with many files named `anaName+jobid+*` (`.csh`, `.list`, etc.). To remove them (avoids "Argument list too long"): `cd job/run && ./cleanup_job_run.sh <anaName+jobid>`. To move them into an archive instead: `cd job/run && ./archive_job_run.sh <anaName+jobid>` (files go to `job/run/joblog/<anaName>/`; the directory is created if needed).
 
 ## Adding a new analysis (new StMaker)
 
