@@ -44,6 +44,15 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. |
 | **script/** | Environment and run scripts: `setup.sh` (starver from analysis info), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `analysis_info_helper.py` (libraryTag + joblist generation), and helpers (e.g. `get_file_list_*.sh`). |
 
+## Development with Cursor (agent AI)
+
+When developing or modifying this framework, open the repository in [Cursor](https://cursor.com/) as the **project directory** (File → Open Folder → select the cloned repo root). The project includes rules and skills so that the agent follows this README.
+
+- **After cloning**, open the cloned directory in Cursor as the project folder. The agent will then have full context of the codebase and the conventions below.
+- **`.cursor/rules/`** — Project rules (e.g. README philosophy) are applied automatically. The agent is instructed to follow the Philosophy above (no custom event loop, physics in StMaker, YAML config, no hardcoding, one config per concern, mainconf as entry point). Do not remove or ignore `.cursor` if you want the agent to respect these conventions.
+- **`.cursor/skills/`** — For common tasks (adding a new analysis, adding histograms to a StMaker, daily analysis log, updating README for scripts), the project provides skills; asking the agent for those tasks will trigger the corresponding workflow.
+- If you change the **Philosophy** section in this README, update `.cursor/rules/README-philosophy.mdc` so the rule stays in sync.
+
 ## Prerequisites and setup
 
 - **STAR environment**: use `starver` (e.g. `starver SL24y`). The version is taken from **analysis info** (see below), not hardcoded.
