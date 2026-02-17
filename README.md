@@ -13,22 +13,38 @@ STAR PicoDst-based analysis using the StChain/StMaker pattern: analysis macros d
 - **One config per concern.** Use one maker config per StMaker (referenced from mainconf). Use one cut config per cut type/source (e.g. one config for event cuts, one for track, one for PID, one for v0, one for mixing); mainconf references each.
 - **Mainconf as the single entry point.** The main config (`config/mainconf/main_<anaName>.yaml`) references all other configs (paths relative to `config/`). Analysis should be fully reproducible using only the files referenced there. Scripts and workflows take mainconf as the primary argument so that setup, execution, I/O, and outputs are tied to one mainconf.
 
-## Why two macros per analysis (run_anaXxx.C and anaXxx.C)
+## After cloning
 
-ROOT's CINT interpreter does **not** resolve symbols from dynamically loaded shared libraries. So a single macro that does `gSystem->Load("libStPhiMaker.so")` and then `new StPhiMaker(...)` fails with "declared but not defined."
+Do the following once after you clone the repository.
 
-The fix is to **compile** the macro that uses the Maker with ACLiC (`.L anaPhi.C+`) and link it against the Maker library. That requires:
+1. **Submodules** (required for build):
+   ```bash
+   git submodule update --init --recursive
+   ```
+   Without this, `make` will fail when building the config library.
 
-1. **Before** compilation: load STAR libs, load `libStXXXMaker.so`, and tell ACLiC to link against it (`gSystem->AddLinkedLibs(...)`).
-2. **Then** compile and load the analysis macro (`.L anaXxx.C+`).
-3. **Then** call the analysis function (e.g. `anaPhi(...)`).
+2. **Directories not in git** — The framework expects these at runtime; they are git-ignored. Create them if you use batch submission or local ROOT output:
+   - **log/** — Batch job stdout (e.g. `log/stdout.$JOBID.out`).
+   - **err/** — Batch job stderr (e.g. `err/stderr.$JOBID.err`).
+   - **rootfile/** — Analysis output ROOT files (local runs and batch copy-back). Use subdirs per analysis, e.g. `rootfile/auau19_anaPhi/`.
+   - **lib/** — Filled by `make` (shared libraries). No need to create by hand.
+   - **share/figure/** — QA PDFs from `checkHistAnaPhi.sh` (e.g. `share/figure/<anaName>/`). Created by the macro when needed.
 
-Because `root4star -q` accepts only **one** macro invocation, that sequence is implemented in a **runner** macro, and the actual chain/event loop lives in a **second** macro that gets compiled:
+   Example (create log, err, and rootfile so batch jobs can write outputs):
+   ```bash
+   mkdir -p log err rootfile
+   ```
 
-- **run_anaXxx.C** — Loads STAR and project libs, sets `AddLinkedLibs`, compiles `anaXxx.C+`, and calls `anaXxx(...)`.
-- **anaXxx.C** — Builds `StChain`, adds `StPicoDstMaker` and your Maker, runs the event loop. This file is compiled by ACLiC and linked to `libStXXXMaker.so`.
+3. **Analysis info** — Edit `config/analysis/analysis_info_temp.yaml` (or the file your mainconf’s `analysis:` points to). At least set **analysis.workDir** to your project root (e.g. `/star/u/$USER/star-analysis`). This is used for batch log/err/output paths and joblist generation.
 
-So each new analysis uses this two-file pattern on purpose; the runner is analysis-specific and not shared.
+4. **Setup and build** — From the project root:
+   ```bash
+   source script/setup.sh config/mainconf/main_<yourAnalysis>.yaml
+   make
+   ```
+
+5. **Cursor (optional)** — To develop with the agent, open this directory in Cursor as the project folder (see [Development with Cursor](#development-with-cursor-agent-ai)).
+
 
 ## Directory layout
 
@@ -145,6 +161,24 @@ make
 ```
 
 This builds `lib/libStarAnaConfig.so`, `lib/libStPhiMaker.so`, and `lib/libStLambdaMaker.so`. The Makefile uses `$STAR` and `root-config`; other Makers need their own targets (see "Adding a new analysis" below).
+
+## analysis code (run_anaXxx.C and anaXxx.C)
+
+ROOT's CINT interpreter does **not** resolve symbols from dynamically loaded shared libraries. So a single macro that does `gSystem->Load("libStPhiMaker.so")` and then `new StPhiMaker(...)` fails with "declared but not defined."
+
+The fix is to **compile** the macro that uses the Maker with ACLiC (`.L anaPhi.C+`) and link it against the Maker library. That requires:
+
+1. **Before** compilation: load STAR libs, load `libStXXXMaker.so`, and tell ACLiC to link against it (`gSystem->AddLinkedLibs(...)`).
+2. **Then** compile and load the analysis macro (`.L anaXxx.C+`).
+3. **Then** call the analysis function (e.g. `anaPhi(...)`).
+
+Because `root4star -q` accepts only **one** macro invocation, that sequence is implemented in a **runner** macro, and the actual chain/event loop lives in a **second** macro that gets compiled:
+
+- **run_anaXxx.C** — Loads STAR and project libs, sets `AddLinkedLibs`, compiles `anaXxx.C+`, and calls `anaXxx(...)`.
+- **anaXxx.C** — Builds `StChain`, adds `StPicoDstMaker` and your Maker, runs the event loop. This file is compiled by ACLiC and linked to `libStXXXMaker.so`.
+
+So each new analysis uses this two-file pattern on purpose; the runner is analysis-specific and not shared.
+
 
 ## How to run
 
