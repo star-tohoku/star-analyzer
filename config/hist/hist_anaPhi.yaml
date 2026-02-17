@@ -140,6 +140,14 @@ axes:
     nBins: 50
     min: 0.0
     max: 50.0
+  NTracks: &NTracks
+    nBins: 500
+    min: 0.0
+    max: 2000.0
+  NHitsDedx: &NHitsDedx
+    nBins: 60
+    min: 0.0
+    max: 60.0
 
 # --- Histogram definitions ---
 histograms:
@@ -175,6 +183,10 @@ histograms:
     axis: *TriggerIds
     title: "Trigger IDs;Trigger ID;Counts"
 
+  hNTracks:
+    axis: *NTracks
+    title: "Number of Tracks (before maxNTr cut);N_{tracks};Counts"
+
   # Track
   hPt:
     axis: *Pt
@@ -207,6 +219,29 @@ histograms:
   hChi2:
     axis: *Chi2
     title: "Track #chi^{2};#chi^{2};Counts"
+
+  # Track (pre-cut, before PassTrackCuts)
+  hPt_Raw:
+    axis: *Pt
+    title: "p_{T} (before track cuts);p_{T} [GeV/c];Counts"
+  hEta_Raw:
+    axis: *Eta
+    title: "#eta (before track cuts);#eta;Counts"
+  hNHitsFit_Raw:
+    axis: *NHitsFit
+    title: "nHitsFit (before track cuts);nHitsFit;Counts"
+  hNHitsRatio_Raw:
+    axis: *NHitsRatio
+    title: "nHitsFit/nHitsMax (before track cuts);Ratio;Counts"
+  hNHitsDedx:
+    axis: *NHitsDedx
+    title: "nHitsDedx (before track cuts);nHitsDedx;Counts"
+  hChi2_Raw:
+    axis: *Chi2
+    title: "#chi^{2} (before track cuts);#chi^{2};Counts"
+  hDCA_Raw:
+    axis: *DCA
+    title: "DCA to PV (before track cuts);DCA [cm];Counts"
 
   # PID
   hDedxVsP:

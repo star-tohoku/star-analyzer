@@ -128,6 +128,7 @@ Int_t StPhiMaker::Make() {
   kaonsMinus.reserve(kMaxKaons / 2);
 
   Int_t nTracks = mPicoDst->numberOfTracks();
+  if (m_histManager) m_histManager->Fill("hNTracks", (Double_t)nTracks);
   PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
   if (phiCfg.maxNTr > 0 && nTracks > phiCfg.maxNTr) {
     if (kDebugPhiMaker && mEventCounter <= kDebugPhiMakerMaxEvents) {
@@ -142,9 +143,22 @@ Int_t StPhiMaker::Make() {
   for (Int_t itrk = 0; itrk < nTracks; itrk++) {
     StPicoTrack* trk = mPicoDst->track(itrk);
     if (!trk) continue;
+    TVector3 pMom = trk->pMom();
+    if (m_histManager) {
+      Float_t ptRaw = pMom.Perp();
+      Float_t etaRaw = pMom.PseudoRapidity();
+      m_histManager->Fill("hPt_Raw", ptRaw);
+      m_histManager->Fill("hEta_Raw", etaRaw);
+      m_histManager->Fill("hNHitsFit_Raw", trk->nHitsFit());
+      if (trk->nHitsMax() > 0) {
+        m_histManager->Fill("hNHitsRatio_Raw", (Float_t)trk->nHitsFit() / (Float_t)trk->nHitsMax());
+      }
+      m_histManager->Fill("hNHitsDedx", trk->nHitsDedx());
+      m_histManager->Fill("hChi2_Raw", trk->chi2());
+      m_histManager->Fill("hDCA_Raw", trk->gDCA(pVtx).Mag());
+    }
     if (!PassTrackCuts(trk, pVtx)) continue;
 
-    TVector3 pMom = trk->pMom();
     Float_t pt = pMom.Perp();
     Float_t eta = pMom.PseudoRapidity();
     Float_t phi = pMom.Phi();
