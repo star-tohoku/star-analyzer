@@ -9,6 +9,8 @@ STAR PicoDst-based analysis using the StChain/StMaker pattern: analysis macros d
 - **Makers are compiled.** Maker code lives in `StMaker/StXXXMaker/` and is built into `lib/libStXXXMaker.so`. This keeps heavy logic out of the interpreter and allows reuse.
 - **Macros run under root4star.** The entry point is a ROOT macro invoked with `root4star -b -q "..."`. A small shell script (`script/run_anaXxx.sh`) sets the environment and calls the macro.
 - **YAML-driven config.** Cuts and histogram definitions are read from YAML via `ConfigManager`, so you can change them without recompiling Makers when using existing cut/hist keys.
+- **No hardcoding.** Do not hardcode concrete values in code; put all cut values, thresholds, and analysis parameters in YAML config so they can be changed without recompiling.
+- **One config per concern.** Use one maker config per StMaker (referenced from mainconf). Use one cut config per cut type/source (e.g. one config for event cuts, one for track, one for PID, one for v0, one for mixing); mainconf references each.
 - **Mainconf as the single entry point.** The main config (`config/mainconf/main_<anaName>.yaml`) references all other configs (paths relative to `config/`). Analysis should be fully reproducible using only the files referenced there. Scripts and workflows take mainconf as the primary argument so that setup, execution, I/O, and outputs are tied to one mainconf.
 
 ## Why two macros per analysis (run_anaXxx.C and anaXxx.C)
@@ -187,7 +189,7 @@ Example (single or merged ROOT file):
 ./script/checkHistAnaPhi.sh rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
 ```
 
-If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`.
+If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`. When config is loaded, cut regions (event, track, phi) are overlaid on pre-cut histograms as red dashed lines.
 
 ### Batch (star-submit)
 

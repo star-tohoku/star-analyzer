@@ -1,6 +1,7 @@
 #include "StPhiMaker.h"
 #include "ConfigManager.h"
 #include "HistManager.h"
+#include "kinematics.h"
 #include "cuts/EventCutConfig.h"
 #include "cuts/TrackCutConfig.h"
 #include "cuts/PhiCutConfig.h"
@@ -187,6 +188,11 @@ Int_t StPhiMaker::Make() {
             if (beta > 1e-4) {
               Double_t mass2 = pMom.Mag2() * (1.0 / (beta * beta) - 1.0);
               m_histManager->Fill("hM2q2VsPq", pOverQ, mass2);
+              Double_t deltaInvBeta = DeltaOneOverBeta(beta, kKaonMass, pMom.Mag());
+              if (TMath::Abs(deltaInvBeta) < 10.0) {
+                m_histManager->Fill("hDeltaOneOverBetaKaon", deltaInvBeta);
+                m_histManager->Fill("hDeltaOneOverBetaVsP", pMom.Mag(), deltaInvBeta);
+              }
             }
           }
         }

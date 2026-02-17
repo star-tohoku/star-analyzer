@@ -112,6 +112,10 @@ axes:
     nBins: 400
     min: 0.0
     max: 80.0
+  DeltaOneOverBeta: &DeltaOneOverBeta
+    nBins: 200
+    min: -0.1
+    max: 0.1
   Psi2: &Psi2
     nBins: 100
     min: 0.0
@@ -258,6 +262,15 @@ histograms:
     xAxis: *PQ_positive
     yAxis: *DedxKeVcm
     title: "dE/dx vs p/q;p/q (GeV/c);dE/dx (KeV/cm)"
+
+  hDeltaOneOverBetaKaon:
+    axis: *DeltaOneOverBeta
+    title: "#Delta(1/#beta) for K hypothesis (TOF matched);#Delta(1/#beta);Counts"
+
+  hDeltaOneOverBetaVsP:
+    xAxis: *Momentum
+    yAxis: *DeltaOneOverBeta
+    title: "#Delta(1/#beta) vs p (K hypothesis);p [GeV/c];#Delta(1/#beta)"
 
   hNSigmaPionVsP:
     xAxis: *Momentum

@@ -35,7 +35,7 @@ STAR_LDFLAGS := -L$(STAR_LIB_DIR) \
                 -lStarClassLibrary -lSt_base -lStChain -lStUtilities
 
 # --- libStarAnaConfig (ConfigManager + YamlParser + cut configs) ---
-STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager.cpp \
+STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager.cpp src/kinematics.cpp \
   src/cuts/EventCutConfig.cpp src/cuts/TrackCutConfig.cpp src/cuts/PIDCutConfig.cpp \
   src/cuts/V0CutConfig.cpp src/cuts/PhiCutConfig.cpp src/cuts/LambdaCutConfig.cpp \
   src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/MixingConfig.cpp
@@ -96,6 +96,8 @@ $(LIB_DIR)/MixingConfig.o: src/cuts/MixingConfig.cpp include/cuts/MixingConfig.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/MixingConfig.cpp -o $@
 $(LIB_DIR)/HistManager.o: src/HistManager.cpp include/HistManager.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/HistManager.cpp -o $@
+$(LIB_DIR)/kinematics.o: src/kinematics.cpp include/kinematics.h
+	$(CXX) $(CXXFLAGS_CONFIG) -c src/kinematics.cpp -o $@
 
 # libStPhiMaker.so (links against libStarAnaConfig)
 $(LIB_DIR)/$(LIB_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ)
