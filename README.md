@@ -35,15 +35,31 @@ Do the following once after you clone the repository.
    mkdir -p log err rootfile
    ```
 
-3. **Analysis info** — Edit `config/analysis/analysis_info_temp.yaml` (or the file your mainconf’s `analysis:` points to). At least set **analysis.workDir** to your project root (e.g. `/star/u/$USER/star-analysis`). This is used for batch log/err/output paths and joblist generation.
+3. **Your analysis info and config** — Create analysis-specific config from the template:
+   - Copy `config/analysis/analysis_info_temp.yaml` to `config/analysis/analysis_info_<anaName>.yaml`. For **anaName** (e.g. `{system}_{anaId}[_condition]`) see [Analysis info](#analysis-info-analysis_info_tempyaml) and [Naming conventions](#naming-conventions). Edit at least **analysis.workDir** and other keys as needed.
+   - Run `script/setup_config_from_analysisinfo.py` with your analysis_info so that configs and mainconf for that analysis are created:
+     ```bash
+     python script/setup_config_from_analysisinfo.py config/analysis/analysis_info_<anaName>.yaml
+     ```
+     This creates the mainconf and cut/maker configs referenced by it (e.g. `config/mainconf/main_<anaName>.yaml`).
 
-4. **Setup and build** — From the project root:
+4. **PicoDst file list (optional)** — Once mainconf exists, you can build an input file list using the FileCatalog (`get_file_list.pl`):
    ```bash
-   source script/setup.sh config/mainconf/main_<yourAnalysis>.yaml
+   python script/generate_picodst_list.py config/mainconf/main_<anaName>.yaml
+   ```
+   Use `--dry-run` to print the command and output path without running. Requires STAR environment. Output path is taken from analysis_info (e.g. `config/picoDstList/<anaName>.list`). See the script docstring for details.
+
+5. **Setup and build** — From the project root (use the mainconf created in step 3):
+   ```bash
+   source script/setup.sh config/mainconf/main_<anaName>.yaml
    make
    ```
 
-5. **Cursor (optional)** — To develop with the agent, open this directory in Cursor as the project folder (see [Development with Cursor](#development-with-cursor-agent-ai)).
+6. **Run analysis** — With joblist and mainconf you can run locally or submit batch jobs. See [How to run](#how-to-run) (local) and [Batch (star-submit)](#batch-star-submit) (batch).
+
+7. **Job submission** — When submitting jobs, see [Batch (star-submit)](#batch-star-submit) and [Creating a joblist](#creating-a-joblist).
+
+8. **Cursor (optional)** — To develop with the agent, open this directory in Cursor as the project folder (see [Development with Cursor](#development-with-cursor-agent-ai)).
 
 
 ## Directory layout

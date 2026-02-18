@@ -1,0 +1,19 @@
+---
+description: Follow README.md Philosophy — no custom event loop, physics in StMaker, YAML config, no hardcoding, one config per concern, mainconf as entry point
+alwaysApply: true
+---
+
+# README Philosophy (must follow)
+
+When editing or adding code in this project, follow the **Philosophy** in [README.md](README.md). Summary:
+
+- **No custom event loop in macros.** Build StChain, Init, Make loop, Finish; the framework controls the loop.
+- **Physics in StMaker subclasses.** Implement Init(), Make(), Clear(), Finish(); histograms in DeclareHistograms() / WriteHistograms().
+- **Makers are compiled.** Code in `StMaker/StXXXMaker/`, built to `lib/libStXXXMaker.so`.
+- **Macros under root4star.** Entry is a ROOT macro; `script/run_anaXxx.sh` sets env and calls it.
+- **YAML-driven config.** Cuts and histograms from YAML via ConfigManager; change without recompiling.
+- **No hardcoding.** Put all cut values, thresholds, and analysis parameters in YAML config.
+- **One config per concern.** One maker config per StMaker; one cut config per cut type (event, track, pid, v0, mixing). Mainconf references each.
+- **Mainconf as single entry point.** `config/mainconf/main_<anaName>.yaml` references all other configs; scripts take mainconf as primary argument.
+
+For full wording and "Why two macros", see README.md. In case of conflict, README.md is the source of truth.
