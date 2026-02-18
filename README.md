@@ -51,7 +51,7 @@ Do the following once after you clone the repository.
 
 5. **Setup and build** — From the project root (use the mainconf created in step 3):
    ```bash
-   source script/setup.sh config/mainconf/main_<anaName>.yaml
+   ./script/setup.sh config/mainconf/main_<anaName>.yaml
    make
    ```
 
