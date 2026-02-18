@@ -31,4 +31,5 @@ echo "nEvents: $NEVENTS"
 echo "Config:  $MAINCONF"
 echo "================================"
 
+./script/setup.sh "$MAINCONF"
 root4star -b -q "analysis/run_anaPhi.C(\"$INPUT_FILE\",\"$OUTPUT_FILE\",\"$JOBID\",$NEVENTS,\"$MAINCONF\")"

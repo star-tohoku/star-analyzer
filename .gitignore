@@ -40,6 +40,9 @@ job/run/analysis
 job/run/config
 job/run/include
 job/run/lib
+job/run/joblog/*
+job/run/configlog/*
+job/run/joblistlog/*
 
 # job/run: SUMS job submission generated files (dataset, report, .list, .csh, .condor)
 job/run/*.dataset
@@ -54,6 +57,7 @@ job/run/phi_analysis_run_ana*
 job/run/joblist_run_ana_Phi_forrun.xml
 
 # config/: backup files; picoDstList/*.list are user-specific (track only template YAMLs)
+config/*
 config/**/*~
 config/picoDstList/*.list
 
@@ -68,6 +72,7 @@ script/condor/
 #*#
 
 # Directories not under version control
+lib/*
 analysisnote/
 backup/
 docs/
@@ -85,5 +90,5 @@ script/get_file_list_*.sh
 script/read*.sh
 script/run_ana_Phi.sh
 script/run_analyzePhi.sh
-script/setup_zsh.sh
 script/job_template.xml
+script/getfile/
