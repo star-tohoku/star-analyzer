@@ -19,7 +19,7 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
 
    `submit.sh` replaces `__PROJECT_ROOT__` in the template with the actual project path, so the same template works for any user.
 
-   On successful submit, the config used for that run is written to **configlog/config_<anaName>_<jobid>.txt** (mainconf and all referenced YAMLs in one text file).
+   On successful submit, the joblist and config used for that run are saved: **joblistlog/joblist_<anaName>_<jobid>.xml** (submitted XML) and **configlog/config_<anaName>_<jobid>.txt** (mainconf and all referenced YAMLs in one text file).
 
 ## Cleaning up this directory
 

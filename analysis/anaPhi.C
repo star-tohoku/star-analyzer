@@ -106,6 +106,7 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   std::cout << "RealTime: " << timer.RealTime() << " CpuTime: " << timer.CpuTime() << std::endl;
 
   delete phiMaker;
+  phiMaker = 0;
   delete picoMaker;
   delete chain;
   chain = 0;

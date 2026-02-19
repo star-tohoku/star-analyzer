@@ -32,12 +32,16 @@ public:
   /** Write all owned histograms to current TDirectory. */
   void Write();
 
+  /** Relinquish ownership so destructor will not delete histograms (call after Write() when TFile will own them). */
+  void ReleaseOwnership();
+
 private:
   HistManager(const HistManager&);
   HistManager& operator=(const HistManager&);
 
   std::map<std::string, TH1*> m_histograms;
   std::set<std::string> m_missingKeyWarned;
+  Bool_t m_ownershipReleased;
 };
 
 #endif

@@ -336,7 +336,9 @@ Int_t StPhiMaker::Finish() {
     TFile* fout = new TFile(mOutName.Data(), "RECREATE");
     fout->cd();
     WriteHistograms();
+    if (m_histManager) m_histManager->ReleaseOwnership();
     fout->Close();
+    delete fout;
   }
   std::cout << "StPhiMaker::Finish() processed " << mEventCounter << " events" << std::endl;
   return kStOK;

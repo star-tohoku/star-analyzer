@@ -47,8 +47,9 @@ fi
 
 if [[ -n "$jobid" ]]; then
   "$SCRIPT_DIR/snapshot_config.sh" "$anaName" "$jobid" || true
+  "$SCRIPT_DIR/snapshot_joblist.sh" "$anaName" "$jobid" "$OUTPUT" || true
 else
-  echo "WARNING: Could not extract jobid; skipping configlog." >&2
+  echo "WARNING: Could not extract jobid; skipping configlog and joblistlog." >&2
 fi
 
 exit "$submit_rc"
