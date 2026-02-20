@@ -17,7 +17,7 @@ Copies:
   maker/maker_anaPhi.yaml     -> maker/maker_{anaName}.yaml
 Creates:
   mainconf/main_{anaName}.yaml  (paths point to the new config files and given analysis_info)
-If a destination already exists, prints a warning and skips that file.
+If a destination already exists, it is overwritten.
 """
 from __future__ import print_function
 import os
@@ -80,9 +80,6 @@ def write_mainconf(config_base, ana_name, analysis_rel):
     template_path = os.path.join(config_base, MAINCONF_TEMPLATE_REL)
     mainconf_dir = os.path.join(config_base, 'mainconf')
     mainconf_dst = os.path.join(mainconf_dir, 'main_{}.yaml'.format(ana_name))
-    if os.path.isfile(mainconf_dst):
-        print("WARNING: already exists, skip: {}".format(os.path.relpath(mainconf_dst, config_base)))
-        return
     if not os.path.isfile(template_path):
         print("WARNING: mainconf template not found, skip: {}".format(MAINCONF_TEMPLATE_REL))
         return
@@ -161,9 +158,6 @@ def main():
         if not os.path.isfile(src):
             print("WARNING: template not found, skip: {}".format(src_rel))
             return
-        if os.path.isfile(dst):
-            print("WARNING: already exists, skip: {}".format(os.path.relpath(dst, config_base)))
-            return
         d = os.path.dirname(dst)
         if not os.path.isdir(d):
             try:
@@ -182,8 +176,6 @@ def main():
     maker_dst = os.path.join(config_base, MAKER_DIR, "{}_{}.yaml".format(MAKER_BASE, ana_name))
     if not os.path.isfile(maker_src):
         print("WARNING: template not found, skip: {}".format(MAKER_SRC))
-    elif os.path.isfile(maker_dst):
-        print("WARNING: already exists, skip: {}".format(os.path.relpath(maker_dst, config_base)))
     else:
         shutil.copy2(maker_src, maker_dst)
         print("Created: {}".format(os.path.relpath(maker_dst, config_base)))
