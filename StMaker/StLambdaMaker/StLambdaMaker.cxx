@@ -222,6 +222,7 @@ Int_t StLambdaMaker::Finish() {
     if (fout && !fout->IsZombie()) {
       fout->cd();
       WriteHistograms();
+      if (m_histManager) m_histManager->ReleaseOwnership();
       fout->Close();
     }
     if (fout) delete fout;

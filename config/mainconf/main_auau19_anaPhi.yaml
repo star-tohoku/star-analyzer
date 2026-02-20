@@ -11,7 +11,7 @@ mixing:        cuts/mixing/mixing.yaml
 phi:           maker/maker_auau19_anaPhi.yaml
 
 # Histogram config
-hist:          hist/hist_auau19_anaPhi.yaml
+hist:          hist/hist_anaPhi.yaml
 
 # Analysis info
 analysis:      analysis/analysis_info_auau19_anaPhi.yaml
