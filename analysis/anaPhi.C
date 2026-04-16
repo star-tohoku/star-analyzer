@@ -88,6 +88,7 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
 
   for (Long64_t i = 0; i < nEvents; i++) {
     if (i % 1000 == 0) std::cout << "Working on event " << i << std::endl;
+    if(i==0) break;
     chain->Clear();
     Int_t iret = chain->Make(i);
     if (iret) {

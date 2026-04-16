@@ -5,7 +5,7 @@ description: Adds a new analysis (StMaker, macros, run script, config, joblist) 
 
 # Add new analysis
 
-Each analysis has: a Maker, a shared library, two macros (run_anaXxx.C + anaXxx.C), a run script, mainconf and referenced configs, and analysis_info. Use this checklist and refer to README.md "Adding a new analysis" and "Creating your own config" for detail.
+Each analysis has: a Maker, a shared library, two macros (run_anaXxx.C + anaXxx.C), a run script, mainconf and referenced configs, and analysis_info. Use this checklist and refer to [docs/REFERENCE.md](../../../docs/REFERENCE.md) — "Adding a new analysis" and "Creating your own config" for detail.
 
 ## Before you start
 
@@ -48,8 +48,8 @@ Then proceed with the checklist below.
 7. **Joblist**
    - Run `./script/generate_joblist.sh config/mainconf/main_<anaName>.yaml` to write `job/joblist/joblist_<baseRunMacro>.xml`.
 
-8. **README**
-   - Follow the **update-readme-scripts** skill if new scripts or run examples were added (e.g. run_anaXxx.sh in Directory layout / How to run).
+8. **Documentation**
+   - Follow the **update-readme-scripts** skill if new scripts or run examples were added (e.g. run_anaXxx.sh in docs/REFERENCE Directory layout / How to run).
 
 ## Naming
 
@@ -58,4 +58,4 @@ Then proceed with the checklist below.
 
 ## Reference
 
-- Full steps and code patterns: README.md "Adding a new analysis (new StMaker)" and "Creating your own config".
+- Full steps and code patterns: [docs/REFERENCE.md](../../../docs/REFERENCE.md) — "Adding a new analysis (new StMaker)" and "Creating your own config".

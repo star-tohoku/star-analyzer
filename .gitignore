@@ -46,6 +46,7 @@ job/run/joblistlog/*
 
 # job/run: SUMS job submission generated files (dataset, report, .list, .csh, .condor)
 job/run/*.dataset
+job/run/*.dataset.tmp
 job/run/*.report
 job/run/*.list
 job/run/*_*.condor

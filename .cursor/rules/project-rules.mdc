@@ -26,4 +26,4 @@
 - Config snapshot on submit: `job/run/configlog/config_<anaName>_<jobid>.txt`.
 - QA PDF (checkHistAnaPhi): `share/figure/<anaName>/<anaName>_checkHistAnaPhi[_<jobid>].pdf`.
 
-For full directory layout and setup, see README.md.
+For directory layout and setup: overview in [README.md](README.md), first-time steps in [INSTALL.md](INSTALL.md), detail in [docs/REFERENCE.md](docs/REFERENCE.md).
