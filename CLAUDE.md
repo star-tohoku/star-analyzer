@@ -14,6 +14,13 @@ Use this file as the Antigravity / Claude Code entrypoint for project guidance.
 - Use `mainconf` as the operational entry point for setup, run, and job tooling.
 - Treat `docs/ai/*` and `PHILOSOPHY.md` as source-of-truth; `.cursor/*` files are wrappers for Cursor integration.
 
+## Skill sync completion rule
+
+- Source-of-truth for skills is `docs/ai/skills/*.md`.
+- After adding or editing any file under `docs/ai/skills/`, always run:
+  - `script/sync_and_check_skills.sh`
+- Consider the task incomplete until the command passes.
+
 ## Human-facing references
 
 - `README.md`

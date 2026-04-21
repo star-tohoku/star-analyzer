@@ -53,3 +53,5 @@ See [docs/REFERENCE.md](docs/REFERENCE.md) for a longer directory table and scri
 ## Development with Cursor (optional)
 
 Open this repository as the **project folder** in [Cursor](https://cursor.com/). Canonical AI guidance lives in [docs/ai/README.md](docs/ai/README.md) and [PHILOSOPHY.md](PHILOSOPHY.md). [.cursor/rules/](.cursor/rules/) and [.cursor/skills/](.cursor/skills/) are lightweight wrappers for Cursor integration.
+
+When a skill source under `docs/ai/skills/*.md` is edited in Cursor, `.cursor/hooks.json` triggers `.cursor/hooks/auto-sync-skills.sh`, which runs `script/sync_and_check_skills.sh` automatically.

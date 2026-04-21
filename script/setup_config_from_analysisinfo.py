@@ -76,8 +76,8 @@ CUTS_COPIES = [
 MAKER_SRC = 'maker/maker_anaPhi.yaml'
 MAKER_DIR = 'maker'
 MAKER_BASE = 'maker'
-MAINCONF_TEMPLATE_REL = 'mainconf/main_auau19_anaPhi.yaml'
-MAINCONF_TEMPLATE_ANANAME = 'auau19_anaPhi'
+MAINCONF_TEMPLATE_REL = 'mainconf/main_auau19_anaLambda.yaml'
+MAINCONF_TEMPLATE_ANANAME = 'auau19_anaLambda'
 
 
 def write_mainconf(config_base, ana_name, analysis_rel):

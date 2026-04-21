@@ -12,3 +12,4 @@ Canonical procedure:
 Related source-of-truth:
 
 - [docs/ai/AGENT_RULES.md](../../../docs/ai/AGENT_RULES.md)
+- [PHILOSOPHY.md](../../../PHILOSOPHY.md)

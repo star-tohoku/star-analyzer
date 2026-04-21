@@ -15,6 +15,7 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 
 - **New analysis** requires: Maker code, Makefile target, `run_anaXxx.C`, `anaXxx.C`, `script/run_anaXxx.sh`, mainconf, referenced YAMLs, and analysis_info.
 - **Joblist generation**: Use `script/generate_joblist.sh <mainconf>` and produce `job/joblist/joblist_<baseRunMacro>.xml`.
+- **Skill sync after docs edits**: If a task adds/updates `docs/ai/skills/*.md`, run `script/sync_and_check_skills.sh` before finishing.
 - **Scripts and workflow docs**: When script or run flow changes, update:
   - `../../docs/REFERENCE.md`
   - `../../INSTALL.md` if onboarding changed

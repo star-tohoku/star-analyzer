@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/auto-sync-skills.sh",
+        "matcher": "Write|TabWrite",
+        "timeout": 60
+      }
+    ]
+  }
+}
