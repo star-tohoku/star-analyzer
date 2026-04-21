@@ -1,19 +1,19 @@
 ---
-description: Follow PHILOSOPHY.md — no custom event loop, physics in StMaker, YAML config, no hardcoding, one config per concern, mainconf as entry point
+description: Always follow PHILOSOPHY.md first, then docs/ai source docs
 alwaysApply: true
 ---
 
-# Framework philosophy (must follow)
+# Framework philosophy wrapper
 
-When editing or adding code in this project, follow **[PHILOSOPHY.md](PHILOSOPHY.md)**. Summary:
+Always read and follow **[PHILOSOPHY.md](../../PHILOSOPHY.md)** first.
 
-- **No custom event loop in macros.** Build StChain, Init, Make loop, Finish; the framework controls the loop.
-- **Physics in StMaker subclasses.** Implement Init(), Make(), Clear(), Finish(); histograms in DeclareHistograms() / WriteHistograms().
-- **Makers are compiled.** Code in `StMaker/StXXXMaker/`, built to `lib/libStXXXMaker.so`.
-- **Macros under root4star.** Entry is a ROOT macro; `script/run_anaXxx.sh` sets env and calls it.
-- **YAML-driven config.** Cuts and histograms from YAML via ConfigManager; change without recompiling.
-- **No hardcoding.** Put all cut values, thresholds, and analysis parameters in YAML config.
-- **One config per concern.** One maker config per StMaker; one cut config per cut type (event, track, pid, v0, mixing). Mainconf references each.
-- **Mainconf as single entry point.** `config/mainconf/main_<anaName>.yaml` references all other configs; scripts take mainconf as primary argument.
+- Do not introduce custom macro event loops.
+- Keep physics logic in compiled `StMaker` classes.
+- Keep analysis behavior YAML-driven (`mainconf` + referenced configs).
+- Avoid hardcoded cut or threshold values.
 
-For full wording and "Why two macros", see [PHILOSOPHY.md](PHILOSOPHY.md). In case of conflict, **PHILOSOPHY.md** is the source of truth.
+Project operational rules are maintained in:
+
+- [docs/ai/AGENT_RULES.md](../../docs/ai/AGENT_RULES.md)
+
+In case of conflict, `PHILOSOPHY.md` is the source of truth.

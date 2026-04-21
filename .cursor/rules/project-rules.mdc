@@ -1,29 +1,13 @@
-# Project rules: naming, terminology, layout
+# Project rules wrapper
 
-## Naming and terminology
+This file is a Cursor wrapper. Canonical naming and layout rules live in:
 
-- **anaName**: Canonical analysis name, `{system}_{anaId}[_condition]` (e.g. `auau19_anaLambda`, `auau3p85fxt_anaPhi`). Use consistently for output dirs, mainconf, analysis_info, joblist name, and script defaults.
-- **jobid**: 32-character hex from star-submit (e.g. in report filename). Used in configlog, root output, and job/run file names.
-- **mainconf**: Main YAML under `config/mainconf/main_<anaName>.yaml`; references other configs (paths relative to `config/`).
-  - Ensure analysis can be fully reproduced using only the config files referenced in mainconf.
-  - Design so that setup, execution, I/O management, etc. take mainconf as the primary argument, and analysis metadata and outputs are tied to mainconf.
-- **baseRunMacro** / **baseAnaMacro**: Macro names without `.C` (e.g. `run_anaPhi`, `anaPhi`). Joblist file is `joblist_<baseRunMacro>.xml`; ACLiC builds `<baseAnaMacro>_C.so`.
+- [docs/ai/AGENT_RULES.md](../../docs/ai/AGENT_RULES.md)
+- [PHILOSOPHY.md](../../PHILOSOPHY.md)
 
-## Where things go
+Operational highlights:
 
-- **analysis/**: One pair per analysis: `run_anaXxx.C` (runner, not compiled) and `anaXxx.C` (compiled with ACLiC, links to Maker).
-- **StMaker/**: One dir per Maker, e.g. `StMaker/StPhiMaker/` → `lib/libStPhiMaker.so`. Do not put event-loop logic in macros; keep it in Makers.
-- **config/**: mainconf in `mainconf/`; cuts in `cuts/` (event, track, pid, v0reco, mixing); maker/hist/analysis in their subdirs. Paths in mainconf are relative to `config/`.
-- **script/**: `run_anaXxx.sh` invokes `run_anaXxx.C` from project root; `setup.sh` takes mainconf path; `generate_joblist.sh` takes mainconf and writes `job/joblist/joblist_<baseRunMacro>.xml`.
-- **job/run/**: Run `submit.sh` from here. Submit writes config to `configlog/config_<anaName>_<jobid>.txt`. Use `cleanup_job_run.sh` / `archive_job_run.sh` with `<anaName+jobid>` to tidy generated files.
-- **lib/**: Built by `make`; contents git-ignored.
-
-## Paths and output locations
-
-- Scripts are run from **project root** unless stated (submit and cleanup/archive run from `job/run`).
-- mainconf path is passed as relative to project root, e.g. `config/mainconf/main_auau3p85fxt_anaPhi.yaml`.
-- Output root files: `rootfile/<anaName>/`.
-- Config snapshot on submit: `job/run/configlog/config_<anaName>_<jobid>.txt`.
-- QA PDF (checkHistAnaPhi): `share/figure/<anaName>/<anaName>_checkHistAnaPhi[_<jobid>].pdf`.
-
-For directory layout and setup: overview in [README.md](README.md), first-time steps in [INSTALL.md](INSTALL.md), detail in [docs/REFERENCE.md](docs/REFERENCE.md).
+- Keep `anaName`, `jobid`, `mainconf`, and macro-base naming consistent.
+- Keep paths and output naming tied to the selected `mainconf`.
+- Preserve repository layout conventions (`analysis/`, `StMaker/`, `config/`, `script/`, `job/run/`).
+- Keep submit output and config snapshots under `job/run/configlog/`.

@@ -47,7 +47,13 @@ Each new analysis uses this two-file pattern on purpose; the runner is analysis-
 
 ## Agents and human maintainers
 
-When changing these principles, update [.cursor/rules/README-philosophy.mdc](.cursor/rules/README-philosophy.mdc) so automated assistants stay aligned. If [.cursor/rules/editing-rules.mdc](.cursor/rules/editing-rules.mdc) or skills reference philosophy or macro patterns, keep them consistent with this file.
+When changing these principles, keep the AI source documents aligned:
+
+- [docs/ai/AGENT_RULES.md](docs/ai/AGENT_RULES.md)
+- [docs/ai/skills/](docs/ai/skills/)
+- [CLAUDE.md](CLAUDE.md) (Antigravity entrypoint)
+
+Cursor-facing files under [.cursor/rules/](.cursor/rules/) and [.cursor/skills/](.cursor/skills/) are wrappers and should remain concise pointers to source docs.
 
 ## Related documentation
 

@@ -30,6 +30,8 @@ flowchart TD
 |----------|---------|
 | [INSTALL.md](INSTALL.md) | First-time setup: clone, submodule, directories, analysis_info, build, local run (and optional batch). |
 | [PHILOSOPHY.md](PHILOSOPHY.md) | Design principles, reproducibility, two-macro rationale; **source of truth** for agents and contributors. |
+| [docs/ai/README.md](docs/ai/README.md) | AI guidance map. Includes `AGENT_RULES.md`, task skills, and migration policy. |
+| [CLAUDE.md](CLAUDE.md) | Antigravity / Claude Code entrypoint. Points to shared source-of-truth docs. |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | Full reference: prerequisites, analysis_info tables, how to run, batch, QA scripts, adding an analysis, config, joblists. |
 | [job/run/README.md](job/run/README.md) | Submit, `configlog`, cleaning up `job/run/`. |
 
@@ -50,4 +52,4 @@ See [docs/REFERENCE.md](docs/REFERENCE.md) for a longer directory table and scri
 
 ## Development with Cursor (optional)
 
-Open this repository as the **project folder** in [Cursor](https://cursor.com/). [.cursor/rules/](.cursor/rules/) applies project conventions; [.cursor/skills/](.cursor/skills/) has workflows (e.g. add a new analysis, histograms, daily log, README updates). **Philosophy and macro patterns** live in [PHILOSOPHY.md](PHILOSOPHY.md); if you change them, update [.cursor/rules/README-philosophy.mdc](.cursor/rules/README-philosophy.mdc) accordingly.
+Open this repository as the **project folder** in [Cursor](https://cursor.com/). Canonical AI guidance lives in [docs/ai/README.md](docs/ai/README.md) and [PHILOSOPHY.md](PHILOSOPHY.md). [.cursor/rules/](.cursor/rules/) and [.cursor/skills/](.cursor/skills/) are lightweight wrappers for Cursor integration.

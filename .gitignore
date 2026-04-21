@@ -76,7 +76,10 @@ script/condor/
 lib/*
 analysisnote/
 backup/
-docs/
+docs/*
+!docs/ai/
+!docs/ai/**
+!docs/REFERENCE.md
 legacy/
 
 # job: root-level xml, job_run_* template copies, generated joblists, and job/run xml
