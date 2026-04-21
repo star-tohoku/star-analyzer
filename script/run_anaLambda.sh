@@ -8,14 +8,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT" || exit 1
 
-source "$SCRIPT_DIR/setup.sh" config/mainconf/main_auau19_anaLambda.yaml
-export LD_LIBRARY_PATH="$PROJECT_ROOT/lib:$LD_LIBRARY_PATH"
-
 INPUT_FILE="${1:-config/picoDstList/auau19GeV_lambda.list}"
 OUTPUT_FILE="${2:-rootfile/auau19_anaLambda_temp/auau19_anaLambda_temp.root}"
 JOBID="${3:-0}"
 NEVENTS="${4:--1}"
 CONFIG_PATH="${5:-}"
+SETUP_MAINCONF="${CONFIG_PATH:-config/mainconf/main_auau19_anaLambda.yaml}"
+
+./script/setup.sh "$SETUP_MAINCONF"
+export LD_LIBRARY_PATH="$PROJECT_ROOT/lib:$LD_LIBRARY_PATH"
 
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
@@ -24,7 +25,7 @@ echo "Input:   $INPUT_FILE"
 echo "Output:  $OUTPUT_FILE"
 echo "JobID:   $JOBID"
 echo "nEvents: $NEVENTS"
-echo "Config:  ${CONFIG_PATH:-config/mainconf/main_auau19_anaLambda.yaml (default)}"
+echo "Config:  $SETUP_MAINCONF"
 echo "================================"
 
 if [ -n "$CONFIG_PATH" ]; then

@@ -104,14 +104,14 @@ Use `--dry-run` to print the command without running. Requires a working STAR en
 
 **What:** Run `starver` from analysis_info and compile libraries. **Why:** `make` needs `$STAR` and ROOT from the correct release.
 
-From the **project root**, use **`source`** so the environment persists in your shell:
+From the **project root**, run:
 
 ```bash
-source script/setup.sh config/mainconf/main_<anaName>.yaml
+./script/setup.sh config/mainconf/main_<anaName>.yaml
 make
 ```
 
-**Gotcha:** Running `./script/setup.sh` without `source` only changes the environment in a subshell; your next `make` may not see the right `STAR` / `LD_LIBRARY_PATH`.
+**Note:** This project standardizes on `./script/setup.sh <mainconf>` for setup commands.
 
 ---
 
@@ -152,7 +152,7 @@ Use the XML name your generator produced (`joblist_<baseRunMacro>.xml`). After s
 | Symptom | Things to check |
 |---------|-------------------|
 | `make` fails in yaml-cpp / config lib | Submodule: Step 2. |
-| Wrong STAR / missing `root-config` | Use **`source script/setup.sh ...`** (Step 6), not `./script/setup.sh` alone. |
+| Wrong STAR / missing `root-config` | Re-run **`./script/setup.sh ...`** (Step 6) before `make`. |
 | Library load errors at runtime | Run via **`script/run_anaXxx.sh`** or match its `LD_LIBRARY_PATH` setup. |
 | Joblist script errors | Install PyYAML for the same `python3` you use. |
 | Batch paths wrong | **analysis.workDir** and paths in analysis_info (Step 4). |
@@ -166,7 +166,7 @@ After editing `config/analysis/analysis_info_temp.yaml` (**analysis.workDir**):
 ```bash
 git submodule update --init --recursive
 mkdir -p log err rootfile
-source script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
+./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
 make
 ./script/run_anaLambda.sh config/picoDstList/auau19GeV_lambda.list rootfile/auau19_anaLambda_temp/out.root 0 -1
 # Optional batch:

@@ -31,13 +31,13 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 **Setup** reads the main config (mainconf) and the analysis info YAML it points to, then runs `starver` with the `libraryTag` from that file. From the project root, pass the mainconf path as the first argument:
 
 ```bash
-source script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
+./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
 ```
 
 For another analysis (e.g. Phi):
 
 ```bash
-source script/setup.sh config/mainconf/main_auau19_anaPhi.yaml
+./script/setup.sh config/mainconf/main_auau19_anaPhi.yaml
 ```
 
 If the helper script or the analysis info is missing or invalid, `setup.sh` will exit with an error.
@@ -110,7 +110,7 @@ Without the submodule populated, `make` will fail when building the config libra
 From the project root:
 
 ```bash
-source script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
+./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
 make
 ```
 
@@ -179,7 +179,7 @@ First-time flow (after git clone): customize analysis info → setup → build �
 
 2. **Setup and build** (from project root):
    ```bash
-   source script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
+   ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
    make
    ```
    `setup.sh` reads the mainconf you pass and the analysis info, then runs `starver` with the `libraryTag` from that file.

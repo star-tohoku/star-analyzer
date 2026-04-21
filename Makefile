@@ -1,18 +1,21 @@
 # Makefile for StPhiMaker and StarAnaConfig (STAR analysis framework)
 # Requires: starver SL24y (or SL24c), $STAR set
-# Usage: source script/setup.sh && make
+# Usage: ./script/setup.sh config/mainconf/main_<anaName>.yaml && make
 
 ifeq ($(STAR),)
-  $(error STAR environment variable not set. Run: source script/setup.sh)
+  $(error STAR environment variable not set. Run: ./script/setup.sh config/mainconf/main_<anaName>.yaml)
 endif
 
-# Directories - STAR uses .sl73_gcc485 or .sl74_gcc485 depending on OS
-STAR_OBJ := $(STAR)/.sl73_gcc485
+# Directories - prefer x86_64 object tree when available
+STAR_OBJ := $(STAR)/.sl74_x8664_gcc485
+ifeq ($(wildcard $(STAR_OBJ)),)
+  STAR_OBJ := $(STAR)/.sl73_x8664_gcc485
+endif
 ifeq ($(wildcard $(STAR_OBJ)),)
   STAR_OBJ := $(STAR)/.sl74_gcc485
 endif
 ifeq ($(wildcard $(STAR_OBJ)),)
-  STAR_OBJ := $(STAR)/.sl74_x8664_gcc485
+  STAR_OBJ := $(STAR)/.sl73_gcc485
 endif
 STAR_INC_DIR := $(STAR_OBJ)/include
 STAR_LIB_DIR := $(STAR_OBJ)/lib
@@ -63,7 +66,7 @@ all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMB
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT 32-bit)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
 	@mkdir -p $(YAML_CPP_BUILD)
-	@cd $(YAML_CPP_BUILD) && cmake .. -DYAML_CPP_BUILD_CONTRIB=OFF -DYAML_CPP_BUILD_TOOLS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_BUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="$(ROOTCFLAGS)" && $(MAKE) yaml-cpp
+	@cd $(YAML_CPP_BUILD) && cmake .. -DYAML_CPP_BUILD_CONTRIB=OFF -DYAML_CPP_BUILD_TOOLS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_BUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_FLAGS="$(ROOTCFLAGS)" && $(MAKE) yaml-cpp
 
 $(LIB_DIR):
 	mkdir -p $(LIB_DIR)

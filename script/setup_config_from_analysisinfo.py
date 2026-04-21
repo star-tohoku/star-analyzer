@@ -48,7 +48,12 @@ def load_yaml(path):
 def get_ana_name_no_yaml(analysis_path):
     """When PyYAML is missing: grep for 'anaName:' and extract quoted value."""
     with open(analysis_path, 'r') as f:
-        for line in f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith('#'):
+                continue
+            # Ignore trailing inline comments before matching key/value.
+            line = line.split('#', 1)[0].strip()
             if 'anaName' not in line:
                 continue
             m = re.search(r'anaName\s*:\s*(?:&\w+\s+)?["\']([^"\']+)["\']', line)
