@@ -76,7 +76,8 @@ mkdir -p log err rootfile
 
 1. Copy `config/analysis/analysis_info_temp.yaml` to `config/analysis/analysis_info_<anaName>.yaml`.
 2. Edit `anaName`, `workDir`, macro names, and related keys (see [docs/REFERENCE.md](docs/REFERENCE.md) — Analysis info).
-3. Generate configs:
+3. Ensure `config/mainconf/mainconf.yaml` exists and uses the `__ANANAME__` placeholder where analysis-specific names are required.
+4. Generate configs:
 
 ```bash
 python script/setup_config_from_analysisinfo.py config/analysis/analysis_info_<anaName>.yaml

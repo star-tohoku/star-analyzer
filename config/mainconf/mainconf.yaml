@@ -1,0 +1,18 @@
+# Main configuration template
+# Paths are relative to config/
+# Replace token "__ANANAME__" via script/setup_config_from_analysisinfo.py
+
+event:         cuts/event/event___ANANAME__.yaml
+track:         cuts/track/track.yaml
+pid:           cuts/pid/pid.yaml
+v0:            cuts/v0reco/v0.yaml
+mixing:        cuts/mixing/mixing.yaml
+
+# Maker config (key name should match your analysis macro expectation)
+lambda:        maker/maker___ANANAME__.yaml
+
+# Histogram config
+hist:          hist/hist___ANANAME__.yaml
+
+# Analysis info
+analysis:      analysis/analysis_info___ANANAME__.yaml

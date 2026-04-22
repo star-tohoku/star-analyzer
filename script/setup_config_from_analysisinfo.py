@@ -3,9 +3,9 @@
 """
 Create analysis-specific config files from templates using anaName from analysis_info.
 Usage:
-  python script/setup_config_from_mainconf.py ANALYSIS_INFO [--config-dir PATH]
+  python script/setup_config_from_analysisinfo.py ANALYSIS_INFO [--config-dir PATH]
 Example:
-  python script/setup_config_from_mainconf.py config/analysis/analysis_info_pp500_anaPhi.yaml
+  python script/setup_config_from_analysisinfo.py config/analysis/analysis_info_pp500_anaPhi.yaml
 
 Reads analysis_info YAML to get anaName, then:
 Copies:
@@ -16,7 +16,7 @@ Copies:
   cuts/v0reco/v0.yaml         -> cuts/v0reco/v0_{anaName}.yaml
   maker/maker_anaPhi.yaml     -> maker/maker_{anaName}.yaml
 Creates:
-  mainconf/main_{anaName}.yaml  (paths point to the new config files and given analysis_info)
+  mainconf/main_{anaName}.yaml  (from mainconf/mainconf.yaml; __ANANAME__ placeholder is replaced)
 If a destination already exists, it is overwritten.
 """
 from __future__ import print_function
@@ -76,8 +76,8 @@ CUTS_COPIES = [
 MAKER_SRC = 'maker/maker_anaPhi.yaml'
 MAKER_DIR = 'maker'
 MAKER_BASE = 'maker'
-MAINCONF_TEMPLATE_REL = 'mainconf/main_auau19_anaLambda.yaml'
-MAINCONF_TEMPLATE_ANANAME = 'auau19_anaLambda'
+MAINCONF_TEMPLATE_REL = 'mainconf/mainconf.yaml'
+MAINCONF_TEMPLATE_ANANAME = '__ANANAME__'
 
 
 def write_mainconf(config_base, ana_name, analysis_rel):

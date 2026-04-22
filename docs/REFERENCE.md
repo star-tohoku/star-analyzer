@@ -80,6 +80,12 @@ The file **config/analysis/analysis_info_temp.yaml** (or the one referenced by y
 - **`--library-tag`**: Reads mainconf → analysis info and prints `starTag.libraryTag`. Used by `setup.sh`. Works without PyYAML (minimal grep fallback).
 - **`--generate-joblist`**: Reads mainconf → analysis info and fills **job/joblist/job_template_from_conf.xml**, then writes e.g. **job/joblist/joblist_run_anaLambda.xml**. Requires PyYAML; use the **Python 3 environment** above.
 
+**Config bootstrap script:** `script/setup_config_from_analysisinfo.py`
+
+- Reads `analysis.anaName` (or `analysis.name`) from analysis_info.
+- Copies cut/maker templates and writes `config/mainconf/main_<anaName>.yaml`.
+- Uses `config/mainconf/mainconf.yaml` as the mainconf template and replaces `__ANANAME__` in the file content.
+
 ## AI skill wrapper synchronization
 
 To keep Antigravity (source docs) and Cursor wrappers aligned, treat `docs/ai/skills/*.md` as source-of-truth.

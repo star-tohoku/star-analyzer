@@ -59,6 +59,8 @@ job/run/joblist_run_ana_Phi_forrun.xml
 
 # config/: backup files; picoDstList/*.list are user-specific (track only template YAMLs)
 config/*
+config/mainconf/
+!config/mainconf/mainconf.yaml
 config/**/*~
 config/picoDstList/*.list
 
