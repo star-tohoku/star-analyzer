@@ -6,23 +6,39 @@ This repository is a **PicoDst analysis framework** for STAR. It follows the **S
 
 ```mermaid
 flowchart TD
-  MC["mainconf YAML"]
   R4["root4star"]
-  Run["run_anaXxx.C"]
-  Ana["anaXxx.C ACLiC"]
+  RS["script/run_anaXxx.sh (optional wrapper)"]
+  Run["analysis/run_anaXxx.C<br/>(load libs, .L anaXxx.C+)"]
+  Ana["analysis/anaXxx.C<br/>(compiled by ACLiC)"]
+
+  MC["config/mainconf/main_*.yaml"]
+  CFG["ConfigManager::LoadConfig(mainconf)"]
+  CUTC["config/cuts/*.yaml"]
+  MKC["config/maker/*.yaml"]
+  HC["config/hist/*.yaml"]
+  AIC["config/analysis/analysis_info*.yaml"]
+
   Ch["StChain"]
   P["StPicoDstMaker"]
-  M["StXxxMaker"]
+  M["StLambdaMaker / StPhiMaker"]
 
-  MC --> Ana
+  RS --> R4
   R4 --> Run
   Run --> Ana
+
+  Ana --> CFG
+  MC --> CFG
+  MC --> CUTC
+  MC --> MKC
+  MC --> HC
+  MC --> AIC
+
   Ana --> Ch
   Ch --> P
   Ch --> M
 ```
 
-**In short:** mainconf is loaded in the compiled analysis macro; `run_anaXxx.C` loads libraries and builds `anaXxx.C+`; the chain reads PicoDst and runs your Maker. **Why two macros?** See [PHILOSOPHY.md](PHILOSOPHY.md).
+**In short:** `run_anaXxx.C` loads STAR/project libraries, compiles `anaXxx.C+`, and calls the analysis function; `anaXxx.C` loads mainconf through `ConfigManager`, builds `StChain` (`StPicoDstMaker` + analysis Maker), and runs the event loop. **Why two macros?** See [PHILOSOPHY.md](PHILOSOPHY.md).
 
 ## Documentation
 
