@@ -70,8 +70,8 @@ def star_tag_to_cond(star_tag):
         parts.append("filetype={}".format(star_tag['filetype']))
     if star_tag.get('filenameFilter'):
         parts.append("filename~{}".format(star_tag['filenameFilter']))
-    if star_tag.get('storageExclude'):
-        parts.append("storage!={}".format(star_tag['storageExclude']))
+    if star_tag.get('storage'):
+        parts.append("storage={}".format(star_tag['storage']))
     return ','.join(parts)
 
 
@@ -92,7 +92,7 @@ def get_star_tag_cond_no_yaml(analysis_path):
     production_tag = None
     filetype = None
     filename_filter = None
-    storage_exclude = None
+    storage = None
     in_star_tag = False
     with open(analysis_path, 'r') as f:
         for line in f:
@@ -120,16 +120,16 @@ def get_star_tag_cond_no_yaml(analysis_path):
             if v is not None:
                 filename_filter = v
                 continue
-            v = _parse_quoted_or_word(line, r'storageExclude')
+            v = _parse_quoted_or_word(line, r'storage')
             if v is not None:
-                storage_exclude = v
+                storage = v
                 continue
     star_tag = {
         'triggerSets': trigger_sets,
         'productionTag': production_tag,
         'filetype': filetype,
         'filenameFilter': filename_filter,
-        'storageExclude': storage_exclude,
+        'storage': storage,
     }
     return star_tag_to_cond({k: v for k, v in star_tag.items() if v})
 
@@ -242,8 +242,15 @@ def main():
         return
 
     try:
+        prefix = "root://xrdstar.rcf.bnl.gov:1095/"
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, universal_newlines=True)
         with open(out_path, 'w') as f:
-            ret = subprocess.call(cmd, stdout=f)
+            for line in p.stdout:
+                line_stripped = line.strip()
+                if line_stripped:
+                    f.write(prefix + line_stripped + '\n')
+        p.wait()
+        ret = p.returncode
         if ret != 0:
             print("WARNING: get_file_list.pl exited with {}".format(ret), file=sys.stderr)
             sys.exit(ret)
