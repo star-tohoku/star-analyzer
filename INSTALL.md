@@ -123,7 +123,7 @@ make
 Example (Lambda, first 100 events):
 
 ```bash
-./script/run_anaLambda.sh config/picoDstList/auau19GeV_lambda.list rootfile/auau19_anaLambda_temp/out.root 0 100
+./script/run_anaLambda.sh config/picoDstList/auau19GeV.list rootfile/auau19_anaLambda_temp/out.root 0 100
 ```
 
 Pass a fifth argument to override mainconf (see [docs/REFERENCE.md](docs/REFERENCE.md) — How to run). For Phi, use `./script/run_anaPhi.sh` and the matching list/mainconf.
