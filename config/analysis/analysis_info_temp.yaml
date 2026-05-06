@@ -10,6 +10,7 @@ starTag:
   libraryTag: "SL24y"
   filetype: "daq_reco_picoDst"
   filenameFilter: "st_physics"
+  filenameNotFilter: "adc"
   storage: "local"
 
 # Dataset Information

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Submit from job/run/. Replaces __PROJECT_ROOT__ in the XML with the project root.
 # Usage: cd job/run && ./submit.sh [joblist.xml]
-# Example: ./submit.sh ../joblist/joblist_run_anaLambda.xml
+# Example: ./submit.sh ../joblist/joblist_auau19_anaLambda_temp.xml
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,12 +10,173 @@ cd "$SCRIPT_DIR"
 "$SCRIPT_DIR/setup_symlinks.sh"
 
 PROJECT_ROOT="$(cd .. && cd .. && pwd)"
-TEMPLATE="${1:-../joblist/joblist_run_anaLambda.xml}"
+REBUILD_IF_NEEDED=0
+TEMPLATE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --rebuild-if-needed)
+      REBUILD_IF_NEEDED=1
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: ./submit.sh [--rebuild-if-needed] [joblist.xml]
+
+Options:
+  --rebuild-if-needed   Run setup+make once if preflight fails.
+  -h, --help            Show this help.
+EOF
+      exit 0
+      ;;
+    -*)
+      echo "ERROR: Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      TEMPLATE="$1"
+      shift
+      ;;
+  esac
+done
+TEMPLATE="${TEMPLATE:-../joblist/joblist_auau19_anaLambda_temp.xml}"
 OUTPUT="$(basename "$TEMPLATE")"
 
 if [[ ! -f "$TEMPLATE" ]]; then
   echo "ERROR: Template not found: $TEMPLATE" >&2
   exit 1
+fi
+
+extract_elf_class() {
+  local target="$1"
+  local info
+  info=$(file -L "$target" 2>/dev/null || true)
+  if [[ "$info" == *"ELF 64-bit"* ]]; then
+    echo "ELF64"
+    return 0
+  fi
+  if [[ "$info" == *"ELF 32-bit"* ]]; then
+    echo "ELF32"
+    return 0
+  fi
+  return 1
+}
+
+run_preflight() {
+  local ana_name="$1"
+  local -a required_libs
+  local mainconf_rel="config/mainconf/main_${ana_name}.yaml"
+  local mainconf_path="$PROJECT_ROOT/$mainconf_rel"
+  local root4star_bin root4star_class expected_class lib class
+  local setup_probe setup_star_host setup_root_libs
+  local runtime_probe runtime_missing
+  local library_tag
+  local -a details
+
+  if [[ ! -f "$mainconf_path" ]]; then
+    details+=("missing mainconf: $mainconf_rel")
+  fi
+
+  if [[ ! -f "$PROJECT_ROOT/lib/libStarAnaConfig.so" ]]; then
+    details+=("missing lib/libStarAnaConfig.so")
+  fi
+
+  required_libs=("$PROJECT_ROOT/lib/"*.so)
+  if [[ ! -e "${required_libs[0]}" ]]; then
+    details+=("no shared libraries found under lib/")
+  fi
+
+  library_tag=$(cd "$PROJECT_ROOT" && python script/analysis_info_helper.py --library-tag --mainconf "$mainconf_rel" 2>/dev/null | xargs || true)
+  if [[ -z "$library_tag" ]]; then
+    details+=("cannot resolve libraryTag via analysis_info_helper.py from $mainconf_rel")
+  else
+    # Determine expected class from runtime context (STAR_HOST_SYS / root-config), not from libraryTag string.
+    setup_probe=$(bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" >/dev/null 2>&1; echo \"STAR_HOST_SYS=\${STAR_HOST_SYS:-}\"; echo \"ROOT_LIBS=\$(root-config --libs 2>/dev/null || true)\"; command -v root4star 2>/dev/null || true" 2>/dev/null || true)
+    setup_star_host=$(printf "%s\n" "$setup_probe" | sed -n 's/^STAR_HOST_SYS=//p' | head -1)
+    setup_root_libs=$(printf "%s\n" "$setup_probe" | sed -n 's/^ROOT_LIBS=//p' | head -1)
+    root4star_bin=$(printf "%s\n" "$setup_probe" | awk '/\/root4star$/ {print; exit}')
+
+    if [[ "$setup_star_host" == *"x8664"* || "$setup_root_libs" == *"x86_64"* ]]; then
+      expected_class="ELF64"
+    elif [[ -n "$setup_star_host" || -n "$setup_root_libs" ]]; then
+      expected_class="ELF32"
+    fi
+
+    if [[ -z "$expected_class" && -n "$root4star_bin" ]]; then
+      if root4star_class=$(extract_elf_class "$root4star_bin"); then
+        expected_class="$root4star_class"
+      fi
+    fi
+
+    if [[ -z "$expected_class" ]]; then
+      details+=("cannot determine expected ELF class from setup runtime (STAR_HOST_SYS/root-config)")
+    else
+      echo "Preflight info: anaName=$ana_name mainconf=$mainconf_rel libraryTag=$library_tag STAR_HOST_SYS=${setup_star_host:-unknown} expectedClass=$expected_class"
+    fi
+  fi
+
+  for lib in "${required_libs[@]}"; do
+    [[ -f "$lib" ]] || continue
+    if ! class=$(extract_elf_class "$lib"); then
+      details+=("cannot determine ELF class: ${lib#$PROJECT_ROOT/}")
+      continue
+    fi
+    if [[ -z "$expected_class" ]]; then
+      expected_class="$class"
+      continue
+    fi
+    if [[ "$class" != "$expected_class" ]]; then
+      details+=("ELF class mismatch: ${lib#$PROJECT_ROOT/} is $class, expected $expected_class")
+    fi
+  done
+
+  # Runtime linker sanity check (fail-fast): verify root4star dependencies resolve
+  # in the same singularity context used by current joblists.
+  if command -v singularity >/dev/null 2>&1; then
+    runtime_probe=$(bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" >/dev/null 2>&1; singularity exec -B /star/nfs4/AFS:/star/nfs4/AFS --env LD_LIBRARY_PATH=\"\$LD_LIBRARY_PATH\" /cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest /usr/bin/ldd /star/nfs4/AFS/star/packages/SL24y/.sl73_x8664_gcc485/bin/root4star 2>/dev/null || true" 2>/dev/null || true)
+    runtime_missing=$(printf "%s\n" "$runtime_probe" | awk '/not found/ {print}')
+    if [[ -n "$runtime_missing" ]]; then
+      details+=("runtime linker unresolved in singularity context: $(printf "%s" "$runtime_missing" | tr '\n' '; ')")
+    fi
+  else
+    details+=("singularity command is not available on submit host; cannot verify runtime linker sanity")
+  fi
+
+  if [[ ${#details[@]} -gt 0 ]]; then
+    echo "Preflight failed (primary cause likely ABI mismatch; scheduler/rootfile errors are secondary):" >&2
+    for item in "${details[@]}"; do
+      echo "  - $item" >&2
+    done
+    return 1
+  fi
+  return 0
+}
+
+# anaName from joblist filename (e.g. joblist_auau3p85fxt_anaPhi.xml -> auau3p85fxt_anaPhi)
+anaName="${OUTPUT#joblist_}"
+anaName="${anaName%.xml}"
+if [[ -z "$anaName" || "$anaName" == "$OUTPUT" ]]; then
+  echo "ERROR: Could not derive anaName from joblist filename: $OUTPUT" >&2
+  echo "Expected filename pattern: joblist_<anaName>.xml" >&2
+  exit 1
+fi
+
+if ! run_preflight "$anaName"; then
+  if [[ "$REBUILD_IF_NEEDED" -eq 1 ]]; then
+    mainconf_rel="config/mainconf/main_${anaName}.yaml"
+    setup_probe=$(bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" >/dev/null 2>&1; echo \"STAR_HOST_SYS=\${STAR_HOST_SYS:-}\"; echo \"ROOT_LIBS=\$(root-config --libs 2>/dev/null || true)\"" 2>/dev/null || true)
+    setup_star_host=$(printf "%s\n" "$setup_probe" | sed -n 's/^STAR_HOST_SYS=//p' | head -1)
+    setup_root_libs=$(printf "%s\n" "$setup_probe" | sed -n 's/^ROOT_LIBS=//p' | head -1)
+    build_bits="32"
+    if [[ "$setup_star_host" == *"x8664"* || "$setup_root_libs" == *"x86_64"* ]]; then
+      build_bits="64"
+    fi
+    echo "Preflight failed; trying rebuild path: source ./script/setup.sh $mainconf_rel && make clean && make BUILD_BITS=$build_bits"
+    bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" && make clean && make BUILD_BITS=$build_bits"
+    run_preflight "$anaName"
+  else
+    echo "Hint: run './submit.sh --rebuild-if-needed $TEMPLATE' or rebuild manually before submit." >&2
+    exit 1
+  fi
 fi
 
 sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" "$TEMPLATE" > "$OUTPUT"
@@ -26,10 +187,6 @@ submit_out=$(mktemp)
 trap "rm -f '$submit_out'" EXIT
 star-submit "$OUTPUT" 2>&1 | tee "$submit_out"
 submit_rc=${PIPESTATUS[0]}
-
-# anaName from joblist filename (e.g. joblist_auau3p85fxt_anaPhi.xml -> auau3p85fxt_anaPhi)
-anaName="${OUTPUT#joblist_}"
-anaName="${anaName%.xml}"
 
 # Extract jobid: from "Wrote scheduling report to : .../anaNameJOBID.report"
 jobid=""

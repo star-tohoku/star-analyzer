@@ -13,11 +13,18 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
 2. **Move to this directory and submit**
    ```bash
    cd job/run
-   ./submit.sh
+   ./submit.sh ../joblist/joblist_auau19_anaLambda_test.xml
    ```
-   By default, `submit.sh` uses the template `../joblist/joblist_run_anaLambda.xml`. You can pass another template, e.g. `./submit.sh ../joblist/joblist_run_anaPhi.xml`.
+   Pass the joblist XML you want (for example the file produced by `./script/generate_joblist.sh`, named **`joblist_<anaName>.xml`** where **`anaName`** is `analysis.anaName` in your analysis_info). By default, `submit.sh` uses **`../joblist/joblist_auau19_anaLambda_temp.xml`** if you omit the argument (adjust the default in `submit.sh` if your primary analysis differs). Example for Phi: `./submit.sh ../joblist/joblist_run_anaPhi.xml`.
 
-   `submit.sh` replaces `__PROJECT_ROOT__` in the template with the actual project path, so the same template works for any user.
+  `submit.sh` replaces `__PROJECT_ROOT__` in the template with the actual project path, so the same template works for any user.
+  Before submit it runs a preflight check: it infers **`anaName`** from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`) and requires **`config/mainconf/main_<anaName>.yaml`**, plus `libraryTag` resolution, ELF class consistency of `lib/*.so` vs `root4star`, and runtime linker sanity in the singularity context. This fails fast on mismatch and avoids secondary errors like missing `fromScratch` output after an early crash.
+
+   If preflight fails and you want the script to try recovery once, use:
+   ```bash
+   ./submit.sh --rebuild-if-needed ../joblist/joblist_auau19_anaLambda_test.xml
+   ```
+   This runs `./script/setup.sh config/mainconf/main_<anaName>.yaml && make`, then retries preflight.
 
    On successful submit, the joblist and config used for that run are saved: **joblistlog/joblist_<anaName>_<jobid>.xml** (submitted XML) and **configlog/config_<anaName>_<jobid>.txt** (mainconf and all referenced YAMLs in one text file).
 
@@ -32,3 +39,10 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 
 - Always `cd` into **job/run/** before running `./submit.sh`.
 - To use a different joblist template, run e.g. `./submit.sh ../joblist/YourJoblist.xml`.
+- Batch command now clears `analysis/<baseAnaMacro>_C.*` before `root4star` so stale ACLiC outputs (`.so/.d/.pcm` etc.) do not mix across environments.
+- Current `auau19_anaLambda` joblists run `root4star` via `singularity exec ... star-bnl/star-sw:latest` with `-B /star/nfs4/AFS`, `-B /home/starlib:/home/starlib`, and inherited `LD_LIBRARY_PATH` to satisfy `libgfortran.so.3`.
+- Spack `root-config` / batch `root4star` builds here omit `Netx`/`RFIO` plugins, so `root://` and `rfio://` URLs in the SUMS `.list` cannot be opened. The test joblist rewrites the list to POSIX paths (`sed` strips `root://host:port//` and `rfio://`) before `root4star`, then reads `/home/starlib/...` as local files inside the container.
+
+## root4star exit abort (`corrupted size vs. prev_size`)
+
+If analysis finishes and ROOT files copy successfully but stderr shows glibc heap errors at process exit, see **`TROUBLESHOOTING_root4star_exit.md`** in this directory. It lists **debug joblists** (minimal exit, `maxEvt=1` / `100`, ACLiC vs interpreter, `gSystem->Exit(0)`), a **reproduction matrix** template, **hypotheses**, and **operational success criteria** when a full fix is not available.

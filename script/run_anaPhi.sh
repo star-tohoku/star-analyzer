@@ -31,4 +31,5 @@ echo "Config:  $MAINCONF"
 echo "================================"
 
 ./script/setup.sh "$MAINCONF"
+rm -f "$PROJECT_ROOT"/analysis/anaPhi_C.* 2>/dev/null
 root4star -b -q "analysis/run_anaPhi.C(\"$INPUT_FILE\",\"$OUTPUT_FILE\",\"$JOBID\",$NEVENTS,\"$MAINCONF\")"

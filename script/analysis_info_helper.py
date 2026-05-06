@@ -106,8 +106,12 @@ def build_catalog_url(star_tag):
         parts.append("filetype={}".format(star_tag['filetype']))
     if star_tag.get('filenameFilter'):
         parts.append("filename~{}".format(star_tag['filenameFilter']))
+    if star_tag.get('filenameNotFilter'):
+        parts.append("filename!~{}".format(star_tag['filenameNotFilter']))
     if star_tag.get('storageExclude'):
         parts.append("storage!={}".format(star_tag['storageExclude']))
+    if star_tag.get('storage'):
+        parts.append("storage={}".format(star_tag['storage']))
     return base + "?" + ",".join(parts)
 
 

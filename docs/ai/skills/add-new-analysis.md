@@ -10,7 +10,7 @@ Adds a new analysis with Maker, macros, run script, config, and joblist.
 4. `script/run_anaXxx.sh`
 5. `config/mainconf/main_<anaName>.yaml` plus referenced YAML files
 6. `config/analysis/analysis_info_*.yaml` with synchronized fields
-7. `job/joblist/joblist_<baseRunMacro>.xml` from `script/generate_joblist.sh`
+7. `job/joblist/joblist_<anaName>.xml` from `script/generate_joblist.sh` (`analysis.anaName`)
 
 ## Rules
 

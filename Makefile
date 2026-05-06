@@ -6,16 +6,45 @@ ifeq ($(STAR),)
   $(error STAR environment variable not set. Run: ./script/setup.sh config/mainconf/main_<anaName>.yaml)
 endif
 
-# Directories - prefer x86_64 object tree when available
-STAR_OBJ := $(STAR)/.sl74_x8664_gcc485
-ifeq ($(wildcard $(STAR_OBJ)),)
-  STAR_OBJ := $(STAR)/.sl73_x8664_gcc485
-endif
-ifeq ($(wildcard $(STAR_OBJ)),)
+# Build architecture: auto/32/64 (pass e.g. make BUILD_BITS=32)
+BUILD_BITS ?= auto
+ifeq ($(BUILD_BITS),32)
   STAR_OBJ := $(STAR)/.sl74_gcc485
-endif
-ifeq ($(wildcard $(STAR_OBJ)),)
-  STAR_OBJ := $(STAR)/.sl73_gcc485
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl73_gcc485
+  endif
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl74_x8664_gcc485
+  endif
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl73_x8664_gcc485
+  endif
+  ARCH_FLAGS := -m32
+else ifeq ($(BUILD_BITS),64)
+  STAR_OBJ := $(STAR)/.sl74_x8664_gcc485
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl73_x8664_gcc485
+  endif
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl74_gcc485
+  endif
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl73_gcc485
+  endif
+  ARCH_FLAGS := -m64
+else
+  # auto keeps previous behavior (prefer x86_64 tree)
+  STAR_OBJ := $(STAR)/.sl74_x8664_gcc485
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl73_x8664_gcc485
+  endif
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl74_gcc485
+  endif
+  ifeq ($(wildcard $(STAR_OBJ)),)
+    STAR_OBJ := $(STAR)/.sl73_gcc485
+  endif
+  ARCH_FLAGS :=
 endif
 STAR_INC_DIR := $(STAR_OBJ)/include
 STAR_LIB_DIR := $(STAR_OBJ)/lib
@@ -27,8 +56,10 @@ YAML_CPP_BUILD := $(YAML_CPP_DIR)/build
 
 # Compiler and flags
 CXX := g++
-ROOTCFLAGS := $(shell root-config --cflags)
-ROOTLDFLAGS := $(shell root-config --ldflags)
+ROOTCFLAGS_RAW := $(shell root-config --cflags)
+ROOTLDFLAGS_RAW := $(shell root-config --ldflags)
+ROOTCFLAGS := $(filter-out -m32 -m64,$(ROOTCFLAGS_RAW))
+ROOTLDFLAGS := $(filter-out -m32 -m64,$(ROOTLDFLAGS_RAW))
 ROOTLIBS := $(shell root-config --libs)
 
 # STAR include and link - need both obj/include and StRoot for headers
@@ -43,13 +74,13 @@ STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager
   src/cuts/V0CutConfig.cpp src/cuts/PhiCutConfig.cpp src/cuts/LambdaCutConfig.cpp \
   src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/MixingConfig.cpp
 STAR_ANA_CONFIG_OBJS := $(addprefix $(LIB_DIR)/,$(notdir $(STAR_ANA_CONFIG_SRCS:.cpp=.o)))
-CXXFLAGS_CONFIG := -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -Iinclude -I$(YAML_CPP_DIR)/include
-LDFLAGS_CONFIG := $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(YAML_CPP_BUILD) -lyaml-cpp -Wl,--no-whole-archive
+CXXFLAGS_CONFIG := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -Iinclude -I$(YAML_CPP_DIR)/include
+LDFLAGS_CONFIG := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(YAML_CPP_BUILD) -lyaml-cpp -Wl,--no-whole-archive
 
 # --- libStPhiMaker (depends on libStarAnaConfig) ---
 LIB_NAME := libStPhiMaker.so
-CXXFLAGS_MAKER := -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude $(STAR_INC)
-LDFLAGS_MAKER := $(ROOTLDFLAGS) -shared -Wl,-rpath,$(STAR_LIB_DIR)
+CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude $(STAR_INC)
+LDFLAGS_MAKER := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,-rpath,$(STAR_LIB_DIR)
 SRC := $(STMAKER_DIR)/StPhiMaker.cxx
 OBJ := $(LIB_DIR)/StPhiMaker.o
 
@@ -66,7 +97,7 @@ all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMB
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT 32-bit)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
 	@mkdir -p $(YAML_CPP_BUILD)
-	@cd $(YAML_CPP_BUILD) && cmake .. -DYAML_CPP_BUILD_CONTRIB=OFF -DYAML_CPP_BUILD_TOOLS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_BUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_FLAGS="$(ROOTCFLAGS)" && $(MAKE) yaml-cpp
+	@cd $(YAML_CPP_BUILD) && cmake .. -DYAML_CPP_BUILD_CONTRIB=OFF -DYAML_CPP_BUILD_TOOLS=OFF -DYAML_CPP_BUILD_TESTS=OFF -DYAML_BUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_FLAGS="$(ARCH_FLAGS) $(ROOTCFLAGS)" && $(MAKE) yaml-cpp
 
 $(LIB_DIR):
 	mkdir -p $(LIB_DIR)

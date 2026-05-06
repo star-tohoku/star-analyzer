@@ -141,10 +141,12 @@ Requires **Python 3 + PyYAML** (Step 0).
 ```bash
 ./script/generate_joblist.sh config/mainconf/main_<anaName>.yaml
 cd job/run
-./submit.sh ../joblist/joblist_run_anaLambda.xml
+./submit.sh ../joblist/joblist_<anaName>.xml
 ```
 
-Use the XML name your generator produced (`joblist_<baseRunMacro>.xml`). After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `cleanup_job_run.sh`, and `archive_job_run.sh`.
+The generator writes **`job/joblist/joblist_<anaName>.xml`**, where **`<anaName>`** is `analysis.anaName` in your analysis_info (the same string used in `scratchSubdir` / `outputFileStem` if you use YAML aliases). **`submit.sh` preflight** derives `anaName` from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`) and expects **`config/mainconf/main_<anaName>.yaml`**. If you rename the joblist, keep that basename aligned with your mainconf filename, or pass the matching mainconf via your workflow.
+
+After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `cleanup_job_run.sh`, and `archive_job_run.sh`.
 
 ---
 
@@ -172,7 +174,7 @@ make
 ./script/run_anaLambda.sh config/picoDstList/auau19GeV_lambda.list rootfile/auau19_anaLambda_temp/out.root 0 -1
 # Optional batch:
 ./script/generate_joblist.sh config/mainconf/main_auau19_anaLambda.yaml
-cd job/run && ./submit.sh ../joblist/joblist_run_anaLambda.xml
+cd job/run && ./submit.sh ../joblist/joblist_auau19_anaLambda_temp.xml
 ```
 
 ---

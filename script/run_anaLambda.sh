@@ -17,6 +17,7 @@ SETUP_MAINCONF="${CONFIG_PATH:-config/mainconf/main_auau19_anaLambda.yaml}"
 
 ./script/setup.sh "$SETUP_MAINCONF"
 export LD_LIBRARY_PATH="$PROJECT_ROOT/lib:$LD_LIBRARY_PATH"
+rm -f "$PROJECT_ROOT"/analysis/anaLambda_C.* 2>/dev/null
 
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
