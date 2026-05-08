@@ -7,8 +7,10 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
 1. **Build at the project root**
    ```bash
    cd /path/to/star-analysis
+   sl7
    ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml && make
    ```
+   For debug/repro jobs (especially heap/exit issues), always build in SL7 before submit.
 
 2. **Move to this directory and submit**
    ```bash
@@ -45,4 +47,4 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 
 ## root4star exit abort (`corrupted size vs. prev_size`)
 
-If analysis finishes and ROOT files copy successfully but stderr shows glibc heap errors at process exit, see **`TROUBLESHOOTING_root4star_exit.md`** in this directory. It lists **debug joblists** (minimal exit, `maxEvt=1` / `100`, ACLiC vs interpreter, `gSystem->Exit(0)`), a **reproduction matrix** template, **hypotheses**, and **operational success criteria** when a full fix is not available.
+If analysis finishes and ROOT files copy successfully but stderr shows glibc heap errors at process exit, see **`TROUBLESHOOTING_root4star_exit.md`** in this directory. It lists **debug joblists** (minimal exit, `maxEvt=1` / `100`, ACLiC vs interpreter, `gSystem->Exit(0)`), **Pr3** `Make()` stage bisect (`joblist_auau19_anaLambda_debug_pr3_max1_no_hist_s[0-4].xml`), **Pr4** Phi control and optional **`MALLOC_CHECK_=3`** joblist, a **reproduction matrix** template, **hypotheses**, and **operational success criteria** when a full fix is not available. For a **local symbolic backtrace** (no gdb in `star-sw:latest`), use **`./local_root4star_anaLambda_backtrace.sh`**. The matrix also includes **`joblist_auau19_anaLambda_debug_max1_no_hist.xml`** (Lambda without `HistManager`); see troubleshooting row **B2**.

@@ -217,15 +217,14 @@ Int_t StLambdaMaker::Make() {
 
 //-----------------------------------------------------------------------------
 Int_t StLambdaMaker::Finish() {
-  if (mOutName != "") {
+  // No HistManager => no histograms to write; skip creating empty ROOT output.
+  if (mOutName != "" && m_histManager) {
     TFile* fout = new TFile(mOutName.Data(), "RECREATE");
-    if (fout && !fout->IsZombie()) {
-      fout->cd();
-      WriteHistograms();
-      if (m_histManager) m_histManager->ReleaseOwnership();
-      fout->Close();
-    }
-    if (fout) delete fout;
+    fout->cd();
+    WriteHistograms();
+    m_histManager->ReleaseOwnership();
+    fout->Close();
+    delete fout;
   }
   std::cout << "StLambdaMaker::Finish() processed " << mEventCounter << " events" << std::endl;
   return kStOK;

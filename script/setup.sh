@@ -10,7 +10,7 @@ MAINCONF="${1:?Usage: ./script/setup.sh MAINCONF_PATH (e.g. config/mainconf/main
 LIBRARY_TAG=$(cd "$PROJECT_ROOT" && python script/analysis_info_helper.py --library-tag --mainconf "$MAINCONF") || exit 1
 LIBRARY_TAG=$(echo "$LIBRARY_TAG" | xargs)
 if ! command -v starver >/dev/null 2>&1; then
-  echo "ERROR: starver command not found. Load STAR environment first." >&2
+  echo "ERROR: starver command not found. Load STAR environment first (for this project, run 'sl7' before setup/make)." >&2
   exit 1
 fi
 starver "$LIBRARY_TAG"

@@ -69,9 +69,14 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   picoMaker->SetStatus("ETofPidTraits", 1);
 
   phiMaker = new StPhiMaker("phi", picoMaker, outputFile);
+  chain->AddMaker(picoMaker);
+  chain->AddMaker(phiMaker);
 
   if (chain->Init() == kStErr) {
     std::cerr << "ERROR: chain->Init() returned kStErr" << std::endl;
+    delete chain;
+    chain = 0;
+    phiMaker = 0;
     return;
   }
 
@@ -81,6 +86,9 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   if (totalEntries <= 0) {
     std::cerr << "ERROR: no entries found. Check inputFile." << std::endl;
     chain->Finish();
+    delete chain;
+    chain = 0;
+    phiMaker = 0;
     return;
   }
 
@@ -88,7 +96,6 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
 
   for (Long64_t i = 0; i < nEvents; i++) {
     if (i % 1000 == 0) std::cout << "Working on event " << i << std::endl;
-    if(i==0) break;
     chain->Clear();
     Int_t iret = chain->Make(i);
     if (iret) {
@@ -106,9 +113,7 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   std::cout << "Processed events: " << nEvents << std::endl;
   std::cout << "RealTime: " << timer.RealTime() << " CpuTime: " << timer.CpuTime() << std::endl;
 
-  delete phiMaker;
-  phiMaker = 0;
-  delete picoMaker;
   delete chain;
   chain = 0;
+  phiMaker = 0;
 }

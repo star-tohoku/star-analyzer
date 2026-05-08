@@ -67,10 +67,15 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV_lambda.li
   picoMaker->SetStatus("BTowHit", 1);
   picoMaker->SetStatus("ETofPidTraits", 1);
 
+  chain->AddMaker(picoMaker);
   lambdaMaker = new StLambdaMaker("lambda", picoMaker, outputFile);
+  chain->AddMaker(lambdaMaker);
 
   if (chain->Init() == kStErr) {
     std::cerr << "ERROR: chain->Init() returned kStErr" << std::endl;
+    delete chain;
+    chain = 0;
+    lambdaMaker = 0;
     return;
   }
 
@@ -80,6 +85,9 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV_lambda.li
   if (totalEntries <= 0) {
     std::cerr << "ERROR: no entries found. Check inputFile." << std::endl;
     chain->Finish();
+    delete chain;
+    chain = 0;
+    lambdaMaker = 0;
     return;
   }
 
@@ -104,8 +112,7 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV_lambda.li
   std::cout << "Processed events: " << nEvents << std::endl;
   std::cout << "RealTime: " << timer.RealTime() << " CpuTime: " << timer.CpuTime() << std::endl;
 
-  delete lambdaMaker;
-  delete picoMaker;
   delete chain;
   chain = 0;
+  lambdaMaker = 0;
 }

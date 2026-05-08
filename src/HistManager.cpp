@@ -85,7 +85,12 @@ Bool_t HistManager::LoadFromFile(const Char_t* yamlPath) {
     // Prevent ROOT from adding our histograms to gDirectory at creation; we manage lifetime
     // and Write() to our TFile in StPhiMaker::Finish(). Otherwise same objects get deleted
     // twice (TFile in Finish + directory cleanup at exit) -> double free in TString.
-    TH1::AddDirectory(kFALSE);
+    // RAII: restore global AddDirectory on return or YAML exception after kFALSE.
+    struct AddDirectoryGuard {
+      AddDirectoryGuard() { TH1::AddDirectory(kFALSE); }
+      ~AddDirectoryGuard() { TH1::AddDirectory(kTRUE); }
+    } addDirectoryGuard;
+
     for (YAML::const_iterator it = root["histograms"].begin(); it != root["histograms"].end(); ++it) {
       const std::string& name = it->first.as<std::string>();
       const YAML::Node& histNode = it->second;
@@ -153,7 +158,6 @@ Bool_t HistManager::LoadFromFile(const Char_t* yamlPath) {
         if (h) m_histograms[name] = h;
       }
     }
-    TH1::AddDirectory(kTRUE);
 
     return kTRUE;
   } catch (const YAML::BadFile& e) {

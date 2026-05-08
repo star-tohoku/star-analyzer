@@ -10,6 +10,7 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 - **Config**: Prefer YAML updates over recompilation when changing cuts and histogram values. Main entry is `config/mainconf/main_<anaName>.yaml`.
 - **No hardcoded analysis parameters**: Put thresholds and cuts in YAML configs.
 - **analysis_info sync**: Keep `anaName`, macro base names, `mainConf`, output naming, and `starTag` consistent.
+- **Build environment for debug/repro**: For debug work and any build used for farm submission, run `make` inside an SL7 environment first (use `sl7`, then `source ./script/setup.sh <mainconf>` and `make`). Do not rely on host-only builds for heap/exit-crash diagnosis.
 
 ## Adding analyses and scripts
 
