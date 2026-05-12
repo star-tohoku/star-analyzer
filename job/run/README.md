@@ -8,8 +8,10 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
    ```bash
    cd /path/to/star-analysis
    sl7
-   ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml && make
+   source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
+   make
    ```
+   For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead.
    For debug/repro jobs (especially heap/exit issues), always build in SL7 before submit.
 
 2. **Move to this directory and submit**
@@ -17,18 +19,26 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
    cd job/run
    ./submit.sh ../joblist/joblist_auau19_anaLambda_test.xml
    ```
-   Pass the joblist XML you want (for example the file produced by `./script/generate_joblist.sh`, named **`joblist_<anaName>.xml`** where **`anaName`** is `analysis.anaName` in your analysis_info). By default, `submit.sh` uses **`../joblist/joblist_auau19_anaLambda_temp.xml`** if you omit the argument (adjust the default in `submit.sh` if your primary analysis differs). Example for Phi: `./submit.sh ../joblist/joblist_run_anaPhi.xml`.
+   Pass the joblist XML you want (for example the file produced by `./script/generate_joblist.sh`, named **`joblist_<anaName>.xml`** where **`anaName`** is `analysis.anaName` in your analysis_info). By default, `submit.sh` uses **`../joblist/joblist_auau19_anaLambda_temp.xml`** if you omit the argument (adjust the default in `submit.sh` if your primary analysis differs). Example for Phi: `./submit.sh ../joblist/joblist_auau19_anaPhi.xml`.
 
   `submit.sh` replaces `__PROJECT_ROOT__` in the template with the actual project path, so the same template works for any user.
-  Before submit it runs a preflight check: it infers **`anaName`** from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`) and requires **`config/mainconf/main_<anaName>.yaml`**, plus `libraryTag` resolution, ELF class consistency of `lib/*.so` vs `root4star`, and runtime linker sanity in the singularity context. This fails fast on mismatch and avoids secondary errors like missing `fromScratch` output after an early crash.
+  Before submit it runs a preflight check: it infers **`anaName`** from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`), then extracts the embedded **`config/mainconf/...yaml`** path from the joblist and uses that as the single source of truth for `libraryTag` resolution, rebuilds, ELF class consistency of `lib/*.so` vs `root4star`, and runtime linker sanity in the singularity context. This fails fast on mismatch and avoids secondary errors like missing `fromScratch` output after an early crash.
 
    If preflight fails and you want the script to try recovery once, use:
    ```bash
    ./submit.sh --rebuild-if-needed ../joblist/joblist_auau19_anaLambda_test.xml
    ```
-   This runs `./script/setup.sh config/mainconf/main_<anaName>.yaml && make`, then retries preflight.
+   This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight with the same embedded mainconf.
 
-   On successful submit, the joblist and config used for that run are saved: **joblistlog/joblist_<anaName>_<jobid>.xml** (submitted XML) and **configlog/config_<anaName>_<jobid>.txt** (mainconf and all referenced YAMLs in one text file).
+   On successful submit, the joblist and config used for that run are saved: **joblistlog/joblist_<anaName>_<jobid>.xml** (submitted XML) and **configlog/config_<anaName>_<jobid>.txt** (the embedded mainconf and all referenced YAMLs in one text file).
+
+## Quick Check
+
+- Generate from the intended mainconf: `./script/generate_joblist.sh config/mainconf/main_auau19_anaPhi_test.yaml`
+- Confirm the joblist embeds the same path: `python script/analysis_info_helper.py --mainconf-from-joblist job/joblist/joblist_auau19_anaPhi_test.xml`
+- Confirm setup metadata resolves from that same path: `python script/analysis_info_helper.py --library-tag --mainconf config/mainconf/main_auau19_anaPhi_test.yaml`
+- For short farm smoke tests, set `analysis.maxEvents` (for example `100`) in the referenced `analysis_info`; the generated batch command will pass that as the 4th `root4star` argument
+- Submit and check the preflight log prints the same mainconf path before `star-submit`
 
 ## Cleaning up this directory
 

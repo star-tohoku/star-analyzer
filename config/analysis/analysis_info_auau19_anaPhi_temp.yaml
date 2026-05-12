@@ -30,7 +30,6 @@ analysis:
   workDir: "/star/u/$USER/Path/To/star-analyzer"
   baseRunMacro: "run_anaPhi"
   baseAnaMacro: "anaPhi"
-  mainConf: "mainconf/main_auau19_anaPhi.yaml"
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName

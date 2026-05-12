@@ -46,6 +46,8 @@ if [[ ! -f "$TEMPLATE" ]]; then
   exit 1
 fi
 
+TEMPLATE_ABS="$(cd "$(dirname "$TEMPLATE")" && pwd)/$(basename "$TEMPLATE")"
+
 extract_elf_class() {
   local target="$1"
   local info
@@ -63,8 +65,8 @@ extract_elf_class() {
 
 run_preflight() {
   local ana_name="$1"
+  local mainconf_rel="$2"
   local -a required_libs
-  local mainconf_rel="config/mainconf/main_${ana_name}.yaml"
   local mainconf_path="$PROJECT_ROOT/$mainconf_rel"
   local root4star_bin root4star_class expected_class lib class
   local setup_probe setup_star_host setup_root_libs
@@ -160,19 +162,17 @@ if [[ -z "$anaName" || "$anaName" == "$OUTPUT" ]]; then
   exit 1
 fi
 
-if ! run_preflight "$anaName"; then
+mainconf_rel=$(cd "$PROJECT_ROOT" && python script/analysis_info_helper.py --mainconf-from-joblist "$TEMPLATE_ABS" 2>/dev/null | xargs || true)
+if [[ -z "$mainconf_rel" ]]; then
+  echo "ERROR: Could not extract embedded mainconf from joblist: $TEMPLATE" >&2
+  exit 1
+fi
+
+if ! run_preflight "$anaName" "$mainconf_rel"; then
   if [[ "$REBUILD_IF_NEEDED" -eq 1 ]]; then
-    mainconf_rel="config/mainconf/main_${anaName}.yaml"
-    setup_probe=$(bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" >/dev/null 2>&1; echo \"STAR_HOST_SYS=\${STAR_HOST_SYS:-}\"; echo \"ROOT_LIBS=\$(root-config --libs 2>/dev/null || true)\"" 2>/dev/null || true)
-    setup_star_host=$(printf "%s\n" "$setup_probe" | sed -n 's/^STAR_HOST_SYS=//p' | head -1)
-    setup_root_libs=$(printf "%s\n" "$setup_probe" | sed -n 's/^ROOT_LIBS=//p' | head -1)
-    build_bits="32"
-    if [[ "$setup_star_host" == *"x8664"* || "$setup_root_libs" == *"x86_64"* ]]; then
-      build_bits="64"
-    fi
-    echo "Preflight failed; trying rebuild path: source ./script/setup.sh $mainconf_rel && make clean && make BUILD_BITS=$build_bits"
-    bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" && make clean && make BUILD_BITS=$build_bits"
-    run_preflight "$anaName"
+    echo "Preflight failed; trying rebuild path: source ./script/setup.sh $mainconf_rel && make clean && make"
+    bash -lc "cd \"$PROJECT_ROOT\" && source ./script/setup.sh \"$mainconf_rel\" && make clean && make"
+    run_preflight "$anaName" "$mainconf_rel"
   else
     echo "Hint: run './submit.sh --rebuild-if-needed $TEMPLATE' or rebuild manually before submit." >&2
     exit 1
@@ -203,7 +203,7 @@ if [[ -z "$jobid" ]]; then
 fi
 
 if [[ -n "$jobid" ]]; then
-  "$SCRIPT_DIR/snapshot_config.sh" "$anaName" "$jobid" || true
+  "$SCRIPT_DIR/snapshot_config.sh" "$anaName" "$jobid" "$mainconf_rel" || true
   "$SCRIPT_DIR/snapshot_joblist.sh" "$anaName" "$jobid" "$OUTPUT" || true
 else
   echo "WARNING: Could not extract jobid; skipping configlog and joblistlog." >&2

@@ -1,15 +1,17 @@
 #!/bin/bash
 # Write mainconf and all referenced config files into a single text file
 # (configlog/config_anaName_jobid.txt) for reproducibility.
-# Usage: ./snapshot_config.sh <anaName> <jobid>
+# Usage: ./snapshot_config.sh <anaName> <jobid> [mainconf_rel]
 
 set -e
-anaName="${1:?Usage: $0 <anaName> <jobid>}"
-jobid="${2:?Usage: $0 <anaName> <jobid>}"
+anaName="${1:?Usage: $0 <anaName> <jobid> [mainconf_rel]}"
+jobid="${2:?Usage: $0 <anaName> <jobid> [mainconf_rel]}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_ROOT="$PROJECT_ROOT/config"
-mainconf_path="$CONFIG_ROOT/mainconf/main_${anaName}.yaml"
+mainconf_rel="${3:-config/mainconf/main_${anaName}.yaml}"
+mainconf_rel="${mainconf_rel#config/}"
+mainconf_path="$CONFIG_ROOT/$mainconf_rel"
 configlog_dir="$SCRIPT_DIR/configlog"
 outfile="$configlog_dir/config_${anaName}_${jobid}.txt"
 
@@ -35,7 +37,7 @@ append_file() {
 }
 
 # 1) Main config first
-append_file "mainconf/main_${anaName}.yaml"
+append_file "$mainconf_rel"
 
 # 2) Paths referenced in mainconf (key: path, path is relative to config/)
 while IFS= read -r relpath; do

@@ -105,14 +105,19 @@ Use `--dry-run` to print the command without running. Requires a working STAR en
 
 **What:** Run `starver` from analysis_info and compile libraries. **Why:** `make` needs `$STAR` and ROOT from the correct release.
 
-From the **project root**, run:
+From the **project root**, run one of:
 
 ```bash
-./script/setup.sh config/mainconf/main_<anaName>.yaml
+source ./script/setup.sh config/mainconf/main_<anaName>.yaml
 make
 ```
 
-**Note:** This project standardizes on `./script/setup.sh <mainconf>` for setup commands.
+```csh
+source ./script/setup.csh config/mainconf/main_<anaName>.yaml
+make
+```
+
+**Note:** `setup.sh` / `setup.csh` must be **sourced**, not executed, because they set `STAR`, `STAR_HOST_SYS`, `PATH`, and `LD_LIBRARY_PATH` in your current shell before `make`.
 
 ---
 
@@ -144,7 +149,19 @@ cd job/run
 ./submit.sh ../joblist/joblist_<anaName>.xml
 ```
 
-The generator writes **`job/joblist/joblist_<anaName>.xml`**, where **`<anaName>`** is `analysis.anaName` in your analysis_info (the same string used in `scratchSubdir` / `outputFileStem` if you use YAML aliases). **`submit.sh` preflight** derives `anaName` from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`) and expects **`config/mainconf/main_<anaName>.yaml`**. If you rename the joblist, keep that basename aligned with your mainconf filename, or pass the matching mainconf via your workflow.
+The generator writes **`job/joblist/joblist_<anaName>.xml`**, where **`<anaName>`** is `analysis.anaName` in your analysis_info (the same string used in `scratchSubdir` / `outputFileStem` if you use YAML aliases). The joblist embeds the exact mainconf path you passed to `generate_joblist.sh`, and **`submit.sh` preflight** uses that embedded path as its source of truth rather than deriving a mainconf from the joblist basename.
+
+For a short batch smoke test, make a dedicated test config pair (for example `main_auau19_anaPhi_test.yaml` + `analysis_info_auau19_anaPhi_test.yaml`) and set:
+- `analysis.nFiles: 1`
+- `analysis.maxEvents: 100`
+
+Then generate and submit that test mainconf in the same way:
+
+```bash
+./script/generate_joblist.sh config/mainconf/main_auau19_anaPhi_test.yaml
+cd job/run
+./submit.sh ../joblist/joblist_auau19_anaPhi_test.xml
+```
 
 After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `cleanup_job_run.sh`, and `archive_job_run.sh`.
 
@@ -155,7 +172,7 @@ After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `clean
 | Symptom | Things to check |
 |---------|-------------------|
 | `make` fails in yaml-cpp / config lib | Submodule: Step 2. |
-| Wrong STAR / missing `root-config` | Re-run **`./script/setup.sh ...`** (Step 6) before `make`. |
+| Wrong STAR / missing `root-config` | Re-source `script/setup.sh` / `script/setup.csh` (Step 6), then verify `echo $STAR`, `echo $STAR_HOST_SYS`, `which root-config`, and `root-config --cflags` before `make`. |
 | Library load errors at runtime | Run via **`script/run_anaXxx.sh`** or match its `LD_LIBRARY_PATH` setup. |
 | Joblist script errors | Install PyYAML for the same `python3` you use. |
 | Batch paths wrong | **analysis.workDir** and paths in analysis_info (Step 4). |
@@ -169,7 +186,7 @@ After editing `config/analysis/analysis_info_temp.yaml` (**analysis.workDir**):
 ```bash
 git submodule update --init --recursive
 mkdir -p log err rootfile
-./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
+source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
 make
 ./script/run_anaLambda.sh config/picoDstList/auau19GeV_lambda.list rootfile/auau19_anaLambda_temp/out.root 0 -1
 # Optional batch:

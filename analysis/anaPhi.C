@@ -33,15 +33,9 @@ void anaPhi(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   const char* pwd = gSystem->Getenv("PWD");
   if (!pwd) pwd = ".";
 
-  gROOT->LoadMacro("$STAR/StRoot/StMuDSTMaker/COMMON/macros/loadSharedLibraries.C");
-  gROOT->ProcessLine("loadSharedLibraries()");
-  gSystem->Load("StPicoEvent");
-  gSystem->Load("StPicoDstMaker");
-
-  if (gSystem->Load(TString(pwd) + "/lib/libStPhiMaker.so") < 0 && gSystem->Load("StPhiMaker") < 0) {
-    std::cerr << "ERROR: failed to load StPhiMaker. Run from project root and ensure make has built lib/libStPhiMaker.so" << std::endl;
-    return;
-  }
+  // `run_anaPhi.C` loads the STAR/Pico/Maker libraries before ACLiC-compiling
+  // this macro. Re-loading them here can mix STAR releases in one process and
+  // has been correlated with exit-time ROOT heap corruption.
 
   TString mainConfigPath;
   if (configPath && strlen(configPath) > 0) {

@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Read mainconf and its analysis info YAML; output libraryTag for setup.sh or generate joblist XML.
+Read mainconf and its analysis info YAML; output libraryTag for setup.sh,
+generate joblist XML, or extract the embedded mainconf from a joblist.
 Python 2.7 compatible.
 Usage:
   python script/analysis_info_helper.py --library-tag [--mainconf PATH]
   python script/analysis_info_helper.py --generate-joblist MAINCONF_PATH [--project-root PATH]
+  python script/analysis_info_helper.py --mainconf-from-joblist JOBLIST_XML [--project-root PATH]
 Example:
   python script/analysis_info_helper.py --generate-joblist config/mainconf/main_auau19_anaLambda.yaml
 """
@@ -94,6 +96,44 @@ def load_analysis_info(analysis_path):
     return load_yaml(analysis_path)
 
 
+def normalize_relpath(path):
+    return path.replace(os.sep, '/')
+
+
+def get_mainconf_relpath(mainconf_arg, mainconf_path, project_root):
+    """Return project-relative mainconf path using forward slashes."""
+    if os.path.isabs(mainconf_arg):
+        rel = os.path.relpath(mainconf_path, project_root)
+    else:
+        rel = mainconf_arg
+    return normalize_relpath(rel)
+
+
+def get_mainconf_for_command(mainconf_rel):
+    """Return config/... mainconf path for joblist command."""
+    if mainconf_rel.startswith('config/'):
+        return mainconf_rel
+    return 'config/' + mainconf_rel
+
+
+def extract_mainconf_from_joblist(joblist_path):
+    """Extract the embedded config/mainconf/...yaml path from a joblist XML."""
+    with open(joblist_path, 'r') as f:
+        content = f.read()
+    matches = re.findall(r'(config/mainconf/[A-Za-z0-9_./-]+\.ya?ml)', content)
+    unique = []
+    for match in matches:
+        if match not in unique:
+            unique.append(match)
+    if not unique:
+        print("ERROR: embedded mainconf not found in joblist: {}".format(joblist_path), file=sys.stderr)
+        sys.exit(1)
+    if len(unique) > 1:
+        print("ERROR: multiple embedded mainconf paths found in joblist: {}".format(", ".join(unique)), file=sys.stderr)
+        sys.exit(1)
+    return unique[0]
+
+
 def build_catalog_url(star_tag):
     """Build SUMS catalog URL from starTag."""
     base = "catalog:star.bnl.gov"
@@ -120,7 +160,7 @@ def main():
     project_root = get_project_root(script_dir)
     config_base = os.path.join(project_root, 'config')
 
-    parser = argparse.ArgumentParser(description='Read analysis info from mainconf; output libraryTag or generate joblist.')
+    parser = argparse.ArgumentParser(description='Read analysis info from mainconf; output libraryTag, generate joblist, or inspect joblist mainconf.')
     parser.add_argument('mainconf', nargs='?', default=None,
                         help='Main config path (e.g. config/mainconf/main_auau19_anaLambda.yaml). For --generate-joblist, pass as argument; for --library-tag, optional (else uses --mainconf).')
     parser.add_argument('--mainconf', dest='mainconf_opt', default=None,
@@ -131,10 +171,22 @@ def main():
     parser.add_argument('--pico-dst-list', action='store_true', help='Print default picoDst list path (config/...) for run script')
     parser.add_argument('--output-rootfile', action='store_true', help='Print default output root path: rootfile/anaName/anaName_temp.root')
     parser.add_argument('--generate-joblist', action='store_true', help='Generate joblist XML from template')
+    parser.add_argument('--mainconf-from-joblist', dest='joblist_path', default=None,
+                        help='Extract embedded config/mainconf/...yaml path from a joblist XML')
     args = parser.parse_args()
 
     project_root = os.path.abspath(args.project_root)
     config_base = os.path.join(project_root, 'config')
+
+    if args.joblist_path:
+        joblist_path = args.joblist_path
+        if not os.path.isabs(joblist_path):
+            joblist_path = os.path.join(project_root, joblist_path)
+        if not os.path.isfile(joblist_path):
+            print("ERROR: joblist not found: {}".format(joblist_path), file=sys.stderr)
+            sys.exit(1)
+        print(extract_mainconf_from_joblist(joblist_path))
+        return
 
     mainconf_arg = args.mainconf
     if mainconf_arg is None:
@@ -212,23 +264,22 @@ def main():
         if yaml is None:
             print("ERROR: --generate-joblist requires PyYAML. Install with: pip install pyyaml", file=sys.stderr)
             sys.exit(1)
-        mainconf_rel = mainconf_arg if not os.path.isabs(mainconf_arg) else os.path.relpath(mainconf_path, project_root)
-        mainconf_for_command = "config/" + mainconf_rel if not mainconf_rel.startswith('config/') else mainconf_rel
+        mainconf_rel = get_mainconf_relpath(mainconf_arg, mainconf_path, project_root)
+        mainconf_for_command = get_mainconf_for_command(mainconf_rel)
 
         base_run = analysis.get('baseRunMacro', 'run_anaLambda')
         base_ana = analysis.get('baseAnaMacro', 'anaLambda')
         run_macro = base_run + '.C'
         ana_so_prefix = base_ana
 
-        main_conf = analysis.get('mainConf', 'mainconf/main_auau19_anaLambda.yaml')
-        if not main_conf.startswith('config/'):
-            main_conf = 'config/' + main_conf
-
         ana_name = analysis.get('anaName') or analysis.get('name') or 'auau19_anaLambda_temp'
         job_name = analysis.get('jobName') or ana_name
         scratch_subdir = analysis.get('scratchSubdir') or ana_name
         output_stem = analysis.get('outputFileStem') or ana_name
         n_files = analysis.get('nFiles', 1000)
+        max_events = analysis.get('maxEvents', -1)
+        if max_events is None or str(max_events).strip() == '':
+            max_events = -1
         work_dir = analysis.get('workDir', '/star/u/$USER/Path/To/star-analyzer')
         starver = star_tag.get('libraryTag', 'SL24y')
         catalog_url = build_catalog_url(star_tag)
@@ -246,7 +297,8 @@ def main():
             ('__STARVER__', starver),
             ('__SCRATCH_SUBDIR__', scratch_subdir),
             ('__OUTPUT_FILE_STEM__', output_stem),
-            ('__MAINCONF__', main_conf),
+            ('__MAINCONF__', mainconf_for_command),
+            ('__MAX_EVENTS__', str(max_events)),
             ('__WORK_DIR__', work_dir),
             ('__CATALOG_URL__', catalog_url),
             ('__N_FILES__', str(n_files)),

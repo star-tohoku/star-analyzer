@@ -15,7 +15,7 @@ NEVENTS="${4:--1}"
 CONFIG_PATH="${5:-}"
 SETUP_MAINCONF="${CONFIG_PATH:-config/mainconf/main_auau19_anaLambda.yaml}"
 
-./script/setup.sh "$SETUP_MAINCONF"
+source ./script/setup.sh "$SETUP_MAINCONF"
 export LD_LIBRARY_PATH="$PROJECT_ROOT/lib:$LD_LIBRARY_PATH"
 rm -f "$PROJECT_ROOT"/analysis/anaLambda_C.* 2>/dev/null
 

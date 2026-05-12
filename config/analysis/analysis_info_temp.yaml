@@ -36,7 +36,6 @@ analysis:
   workDir: "/star/u/$USER/Path/To/star-analyzer"
   baseRunMacro: "run_anaLambda"
   baseAnaMacro: "anaLambda"
-  mainConf: "mainconf/main_auau19_anaLambda.yaml"
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName

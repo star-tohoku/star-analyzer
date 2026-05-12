@@ -9,10 +9,10 @@ v0:            cuts/v0reco/v0_auau19_anaPhi.yaml
 mixing:        cuts/mixing/mixing_auau19_anaPhi.yaml
 
 # Maker config (key name should match your analysis macro expectation)
-lambda:        maker/maker_auau19_anaPhi.yaml
+phi:           maker/maker_auau19_anaPhi.yaml
 
 # Histogram config
 hist:          hist/hist_auau19_anaPhi.yaml
 
 # Analysis info
-analysis:      analysis/analysis_info_auau19_anaPhi_temp1.yaml
+analysis:      analysis/analysis_info_auau19_anaPhi.yaml

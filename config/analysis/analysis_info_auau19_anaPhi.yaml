@@ -30,11 +30,10 @@ analysis:
   workDir: "/star/u/oura/work/star-analysis"
   baseRunMacro: "run_anaPhi"
   baseAnaMacro: "anaPhi"
-  mainConf: "mainconf/main_auau19_anaPhi.yaml"
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName
-  nFiles: 1000
+  nFiles: 10
 
 analyst:
   name: "User Name"
