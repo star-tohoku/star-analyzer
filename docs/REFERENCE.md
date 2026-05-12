@@ -18,7 +18,7 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **analysis/** | ROOT macros: `run_anaXxx.C` (runner: loads libs, compiles `anaXxx.C+`, calls analysis) and `anaXxx.C` (StChain + event loop). One pair per analysis (e.g. Lambda, Phi). |
 | **config/** | YAML configs. **Templates/samples only** tracked. Subdirs: `mainconf/` (main YAML that includes the rest), `maker/`, `hist/`, `cuts/` (event, track, pid, v0reco, mixing), `analysis/` (e.g. **analysis_info_temp.yaml** — used by setup.sh and joblist generator), `picoDstList/` (input file lists; user lists are typically untracked). |
 | **include/** | Framework headers: `ConfigManager.h`, `HistManager.h`, cut configs (`cuts/*.h`). Used by StMaker and `src/`. |
-| **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, generated/copied files). On successful submit, joblist and config are saved to `job/run/joblistlog/joblist_<anaName>_<jobid>.xml` and `job/run/configlog/config_<anaName>_<jobid>.txt`. Files under `job/run/*.xml` and SUMS outputs are git-ignored. |
+| **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, `snapshot_runmeta.sh`, generated/copied files). On successful submit, `submit.sh` saves `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`, `job/run/configlog/config_<anaName>_<jobid>.txt`, and `job/run/runmeta/runmeta_<anaName>_<jobid>.json` plus sidecars (`gitstatus`, `gitdiff`, `gitsubmodules`, `runtime_bundle`, `sums_artifacts`, `submit_stdout`). Files under `job/run/*.xml` and generated job artifacts are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. |
 | **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `singularity_checkHistAnaPhi.sh` (QA PDF via batch-like singularity runtime), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
@@ -257,10 +257,19 @@ First-time flow (after git clone): customize analysis info → setup → build �
    ```
    This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight once using the same embedded mainconf from the joblist.
 
-   On successful submit, the same embedded mainconf and all referenced config files are written to **job/run/configlog/config_<anaName>_<jobid>.txt** (one text file per job) for reproducibility. See `job/run/README.md` for more.
+  On successful submit, `submit.sh` now records a per-`jobid` reproducibility set:
+  - **job/run/configlog/config_<anaName>_<jobid>.txt** — embedded mainconf plus all referenced config YAMLs
+  - **job/run/joblistlog/joblist_<anaName>_<jobid>.xml** — submitted XML after placeholder replacement
+  - **job/run/runmeta/runmeta_<anaName>_<jobid>.json** — manifest linking the saved submit-time artifacts
+  - **job/run/runmeta/gitstatus_<anaName>_<jobid>.txt**, **gitdiff_<anaName>_<jobid>.patch**, and **gitsubmodules_<anaName>_<jobid>.txt** — git provenance at submit time
+  - **job/run/runmeta/runtime_bundle_<anaName>_<jobid>.tar.gz** — replay bundle capturing submit-time code/runtime state
+  - **job/run/runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `.list/.csh/.condor/.report/.session.xml` files for that submit
+  - **job/run/runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` output
+
+  This means a `jobid` now resolves not only to config and XML, but also to the submit-time code state and exact SUMS-expanded job wrappers. See [job/run/README.md](../job/run/README.md) for the operational view.
 
 5. **Cleaning up job/run**  
-   After submission, `job/run/` is filled with many files named `anaName+jobid+*` (`.csh`, `.list`, etc.). To remove them (avoids "Argument list too long"): `cd job/run && ./cleanup_job_run.sh <anaName+jobid>`. To move them into an archive instead: `cd job/run && ./archive_job_run.sh <anaName+jobid>` (files go to `job/run/joblog/<anaName>/`; the directory is created if needed).
+   After submission, `job/run/` is filled with many files named `anaName+jobid+*` (`.csh`, `.list`, etc.). The stable submit-time copy now lives in `job/run/runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz`, so removing or archiving the loose originals is no longer your only reproducibility path. To delete them (avoids "Argument list too long"): `cd job/run && ./cleanup_job_run.sh <anaName+jobid>`. To move them into an archive instead: `cd job/run && ./archive_job_run.sh <anaName+jobid>` (files go to `job/run/joblog/<anaName>/`; the directory is created if needed).
 
 ## Adding a new analysis (new StMaker)
 

@@ -48,10 +48,12 @@ flowchart TD
 | [PHILOSOPHY.md](PHILOSOPHY.md) | Design principles, reproducibility, two-macro rationale; **source of truth** for agents and contributors. |
 | [docs/ai/README.md](docs/ai/README.md) | AI guidance map. Includes `AGENT_RULES.md`, task skills, and migration policy. |
 | [CLAUDE.md](CLAUDE.md) | Antigravity / Claude Code entrypoint. Points to shared source-of-truth docs. |
-| [docs/REFERENCE.md](docs/REFERENCE.md) | Full reference: prerequisites, analysis_info tables, how to run, batch, QA scripts, adding an analysis, config, joblists. |
-| [job/run/README.md](job/run/README.md) | Submit, `configlog`, cleaning up `job/run/`. |
+| [docs/REFERENCE.md](docs/REFERENCE.md) | Full reference: prerequisites, analysis_info tables, how to run, batch, QA scripts, adding an analysis, config, joblists, and submit-time reproducibility artifacts. |
+| [job/run/README.md](job/run/README.md) | Submit, `configlog`, `runmeta`, and cleaning up `job/run/`. |
 
 Only **template/sample** content under `config/` and `job/joblist/` is tracked in git; built `.so` files under `lib/` are git-ignored.
+
+Successful `job/run/submit.sh` submissions now save per-`jobid` reproducibility artifacts under `job/run/`: the submitted XML snapshot, the resolved config snapshot, and a `runmeta` manifest with git/code-state sidecars and a tarball of SUMS-generated submit artifacts. See [job/run/README.md](job/run/README.md) and [docs/REFERENCE.md](docs/REFERENCE.md) for paths and details.
 
 ## Repository layout (short)
 

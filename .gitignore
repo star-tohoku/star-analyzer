@@ -43,6 +43,7 @@ job/run/lib
 job/run/joblog/*
 job/run/configlog/*
 job/run/joblistlog/*
+job/run/runmeta/*
 
 # job/run: SUMS job submission generated files (dataset, report, .list, .csh, .condor)
 job/run/*.dataset

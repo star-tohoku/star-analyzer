@@ -43,4 +43,13 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 
 - ROOT output: `rootfile/<anaName>/`
 - Submitted config snapshot: `job/run/configlog/config_<anaName>_<jobid>.txt`
+- Submitted joblist snapshot: `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`
+- Submit-time runmeta manifest: `job/run/runmeta/runmeta_<anaName>_<jobid>.json`
+- Submit-time runmeta sidecars: `job/run/runmeta/gitstatus_<anaName>_<jobid>.txt`, `gitdiff_<anaName>_<jobid>.patch`, `gitsubmodules_<anaName>_<jobid>.txt`, `runtime_bundle_<anaName>_<jobid>.tar.gz`, `sums_artifacts_<anaName>_<jobid>.tar.gz`, `submit_stdout_<anaName>_<jobid>.txt`
 - QA PDF: `share/figure/<anaName>/<anaName>_checkHistAnaPhi[_<jobid>].pdf`
+
+## Submit reproducibility artifacts
+
+- Treat `jobid` as the key used to join config, submitted XML, runmeta, output ROOT, and QA.
+- `submit.sh` should save per-`jobid` reproducibility artifacts immediately after jobid extraction, not as a later manual step.
+- `runmeta` is the machine-readable index for submit-time provenance; use it before scanning loose `job/run/<anaName><jobid>*` files.

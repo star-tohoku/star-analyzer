@@ -3,7 +3,7 @@
 # Example batch name: 20260330JST. If that path already exists the same JST day, uses YYYYMMDDJST_HHMMSS.
 #
 # Default directories (relative to project root):
-#   log/  out/  err/  job/run/configlog/  job/run/joblistlog/
+#   log/  out/  err/  job/run/configlog/  job/run/joblistlog/  job/run/runmeta/
 #
 # Optional:
 #   --joblog       Also archive files under job/run/joblog/<anaName>/ (each anaName dir gets its own archive/)
@@ -96,6 +96,7 @@ DEFAULT_DIRS=(
   "err"
   "job/run/configlog"
   "job/run/joblistlog"
+  "job/run/runmeta"
 )
 
 echo "PROJECT_ROOT=$PROJECT_ROOT"

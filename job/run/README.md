@@ -30,7 +30,16 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
    ```
    This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight with the same embedded mainconf.
 
-   On successful submit, the joblist and config used for that run are saved: **joblistlog/joblist_<anaName>_<jobid>.xml** (submitted XML) and **configlog/config_<anaName>_<jobid>.txt** (the embedded mainconf and all referenced YAMLs in one text file).
+  On successful submit, reproducibility artifacts are saved per `jobid`:
+  - **joblistlog/joblist_<anaName>_<jobid>.xml** — submitted XML after `__PROJECT_ROOT__` replacement
+  - **configlog/config_<anaName>_<jobid>.txt** — embedded mainconf plus all referenced YAMLs
+  - **runmeta/runmeta_<anaName>_<jobid>.json** — machine-readable manifest tying together the saved artifacts below
+  - **runmeta/gitstatus_<anaName>_<jobid>.txt** — `git status --porcelain=v2 --branch` at submit time
+  - **runmeta/gitdiff_<anaName>_<jobid>.patch** — `git diff --binary HEAD` at submit time
+  - **runmeta/gitsubmodules_<anaName>_<jobid>.txt** — `git submodule status --recursive` at submit time
+  - **runmeta/runtime_bundle_<anaName>_<jobid>.tar.gz** — submit-time code/runtime bundle for replay (`analysis/`, `config/`, `include/`, `StMaker/`, `lib/`, and build/source metadata when present)
+  - **runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `anaName+jobid+*` files such as `.list`, `.csh`, `.condor`, `.report`, and `.session.xml`
+  - **runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` console output
 
 ## Quick Check
 
@@ -39,6 +48,7 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
 - Confirm setup metadata resolves from that same path: `python script/analysis_info_helper.py --library-tag --mainconf config/mainconf/main_auau19_anaPhi_test.yaml`
 - For short farm smoke tests, set `analysis.maxEvents` (for example `100`) in the referenced `analysis_info`; the generated batch command will pass that as the 4th `root4star` argument
 - Submit and check the preflight log prints the same mainconf path before `star-submit`
+- After submit, verify `runmeta/runmeta_<anaName>_<jobid>.json` exists and points to the expected sidecars
 
 ## Cleaning up this directory
 
@@ -47,10 +57,13 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 - **Delete** all matching files: `./cleanup_job_run.sh <anaName+jobid>` (e.g. `./cleanup_job_run.sh auau3p85fxt_anaPhiCCBCC32EA67793F5A24B5F6BA44EE413`).
 - **Archive** them under `joblog/<anaName>/`: `./archive_job_run.sh <anaName+jobid>` (creates `joblog/<anaName>/` if needed).
 
+`runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz` already preserves a stable submit-time copy of those SUMS-generated files, so cleanup/archive of the loose originals is now an operational convenience rather than the only reproducibility path.
+
 ## Notes
 
 - Always `cd` into **job/run/** before running `./submit.sh`.
 - To use a different joblist template, run e.g. `./submit.sh ../joblist/YourJoblist.xml`.
+- Submit-time reproducibility artifacts now live in `job/run/runmeta/`; `script/archive_all_job_logs.sh` archives that directory alongside `configlog` and `joblistlog`.
 - Batch command now clears `analysis/<baseAnaMacro>_C.*` before `root4star` so stale ACLiC outputs (`.so/.d/.pcm` etc.) do not mix across environments.
 - Batch runtime now copies `analysis/`, `config/`, `lib/`, `include/`, `StMaker/`, and optional build artifacts into a scratch-local runtime bundle before `singularity exec`, so moved or symlinked repositories do not break macro lookup inside the container.
 - Current `auau19_anaLambda` joblists run `root4star` via `singularity exec ... star-bnl/star-sw:latest` with `-B /star/nfs4/AFS`, `-B /home/starlib:/home/starlib`, and inherited `LD_LIBRARY_PATH` to satisfy `libgfortran.so.3`.
