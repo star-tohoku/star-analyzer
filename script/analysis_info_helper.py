@@ -155,6 +155,28 @@ def build_catalog_url(star_tag):
     return base + "?" + ",".join(parts)
 
 
+def resolve_work_dir(analysis, project_root):
+    """Resolve analysis.workDir for generated log/err/output destinations."""
+    raw = analysis.get('workDir')
+    if raw is None:
+        return project_root
+
+    work_dir = str(raw).strip()
+    if not work_dir:
+        return project_root
+
+    expanded = os.path.expandvars(os.path.expanduser(work_dir))
+
+    # Treat the template placeholder as "unset" so cloned repos work without
+    # immediately editing analysis_info_temp.yaml.
+    if 'Path/To/star-analyzer' in expanded:
+        return project_root
+
+    if not os.path.isabs(expanded):
+        expanded = os.path.join(project_root, expanded)
+    return os.path.abspath(expanded)
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = get_project_root(script_dir)
@@ -280,7 +302,7 @@ def main():
         max_events = analysis.get('maxEvents', -1)
         if max_events is None or str(max_events).strip() == '':
             max_events = -1
-        work_dir = analysis.get('workDir', '/star/u/$USER/Path/To/star-analyzer')
+        work_dir = resolve_work_dir(analysis, project_root)
         starver = star_tag.get('libraryTag', 'SL24y')
         catalog_url = build_catalog_url(star_tag)
 

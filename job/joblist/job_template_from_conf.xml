@@ -9,7 +9,20 @@
 <job name="__JOB_NAME__" simulateSubmission="false" maxFilesPerProcess="1" fileListSyntax="xrootd" copyInputLocally="true">
 
   <command>
-    rm -f analysis/__ANA_SO_PREFIX___C.* 2>/dev/null; starver __STARVER__ &amp;&amp; mkdir -p $SCRATCH/__SCRATCH_SUBDIR__ &amp;&amp; setenv LD_LIBRARY_PATH ${PWD}/lib:${LD_LIBRARY_PATH} &amp;&amp; singularity exec -B /star/nfs4/AFS:/star/nfs4/AFS -B /home/starlib:/home/starlib --env LD_LIBRARY_PATH="$LD_LIBRARY_PATH" /cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest /bin/bash -lc 'export STAR=/star/nfs4/AFS/star/packages/__STARVER__; export STAR_HOST_SYS=sl73_x8664_gcc485; export STAR_LIB=${STAR}/.${STAR_HOST_SYS}/lib; export STAR_BIN=${STAR}/.${STAR_HOST_SYS}/bin; export PATH=${STAR_BIN}:${STAR}/mgr:$PATH; export LD_LIBRARY_PATH=${STAR_LIB}:$LD_LIBRARY_PATH; root4star -q -b analysis/__RUN_MACRO__\(\"$FILELIST\",\"$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root\",\"$JOBID\",__MAX_EVENTS__,\"__MAINCONF__\"\)'
+    starver __STARVER__
+    mkdir -p $SCRATCH/__SCRATCH_SUBDIR__
+    set runtime_dir="$SCRATCH/runtime_bundle"
+    /bin/rm -rf "$runtime_dir"
+    /bin/mkdir -p "$runtime_dir"
+    foreach d (analysis config lib include StMaker .sl73_x8664_gcc485)
+      if ( -e "$d" ) then
+        /bin/cp -RL "$d" "$runtime_dir/"
+      endif
+    end
+    /bin/rm -f "$runtime_dir/analysis/"*_C.* 2>/dev/null
+    cd "$runtime_dir"
+    setenv LD_LIBRARY_PATH ${runtime_dir}/lib:${LD_LIBRARY_PATH}
+    singularity exec -B /star/nfs4/AFS:/star/nfs4/AFS -B /home/starlib:/home/starlib --env LD_LIBRARY_PATH="$LD_LIBRARY_PATH" /cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest /bin/bash -lc 'export STAR=/star/nfs4/AFS/star/packages/__STARVER__; export STAR_HOST_SYS=sl73_x8664_gcc485; export STAR_LIB=${STAR}/.${STAR_HOST_SYS}/lib; export STAR_BIN=${STAR}/.${STAR_HOST_SYS}/bin; export PATH=${STAR_BIN}:${STAR}/mgr:$PATH; export LD_LIBRARY_PATH=${STAR_LIB}:$LD_LIBRARY_PATH; root4star -q -b analysis/__RUN_MACRO__\(\"$FILELIST\",\"$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root\",\"$JOBID\",__MAX_EVENTS__,\"__MAINCONF__\"\)'
   </command>
 
   <stdout URL="file:__WORK_DIR__/log/stdout.$JOBID.out" />

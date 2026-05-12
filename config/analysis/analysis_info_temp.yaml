@@ -33,6 +33,9 @@ analysis:
   type: ""
   targetParticle: "Lambda"
   decayChannel: "p+pi-"
+  # Optional output base for generated joblists (log/err/rootfile).
+  # If left as this template placeholder, joblist generation falls back to the
+  # current project root. Batch runtime itself no longer depends on this path.
   workDir: "/star/u/$USER/Path/To/star-analyzer"
   baseRunMacro: "run_anaLambda"
   baseAnaMacro: "anaLambda"
