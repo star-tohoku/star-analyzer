@@ -21,7 +21,7 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, generated/copied files). On successful submit, joblist and config are saved to `job/run/joblistlog/joblist_<anaName>_<jobid>.xml` and `job/run/configlog/config_<anaName>_<jobid>.txt`. Files under `job/run/*.xml` and SUMS outputs are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. |
-| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
+| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `singularity_checkHistAnaPhi.sh` (QA PDF via batch-like singularity runtime), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
 
 ## Prerequisites and setup
 
@@ -193,6 +193,18 @@ Example (single or merged ROOT file):
 
 ```bash
 ./script/checkHistAnaPhi.sh rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
+```
+
+If host `root4star` fails to start due to runtime dependencies (for example `libgfortran.so.3`), run the same QA macro inside the batch-like singularity environment instead:
+
+```bash
+./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>
+```
+
+Example:
+
+```bash
+./script/singularity_checkHistAnaPhi.sh /direct/star+u/oura/rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
 ```
 
 If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`. When config is loaded, cut regions (event, track, phi) are overlaid on pre-cut histograms as red dashed lines.

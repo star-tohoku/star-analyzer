@@ -57,7 +57,7 @@ mkdir -p log err rootfile
 - **err/** — job stderr.
 - **rootfile/** — output ROOT files (use subdirs per analysis, e.g. `rootfile/auau19_anaLambda/`).
 - **lib/** — produced by `make` (no need to create).
-- **share/figure/** — QA PDFs from `checkHistAnaPhi.sh`; often created on demand.
+- **share/figure/** — QA PDFs from `checkHistAnaPhi.sh` or `singularity_checkHistAnaPhi.sh`; often created on demand.
 
 ---
 

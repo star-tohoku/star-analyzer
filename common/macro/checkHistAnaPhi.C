@@ -16,6 +16,8 @@
 #include <TStyle.h>
 #include <iostream>
 #include <vector>
+#include <limits.h>
+#include <stdlib.h>
 
 #include "../../include/PdfIOMan.h"
 #include "ConfigManager.h"
@@ -24,6 +26,19 @@
 #include "cuts/PhiCutConfig.h"
 
 static Bool_t gConfigLoaded = kFALSE;
+
+static TString resolveFigureRoot(const char* pwd) {
+  const char* envFigureRoot = gSystem->Getenv("STAR_QA_FIGURE_ROOT");
+  if (envFigureRoot && envFigureRoot[0] != '\0') {
+    return TString(envFigureRoot);
+  }
+  TString figureRoot = TString(pwd ? pwd : ".") + "/share/figure";
+  char resolved[PATH_MAX];
+  if (realpath(figureRoot.Data(), resolved)) {
+    return TString(resolved);
+  }
+  return figureRoot;
+}
 
 static void drawCutLines1D(TH1* h, Double_t x1, Double_t x2, Int_t color = kRed, Int_t style = 2) {
   if (!h || !gPad) return;
@@ -135,7 +150,9 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
     }
   }
 
-  TString outDir = TString("share/figure/") + anaName + "/";
+  // Resolve symlinked share/figure to a physical path so ROOT PDF output
+  // works the same in host and singularity-based runs.
+  TString outDir = resolveFigureRoot(pwd) + "/" + anaName + "/";
   if (gSystem->AccessPathName(outDir)) {
     gSystem->mkdir(outDir, kTRUE);
   }
