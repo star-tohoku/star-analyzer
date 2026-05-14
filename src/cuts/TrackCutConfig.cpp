@@ -21,10 +21,12 @@ void TrackCutConfig::SetDefaults() {
   minNHitsRatio = 0.52;
   minNHitsDedx = 10;
   maxDCA = 3.0;
-  maxEta = 1.0;
+  minEta = -2.5;
+  maxEta = 2.5;
   minPt = 0.2;
   maxPt = 10.0;
   maxChi2 = 3.0;
+  requirePrimaryTrack = kFALSE;
 }
 
 Bool_t TrackCutConfig::LoadFromFile(const Char_t* filename) {
@@ -51,6 +53,9 @@ Bool_t TrackCutConfig::ParseYamlFile(const Char_t* filename) {
   if (values.find("maxDCA") != values.end()) {
     maxDCA = YamlParser::ToDouble(values["maxDCA"], maxDCA);
   }
+  if (values.find("minEta") != values.end()) {
+    minEta = YamlParser::ToDouble(values["minEta"], minEta);
+  }
   if (values.find("maxEta") != values.end()) {
     maxEta = YamlParser::ToDouble(values["maxEta"], maxEta);
   }
@@ -62,6 +67,9 @@ Bool_t TrackCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("maxChi2") != values.end()) {
     maxChi2 = YamlParser::ToDouble(values["maxChi2"], maxChi2);
+  }
+  if (values.find("requirePrimaryTrack") != values.end()) {
+    requirePrimaryTrack = YamlParser::ToBool(values["requirePrimaryTrack"], requirePrimaryTrack);
   }
   
   return kTRUE;

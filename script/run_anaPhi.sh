@@ -10,8 +10,6 @@ cd "$PROJECT_ROOT" || exit 1
 
 MAINCONF="${1:?Usage: ./script/run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]}"
 
-export LD_LIBRARY_PATH="$PROJECT_ROOT/lib:$LD_LIBRARY_PATH"
-
 DEFAULT_LIST=$(python "$SCRIPT_DIR/analysis_info_helper.py" --pico-dst-list --mainconf "$MAINCONF" | xargs) || exit 1
 DEFAULT_OUTPUT=$(python "$SCRIPT_DIR/analysis_info_helper.py" --output-rootfile --mainconf "$MAINCONF" | xargs) || exit 1
 
@@ -31,5 +29,6 @@ echo "Config:  $MAINCONF"
 echo "================================"
 
 source ./script/setup.sh "$MAINCONF"
+export LD_LIBRARY_PATH="$PROJECT_ROOT/lib:${LD_LIBRARY_PATH:-}"
 rm -f "$PROJECT_ROOT"/analysis/anaPhi_C.* 2>/dev/null
 root4star -b -q "analysis/run_anaPhi.C(\"$INPUT_FILE\",\"$OUTPUT_FILE\",\"$JOBID\",$NEVENTS,\"$MAINCONF\")"

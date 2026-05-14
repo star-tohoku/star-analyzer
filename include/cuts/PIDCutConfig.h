@@ -20,6 +20,10 @@ public:
   Double_t minMass2Proton;
   Double_t maxMass2Proton;
   Bool_t requireTOF;
+  Double_t pTofFallbackMax;
+  Double_t maxAbsDeltaOneOverBetaKaon;
+  Bool_t tofUseMass2Cut;
+  Bool_t tofUseDeltaInvBetaCut;
 
   // Set default values
   void SetDefaults();

@@ -28,6 +28,10 @@ void PIDCutConfig::SetDefaults() {
   minMass2Proton = 0.7;
   maxMass2Proton = 1.1;
   requireTOF = kFALSE;
+  pTofFallbackMax = 0.5;
+  maxAbsDeltaOneOverBetaKaon = 0.03;
+  tofUseMass2Cut = kTRUE;
+  tofUseDeltaInvBetaCut = kFALSE;
 }
 
 Bool_t PIDCutConfig::LoadFromFile(const Char_t* filename) {
@@ -74,6 +78,18 @@ Bool_t PIDCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("requireTOF") != values.end()) {
     requireTOF = YamlParser::ToBool(values["requireTOF"], requireTOF);
+  }
+  if (values.find("pTofFallbackMax") != values.end()) {
+    pTofFallbackMax = YamlParser::ToDouble(values["pTofFallbackMax"], pTofFallbackMax);
+  }
+  if (values.find("maxAbsDeltaOneOverBetaKaon") != values.end()) {
+    maxAbsDeltaOneOverBetaKaon = YamlParser::ToDouble(values["maxAbsDeltaOneOverBetaKaon"], maxAbsDeltaOneOverBetaKaon);
+  }
+  if (values.find("tofUseMass2Cut") != values.end()) {
+    tofUseMass2Cut = YamlParser::ToBool(values["tofUseMass2Cut"], tofUseMass2Cut);
+  }
+  if (values.find("tofUseDeltaInvBetaCut") != values.end()) {
+    tofUseDeltaInvBetaCut = YamlParser::ToBool(values["tofUseDeltaInvBetaCut"], tofUseDeltaInvBetaCut);
   }
   
   return kTRUE;

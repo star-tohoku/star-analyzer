@@ -4,7 +4,9 @@
 #include "kinematics.h"
 #include "cuts/EventCutConfig.h"
 #include "cuts/TrackCutConfig.h"
+#include "cuts/PIDCutConfig.h"
 #include "cuts/PhiCutConfig.h"
+#include "cuts/MixingConfig.h"
 #include "StPicoDstMaker/StPicoDstMaker.h"
 #include "StPicoEvent/StPicoDst.h"
 #include "StPicoEvent/StPicoTrack.h"
@@ -19,6 +21,7 @@
 #include "TSystem.h"
 #include "TVector3.h"
 #include "TVector2.h"
+#include "TRandom.h"
 #include <iostream>
 #include <vector>
 #include <utility>
@@ -120,7 +123,7 @@ Int_t StPhiMaker::Make() {
     return kStOK;
   }
 
-  Bool_t useTOF = kFALSE;
+
   const Int_t kMaxKaons = 2000;
   std::vector<Track_t> kaonsPlus;
   std::vector<Track_t> kaonsMinus;
@@ -209,28 +212,9 @@ Int_t StPhiMaker::Make() {
 
     Track_t track;
     BuildTrack(track, trk, event, pVtx);
-    if (useTOF && btofIndex >= 0) {
-      StPicoBTofPidTraits* tof = mPicoDst->btofPidTraits(btofIndex);
-      if (tof) {
-        Double_t beta = tof->btofBeta();
-        if (beta > 1e-4) {
-          Double_t oneOverBeta = 1.0 / beta;
-          track.mass2 = pMom.Mag2() * (oneOverBeta * oneOverBeta - 1.0);
-          track.tofMatch = kTRUE;
-        } else {
-          track.mass2 = -999.0;
-          track.tofMatch = kFALSE;
-        }
-      } else {
-        track.mass2 = -999.0;
-        track.tofMatch = kFALSE;
-      }
-    } else {
-      track.mass2 = -999.0;
-      track.tofMatch = kFALSE;
-    }
+    FillTofInfo(track, trk, pMom, btofIndex);
 
-    if (IsKaon(track, useTOF)) {
+    if (IsKaon(track)) {
       if (track.charge > 0 && (Int_t)kaonsPlus.size() < kMaxKaons) {
         kaonsPlus.push_back(track);
       } else if (track.charge < 0 && (Int_t)kaonsMinus.size() < kMaxKaons) {
@@ -258,52 +242,12 @@ Int_t StPhiMaker::Make() {
 
       Double_t openingAngle = CalculateOpeningAngle(kaonsPlus[iPlus], kaonsMinus[iMinus]);
       Double_t pairRapidity = CalculatePairRapidity(invMass, phiMom);
-      if (m_histManager) {
-        m_histManager->Fill("hOpeningAngle_Raw", openingAngle);
-        m_histManager->Fill("hPairRapidity_Raw", pairRapidity);
-        m_histManager->Fill("hPairPt_Raw", phiMom.Pt());
-        m_histManager->Fill("hOpeningAngle_vs_MKK", openingAngle, invMass);
-        m_histManager->Fill("hPairRapidity_vs_MKK", pairRapidity, invMass);
-        m_histManager->Fill("hOpeningAngle_vs_Pt", openingAngle, phiMom.Pt());
-        m_histManager->Fill("hOpeningAngle_vs_Rapidity", openingAngle, pairRapidity);
-        m_histManager->Fill("hPairRapidity_vs_Pt", pairRapidity, phiMom.Pt());
-        m_histManager->Fill("hMKK_vs_Pt", phiMom.Pt(), invMass);
-        m_histManager->Fill("hMKK_SameEvent", invMass);
-      }
-
-      PhiCutConfig& phiCut = ConfigManager::GetInstance().GetPhiCuts();
-      Bool_t passAngle = (openingAngle >= phiCut.minOpeningAngle && openingAngle <= phiCut.maxOpeningAngle);
-      Bool_t passRapidity = (pairRapidity >= phiCut.minPairRapidity && pairRapidity <= phiCut.maxPairRapidity);
-      Bool_t passRapidity_0p4 = (pairRapidity >= -0.4 && pairRapidity <= 0.4);
-      Bool_t passRapidity_0p3 = (pairRapidity >= -0.3 && pairRapidity <= 0.3);
-      Bool_t passRapidity_0p2 = (pairRapidity >= -0.2 && pairRapidity <= 0.2);
-      Bool_t passRapidity_0p1 = (pairRapidity >= -0.1 && pairRapidity <= 0.1);
-      if (m_histManager) {
-        if (passAngle) {
-          m_histManager->Fill("hMKK_OpeningAngleCut", invMass);
-          if (passRapidity) m_histManager->Fill("hMKK_RapidityCut", invMass);
-          if (passRapidity_0p4) m_histManager->Fill("hMKK_RapidityCut_0p4", invMass);
-          if (passRapidity_0p3) m_histManager->Fill("hMKK_RapidityCut_0p3", invMass);
-          if (passRapidity_0p2) m_histManager->Fill("hMKK_RapidityCut_0p2", invMass);
-          if (passRapidity_0p1) m_histManager->Fill("hMKK_RapidityCut_0p1", invMass);
-        }
-        if (passAngle && passRapidity) {
-          m_histManager->Fill("hMKK_BothCuts", invMass);
-          m_histManager->Fill("hOpeningAngle_AfterCuts", openingAngle);
-          m_histManager->Fill("hPairRapidity_AfterCuts", pairRapidity);
-          m_histManager->Fill("hPairPt_AfterCuts", phiMom.Pt());
-          if (nKaonPlus < 5) m_histManager->Fill("hMKK_Mult0to5_KPlus", invMass);
-          else if (nKaonPlus < 10) m_histManager->Fill("hMKK_Mult5to10_KPlus", invMass);
-          else if (nKaonPlus < 20) m_histManager->Fill("hMKK_Mult10to20_KPlus", invMass);
-          else m_histManager->Fill("hMKK_Mult20up_KPlus", invMass);
-          if (nKaonMinus < 5) m_histManager->Fill("hMKK_Mult0to5_KMinus", invMass);
-          else if (nKaonMinus < 10) m_histManager->Fill("hMKK_Mult5to10_KMinus", invMass);
-          else if (nKaonMinus < 20) m_histManager->Fill("hMKK_Mult10to20_KMinus", invMass);
-          else m_histManager->Fill("hMKK_Mult20up_KMinus", invMass);
-        }
-      }
+      FillPhiPairHistograms(invMass, phiMom, openingAngle, pairRapidity, nKaonPlus, nKaonMinus, kTRUE);
     }
   }
+
+  FillMixedEventPairs(kaonsPlus, kaonsMinus, pVtx.Z());
+  StoreEventForMixing(kaonsPlus, kaonsMinus, pVtx.Z());
 
   // All combinations (simple invariant mass)
   if (m_histManager) {
@@ -331,6 +275,7 @@ Int_t StPhiMaker::Make() {
 
 //-----------------------------------------------------------------------------
 Int_t StPhiMaker::Finish() {
+  FinalizeBackgroundSubtractedHistogram();
   if (mOutName != "") {
     TFile* fout = new TFile(mOutName.Data(), "RECREATE");
     fout->cd();
@@ -394,8 +339,9 @@ Bool_t StPhiMaker::PassTrackCuts(StPicoTrack* trk, TVector3& pVtx) {
   Float_t pt = pMom.Perp();
   Float_t eta = pMom.PseudoRapidity();
   if (pt < tr.minPt || pt > tr.maxPt) return kFALSE;
-  if (TMath::Abs(eta) > tr.maxEta) return kFALSE;
+  if (eta < tr.minEta || eta > tr.maxEta) return kFALSE;
   if (trk->gDCA(pVtx).Mag() > tr.maxDCA) return kFALSE;
+  if (tr.requirePrimaryTrack && !trk->isPrimary()) return kFALSE;
   return kTRUE;
 }
 
@@ -415,22 +361,19 @@ Bool_t StPhiMaker::PassTrackCuts(const Track_t& trk) {
   if ((Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax < tr.minNHitsRatio) return kFALSE;
   if (trk.nHitsDedx < tr.minNHitsDedx) return kFALSE;
   if (trk.DCA > tr.maxDCA) return kFALSE;
-  if (TMath::Abs(trk.eta) > tr.maxEta) return kFALSE;
+  if (trk.eta < tr.minEta || trk.eta > tr.maxEta) return kFALSE;
   if (trk.pT < tr.minPt || trk.pT > tr.maxPt) return kFALSE;
   if (trk.chi2 > tr.maxChi2) return kFALSE;
   return kTRUE;
 }
 
 //-----------------------------------------------------------------------------
-Bool_t StPhiMaker::IsKaon(const Track_t& trk, Bool_t useTOF) {
+Bool_t StPhiMaker::IsKaon(const Track_t& trk) {
   if (!PassTrackCuts(trk)) return kFALSE;
   PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
   if (trk.DCA > phi.maxDCAKaon) return kFALSE;
   if (TMath::Abs(trk.nSigmaKaon) > phi.nSigmaKaon) return kFALSE;
-  if (useTOF && trk.tofMatch) {
-    if (trk.mass2 < phi.minMass2Kaon || trk.mass2 > phi.maxMass2Kaon) return kFALSE;
-  }
-  return kTRUE;
+  return PassTofKaonPid(trk);
 }
 
 //-----------------------------------------------------------------------------
@@ -531,4 +474,176 @@ Double_t StPhiMaker::CalculatePairRapidity(Double_t invMass, const TVector3& phi
   Double_t pz = phiMom.Z();
   if (E <= TMath::Abs(pz)) return 0.0;
   return 0.5 * TMath::Log((E + pz) / (E - pz));
+}
+
+//-----------------------------------------------------------------------------
+Bool_t StPhiMaker::PassTofKaonPid(const Track_t& trk) const {
+  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+  if (!pid.requireTOF) return kTRUE;
+  if (trk.pT <= pid.pTofFallbackMax) return kTRUE;
+  if (!trk.tofMatch) return kFALSE;
+
+  Bool_t pass = kTRUE;
+  if (pid.tofUseMass2Cut) {
+    pass = pass && (trk.mass2 >= pid.minMass2Kaon && trk.mass2 <= pid.maxMass2Kaon);
+  }
+  if (pid.tofUseDeltaInvBetaCut) {
+    pass = pass && (TMath::Abs(trk.deltaOneOverBeta) <= pid.maxAbsDeltaOneOverBetaKaon);
+  }
+  return pass;
+}
+
+//-----------------------------------------------------------------------------
+void StPhiMaker::FillTofInfo(Track_t& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex) {
+  track.mass2 = -999.0;
+  track.deltaOneOverBeta = 999.0;
+  track.tofMatch = kFALSE;
+  if (btofIndex < 0) return;
+
+  StPicoBTofPidTraits* tof = mPicoDst->btofPidTraits(btofIndex);
+  if (!tof) return;
+
+  Double_t beta = tof->btofBeta();
+  if (beta <= 1e-4) return;
+
+  Double_t pMag = pMom.Mag();
+  track.mass2 = pMom.Mag2() * (1.0 / (beta * beta) - 1.0);
+  track.deltaOneOverBeta = DeltaOneOverBeta(beta, kKaonMass, pMag);
+  track.tofMatch = kTRUE;
+}
+
+//-----------------------------------------------------------------------------
+Int_t StPhiMaker::GetMixingVzBin(Float_t vz) const {
+  const EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
+  const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();
+  if (mix.nVzBins <= 0) return 0;
+
+  Double_t vzSpan = ev.maxVz - ev.minVz;
+  if (vzSpan <= 0.0) return 0;
+
+  Int_t vzBin = (Int_t)((vz - ev.minVz) / vzSpan * mix.nVzBins);
+  if (vzBin < 0) vzBin = 0;
+  if (vzBin >= mix.nVzBins) vzBin = mix.nVzBins - 1;
+  return vzBin;
+}
+
+//-----------------------------------------------------------------------------
+void StPhiMaker::FillMixedEventPairs(const std::vector<Track_t>& kaonsPlus, const std::vector<Track_t>& kaonsMinus, Float_t vz) {
+  if (!m_histManager || kaonsPlus.empty() || kaonsMinus.empty()) return;
+
+  Int_t vzBin = GetMixingVzBin(vz);
+  std::map<Int_t, std::deque<PhiMixingEvent> >::const_iterator poolIt = m_phiMixingPool.find(vzBin);
+  if (poolIt == m_phiMixingPool.end() || poolIt->second.empty()) return;
+
+  const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();
+  Int_t nPairs = (Int_t)kaonsPlus.size() * (Int_t)kaonsMinus.size();
+  if (nPairs > 1000) nPairs = 1000;
+  if (nPairs < 1) nPairs = 1;
+
+  for (Int_t iPair = 0; iPair < nPairs; iPair++) {
+    const PhiMixingEvent& mixEvt = poolIt->second[(Int_t)gRandom->Uniform(0, poolIt->second.size())];
+    if (mixEvt.kaonsPlus.empty() || mixEvt.kaonsMinus.empty()) continue;
+
+    const Track_t& kPlus = kaonsPlus[(Int_t)gRandom->Uniform(0, kaonsPlus.size())];
+    const Track_t& kMinus = mixEvt.kaonsMinus[(Int_t)gRandom->Uniform(0, mixEvt.kaonsMinus.size())];
+
+    Double_t invMass;
+    TVector3 phiMom, dcaPosPlus, dcaPosMinus;
+    if (!ReconstructPhi(kPlus, kMinus, invMass, phiMom, dcaPosPlus, dcaPosMinus)) continue;
+
+    Double_t openingAngle = CalculateOpeningAngle(kPlus, kMinus);
+    Double_t pairRapidity = CalculatePairRapidity(invMass, phiMom);
+    FillPhiPairHistograms(invMass, phiMom, openingAngle, pairRapidity, 0, 0, kFALSE);
+  }
+
+  (void)mix;
+}
+
+//-----------------------------------------------------------------------------
+void StPhiMaker::StoreEventForMixing(const std::vector<Track_t>& kaonsPlus, const std::vector<Track_t>& kaonsMinus, Float_t vz) {
+  if (kaonsPlus.empty() && kaonsMinus.empty()) return;
+
+  Int_t vzBin = GetMixingVzBin(vz);
+  PhiMixingEvent mixEvt;
+  mixEvt.kaonsPlus = kaonsPlus;
+  mixEvt.kaonsMinus = kaonsMinus;
+
+  std::deque<PhiMixingEvent>& pool = m_phiMixingPool[vzBin];
+  pool.push_back(mixEvt);
+
+  const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();
+  while ((Int_t)pool.size() > mix.bufferSize) {
+    pool.pop_front();
+  }
+}
+
+//-----------------------------------------------------------------------------
+void StPhiMaker::FillPhiPairHistograms(Double_t invMass, const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity,
+                                      Int_t nKaonPlus, Int_t nKaonMinus, Bool_t applySignalCuts) {
+  if (!m_histManager) return;
+
+  PhiCutConfig& phiCut = ConfigManager::GetInstance().GetPhiCuts();
+  Bool_t passInvMass = (invMass >= phiCut.minInvMass && invMass <= phiCut.maxInvMass);
+  Bool_t passAngle = (openingAngle >= phiCut.minOpeningAngle && openingAngle <= phiCut.maxOpeningAngle);
+  Bool_t passRapidity = (pairRapidity >= phiCut.minPairRapidity && pairRapidity <= phiCut.maxPairRapidity);
+  Bool_t passRapidity_0p4 = (pairRapidity >= -0.4 && pairRapidity <= 0.4);
+  Bool_t passRapidity_0p3 = (pairRapidity >= -0.3 && pairRapidity <= 0.3);
+  Bool_t passRapidity_0p2 = (pairRapidity >= -0.2 && pairRapidity <= 0.2);
+  Bool_t passRapidity_0p1 = (pairRapidity >= -0.1 && pairRapidity <= 0.1);
+
+  if (!applySignalCuts) {
+    if (!passInvMass) return;
+    m_histManager->Fill("hMKK_MixedEvent", invMass);
+    return;
+  }
+
+  m_histManager->Fill("hOpeningAngle_Raw", openingAngle);
+  m_histManager->Fill("hPairRapidity_Raw", pairRapidity);
+  m_histManager->Fill("hPairPt_Raw", phiMom.Pt());
+  m_histManager->Fill("hOpeningAngle_vs_MKK", openingAngle, invMass);
+  m_histManager->Fill("hPairRapidity_vs_MKK", pairRapidity, invMass);
+  m_histManager->Fill("hOpeningAngle_vs_Pt", openingAngle, phiMom.Pt());
+  m_histManager->Fill("hOpeningAngle_vs_Rapidity", openingAngle, pairRapidity);
+  m_histManager->Fill("hPairRapidity_vs_Pt", pairRapidity, phiMom.Pt());
+  m_histManager->Fill("hMKK_vs_Pt", phiMom.Pt(), invMass);
+
+  if (!passInvMass) return;
+  m_histManager->Fill("hMKK_SameEvent", invMass);
+
+  if (passAngle) {
+    m_histManager->Fill("hMKK_OpeningAngleCut", invMass);
+    if (passRapidity) m_histManager->Fill("hMKK_RapidityCut", invMass);
+    if (passRapidity_0p4) m_histManager->Fill("hMKK_RapidityCut_0p4", invMass);
+    if (passRapidity_0p3) m_histManager->Fill("hMKK_RapidityCut_0p3", invMass);
+    if (passRapidity_0p2) m_histManager->Fill("hMKK_RapidityCut_0p2", invMass);
+    if (passRapidity_0p1) m_histManager->Fill("hMKK_RapidityCut_0p1", invMass);
+  }
+  if (passAngle && passRapidity) {
+    m_histManager->Fill("hMKK_BothCuts", invMass);
+    m_histManager->Fill("hOpeningAngle_AfterCuts", openingAngle);
+    m_histManager->Fill("hPairRapidity_AfterCuts", pairRapidity);
+    m_histManager->Fill("hPairPt_AfterCuts", phiMom.Pt());
+    if (nKaonPlus < 5) m_histManager->Fill("hMKK_Mult0to5_KPlus", invMass);
+    else if (nKaonPlus < 10) m_histManager->Fill("hMKK_Mult5to10_KPlus", invMass);
+    else if (nKaonPlus < 20) m_histManager->Fill("hMKK_Mult10to20_KPlus", invMass);
+    else m_histManager->Fill("hMKK_Mult20up_KPlus", invMass);
+    if (nKaonMinus < 5) m_histManager->Fill("hMKK_Mult0to5_KMinus", invMass);
+    else if (nKaonMinus < 10) m_histManager->Fill("hMKK_Mult5to10_KMinus", invMass);
+    else if (nKaonMinus < 20) m_histManager->Fill("hMKK_Mult10to20_KMinus", invMass);
+    else m_histManager->Fill("hMKK_Mult20up_KMinus", invMass);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void StPhiMaker::FinalizeBackgroundSubtractedHistogram() {
+  if (!m_histManager) return;
+
+  TH1* signal = m_histManager->Get("hMKK_BothCuts");
+  TH1* mixed = m_histManager->Get("hMKK_MixedEvent");
+  TH1* subtracted = m_histManager->Get("hMKK_BackgroundSubtracted");
+  if (!signal || !mixed || !subtracted) return;
+
+  subtracted->Reset();
+  subtracted->Add(signal);
+  subtracted->Add(mixed, -1.0);
 }

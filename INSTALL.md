@@ -133,6 +133,8 @@ Example (Lambda, first 100 events):
 
 Pass a fifth argument to override mainconf (see [docs/REFERENCE.md](docs/REFERENCE.md) — How to run). For Phi, use `./script/run_anaPhi.sh` and the matching list/mainconf.
 
+On hosts where host `root4star` is unreliable, run locally through the batch-like Singularity runtime instead. For **Lambda**, use **`./script/singularity_run_anaLambda.sh`** with the same arguments as `run_anaLambda.sh`. For **Phi**, use **`./script/singularity_run_anaPhi.sh`** with the same arguments as `run_anaPhi.sh`. Phi QA PDFs can use **`./script/singularity_checkHistAnaPhi.sh`** when `checkHistAnaPhi.sh` fails for the same reason. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
+
 The run scripts set **`LD_LIBRARY_PATH`** (and related env) before `root4star`. If you invoke `root4star` by hand, you must reproduce that environment or linking may fail.
 
 ---
@@ -173,7 +175,7 @@ After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `clean
 |---------|-------------------|
 | `make` fails in yaml-cpp / config lib | Submodule: Step 2. |
 | Wrong STAR / missing `root-config` | Re-source `script/setup.sh` / `script/setup.csh` (Step 6), then verify `echo $STAR`, `echo $STAR_HOST_SYS`, `which root-config`, and `root-config --cflags` before `make`. |
-| Library load errors at runtime | Run via **`script/run_anaXxx.sh`** or match its `LD_LIBRARY_PATH` setup. |
+| Library load errors at runtime | Run via **`script/run_anaXxx.sh`** or match its `LD_LIBRARY_PATH` setup. On hosts where host `root4star` fails to start, use **`script/singularity_run_anaLambda.sh`** or **`script/singularity_run_anaPhi.sh`** (and **`script/singularity_checkHistAnaPhi.sh`** for Phi QA). |
 | Joblist script errors | Install PyYAML for the same `python3` you use. |
 | Batch paths wrong | **analysis.workDir** in analysis_info (output destination only), plus any hand-written stdout/stderr/output paths in custom joblists (Step 4). |
 

@@ -13,10 +13,12 @@ public:
   Double_t minNHitsRatio;
   Int_t minNHitsDedx;
   Double_t maxDCA;
+  Double_t minEta;
   Double_t maxEta;
   Double_t minPt;
   Double_t maxPt;
   Double_t maxChi2;
+  Bool_t requirePrimaryTrack;
 
   // Set default values
   void SetDefaults();
