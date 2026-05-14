@@ -16,3 +16,4 @@ Adds histograms to `StPhiMaker` or another Maker using YAML-driven definitions.
 
 - Histogram key names must match across YAML, `Fill(...)`, and `Get(...)`.
 - Rebuild Maker when C++ changes; macro-only changes do not require library rebuild.
+- On hosts where host `make` is unreliable, rebuild with `singularity-local-build-run.md` instead of host `make`.

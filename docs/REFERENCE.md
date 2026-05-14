@@ -21,7 +21,7 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, `snapshot_runmeta.sh`, generated/copied files). On successful submit, `submit.sh` saves `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`, `job/run/configlog/config_<anaName>_<jobid>.txt`, and `job/run/runmeta/runmeta_<anaName>_<jobid>.json` plus sidecars (`gitstatus`, `gitdiff`, `gitsubmodules`, `runtime_bundle`, `sums_artifacts`, `submit_stdout`). Files under `job/run/*.xml` and generated job artifacts are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. |
-| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `run_anaLambda.sh`, `run_anaPhi.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh` (local analysis via batch-like singularity runtime), `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `singularity_checkHistAnaPhi.sh` (QA PDF via the same singularity runtime), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
+| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh` (local analysis via the same singularity runtime), `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `singularity_checkHistAnaPhi.sh` (QA PDF via the same singularity runtime), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
 
 ## Prerequisites and setup
 
@@ -183,11 +183,18 @@ root4star -b -q "analysis/run_anaLambda.C(\"$INPUT\",\"$OUTPUT\",\"$JOBID\",$NEV
 
 ### Local with Singularity (batch-like runtime)
 
-On some login or dev nodes (for example AL9), host `root4star` may fail before the analysis macro runs (missing `libgfortran.so.3`, mixed 32-bit ROOT plugins for `root://`, and similar linker issues). Batch jobs already run `root4star` inside `singularity exec ... star-bnl/star-sw:latest`; use the matching **`singularity_*` wrappers** for local runs on those hosts instead of calling host `root4star` directly.
+On some login or dev nodes (for example AL9), host `root4star` may fail before the analysis macro runs (missing `libgfortran.so.3`, mixed 32-bit ROOT plugins for `root://`, and similar linker issues). Batch jobs already run `root4star` inside `singularity exec ... star-bnl/star-sw:latest`; use the matching **`singularity_*` wrappers** for local builds and runs on those hosts instead of calling host `root4star` or host `make` directly.
 
+- **Build:** `./script/singularity_make.sh MAINCONF [--no-clean] [make-args...]` — default `make clean && make` with `BUILD_BITS=64`; writes `lib/*.so` under the project root. After `make clean`, CMake is required to rebuild `src/third_party/yaml-cpp` (the wrapper prepends a cvmfs `cmake` when available).
 - **Lambda:** `./script/singularity_run_anaLambda.sh` — same arguments as `run_anaLambda.sh`.
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
+
+Example (build):
+
+```bash
+./script/singularity_make.sh config/mainconf/main_auau3p85fxt_anaPhi.yaml
+```
 
 Example (Lambda, first 100 events):
 
@@ -201,7 +208,7 @@ Example (Phi smoke test):
 ./script/singularity_run_anaPhi.sh config/mainconf/main_auau3p85fxt_anaPhi_test.yaml "" "" 0 100
 ```
 
-The wrappers source `setup.sh`, prepend `lib/` to `LD_LIBRARY_PATH`, bind `/gpfs`, `/star/nfs4/AFS`, `/home/starlib`, and site-local `/star/data*` paths from the input list when needed, then run the same `analysis/run_anaXxx.C` entry points as the non-singularity scripts.
+The wrappers source `setup.sh` (or resolve STAR from analysis_info when `starver` is unavailable), bind `/gpfs`, `/cvmfs`, and `/star/nfs4/AFS`, and for run wrappers also `/home/starlib` and site-local `/star/data*` paths from the input list when needed. Build and run wrappers then invoke `make` or the same `analysis/run_anaXxx.C` entry points as the non-singularity scripts.
 
 ### Result QA (Phi): checkHistAnaPhi.sh
 

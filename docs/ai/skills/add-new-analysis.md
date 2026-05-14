@@ -12,6 +12,8 @@ Adds a new analysis with Maker, macros, run script, config, and joblist.
 6. `config/analysis/analysis_info_*.yaml` with synchronized fields
 7. `job/joblist/joblist_<anaName>.xml` from `script/generate_joblist.sh` (`analysis.anaName`)
 
+For local validation on hosts where host `make` or `root4star` is unreliable, use `singularity-local-build-run.md` with the same `mainconf`.
+
 ## Rules
 
 - Keep event loop in chain pattern only.

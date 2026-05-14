@@ -119,6 +119,8 @@ make
 
 **Note:** `setup.sh` / `setup.csh` must be **sourced**, not executed, because they set `STAR`, `STAR_HOST_SYS`, `PATH`, and `LD_LIBRARY_PATH` in your current shell before `make`.
 
+On login or dev nodes where host `make` is unreliable (for example AL9), build inside the same batch-like Singularity runtime with **`./script/singularity_make.sh config/mainconf/main_<anaName>.yaml`**. The default is `make clean && make` with `BUILD_BITS=64`. Use **`--no-clean`** to skip `make clean` when `src/third_party/yaml-cpp/build` is already present. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
+
 ---
 
 ## Step 7: Run locally
@@ -173,8 +175,8 @@ After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `clean
 
 | Symptom | Things to check |
 |---------|-------------------|
-| `make` fails in yaml-cpp / config lib | Submodule: Step 2. |
-| Wrong STAR / missing `root-config` | Re-source `script/setup.sh` / `script/setup.csh` (Step 6), then verify `echo $STAR`, `echo $STAR_HOST_SYS`, `which root-config`, and `root-config --cflags` before `make`. |
+| `make` fails in yaml-cpp / config lib | Submodule: Step 2. After `make clean`, CMake is required to rebuild `yaml-cpp`; on hosts without a usable host `cmake`, use **`./script/singularity_make.sh <mainconf>`** or **`--no-clean`** if the yaml-cpp build tree already exists. |
+| Wrong STAR / missing `root-config` | Re-source `script/setup.sh` / `script/setup.csh` (Step 6), then verify `echo $STAR`, `echo $STAR_HOST_SYS`, `which root-config`, and `root-config --cflags` before `make`. On hosts where host `make` fails, use **`script/singularity_make.sh <mainconf>`**. |
 | Library load errors at runtime | Run via **`script/run_anaXxx.sh`** or match its `LD_LIBRARY_PATH` setup. On hosts where host `root4star` fails to start, use **`script/singularity_run_anaLambda.sh`** or **`script/singularity_run_anaPhi.sh`** (and **`script/singularity_checkHistAnaPhi.sh`** for Phi QA). |
 | Joblist script errors | Install PyYAML for the same `python3` you use. |
 | Batch paths wrong | **analysis.workDir** in analysis_info (output destination only), plus any hand-written stdout/stderr/output paths in custom joblists (Step 4). |

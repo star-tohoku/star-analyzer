@@ -62,7 +62,7 @@ Successful `job/run/submit.sh` submissions now save per-`jobid` reproducibility 
 | **analysis/** | `run_anaXxx.C` (runner) + `anaXxx.C` (chain; ACLiC). One pair per analysis. |
 | **config/** | `mainconf/`, `cuts/`, `maker/`, `hist/`, `analysis/` (analysis_info), `picoDstList/`. |
 | **StMaker/** | Maker sources → `lib/libStXXXMaker.so`. |
-| **script/** | `setup.sh`, `run_ana*.sh`, `generate_joblist.sh`, `checkHistAnaPhi.sh`, `singularity_checkHistAnaPhi.sh`, helpers. |
+| **script/** | `setup.sh`, `run_ana*.sh`, `singularity_make.sh`, `singularity_run_ana*.sh`, `generate_joblist.sh`, `checkHistAnaPhi.sh`, `singularity_checkHistAnaPhi.sh`, helpers. |
 | **job/** | `joblist/` templates; `job/run/` for submit and logs. |
 | **include/** / **src/** | Framework (`ConfigManager`, cuts, yaml-cpp build). |
 
