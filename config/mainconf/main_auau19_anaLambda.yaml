@@ -1,16 +1,18 @@
-# Main configuration file for Lambda (V0) analysis (auau19_anaLambda)
-# common
-event:         cuts/event/event_auau19_anaLambda.yaml
-track:         cuts/track/track.yaml
-pid:           cuts/pid/pid.yaml
-v0:            cuts/v0reco/v0.yaml
-mixing:        cuts/mixing/mixing.yaml
+# Main configuration template
+# Paths are relative to config/
+# Replace token "auau19_anaLambda" via script/setup_config_from_analysisinfo.py
 
-#maker
+event:         cuts/event/event_auau19_anaLambda.yaml
+track:         cuts/track/track_auau19_anaLambda.yaml
+pid:           cuts/pid/pid_auau19_anaLambda.yaml
+v0:            cuts/v0reco/v0_auau19_anaLambda.yaml
+mixing:        cuts/mixing/mixing_auau19_anaLambda.yaml
+
+# Maker config (key name should match your analysis macro expectation)
 lambda:        maker/maker_auau19_anaLambda.yaml
 
-#hist
+# Histogram config
 hist:          hist/hist_auau19_anaLambda.yaml
 
-#analysis info
-analysis:      analysis/analysis_info_temp.yaml
+# Analysis info
+analysis:      analysis/analysis_info_auau19_anaLambda.yaml

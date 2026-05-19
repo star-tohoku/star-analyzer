@@ -10,6 +10,7 @@ starTag:
   libraryTag: "SL24y"
   filetype: "daq_reco_picoDst"
   filenameFilter: "st_physics"
+  filenameNotFilter: "adc"
   storage: "local"
 
 # Dataset Information
@@ -38,7 +39,7 @@ analysis:
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName
-  nFiles: 1000
+  nFiles: 20
 
 analyst:
   name: "Yudai Ichikawa"
