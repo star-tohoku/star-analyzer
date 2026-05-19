@@ -142,7 +142,10 @@ root4star -b -q '$ROOT4STAR_CMD'
 EOF
 )
 
+cd "$PROJECT_ROOT_REAL"
+
 exec singularity exec \
+  --pwd "$PROJECT_ROOT_REAL" \
   "${SINGULARITY_BINDS[@]}" \
   --env LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
   "$SINGULARITY_IMAGE" \
