@@ -101,7 +101,7 @@ STAR_LDFLAGS := -L$(STAR_LIB_DIR) \
 STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager.cpp src/kinematics.cpp \
   src/cuts/EventCutConfig.cpp src/cuts/TrackCutConfig.cpp src/cuts/PIDCutConfig.cpp \
   src/cuts/V0CutConfig.cpp src/cuts/PhiCutConfig.cpp src/cuts/LambdaCutConfig.cpp \
-  src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/MixingConfig.cpp
+  src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/NuclearIdCutConfig.cpp src/cuts/MixingConfig.cpp
 STAR_ANA_CONFIG_OBJS := $(addprefix $(LIB_DIR)/,$(notdir $(STAR_ANA_CONFIG_SRCS:.cpp=.o)))
 CXXFLAGS_CONFIG := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -Iinclude -I$(YAML_CPP_DIR)/include
 LDFLAGS_CONFIG := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(YAML_CPP_BUILD) -lyaml-cpp -Wl,--no-whole-archive
@@ -119,9 +119,15 @@ LIB_LAMBDA_NAME := libStLambdaMaker.so
 SRC_LAMBDA := $(STLAMBDA_DIR)/StLambdaMaker.cxx
 OBJ_LAMBDA := $(LIB_DIR)/StLambdaMaker.o
 
+# --- libStNuclearIdMaker (depends on libStarAnaConfig or none? needs STAR_INC) ---
+STNUCLEARID_DIR := StMaker/StNuclearIdMaker
+LIB_NUCLEARID_NAME := libStNuclearIdMaker.so
+SRC_NUCLEARID := $(STNUCLEARID_DIR)/StNuclearIdMaker.cxx
+OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
+
 .PHONY: all clean
 
-all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME)
+all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -155,6 +161,8 @@ $(LIB_DIR)/Lambda1520CutConfig.o: src/cuts/Lambda1520CutConfig.cpp include/cuts/
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/Lambda1520CutConfig.cpp -o $@
 $(LIB_DIR)/Sigma1385CutConfig.o: src/cuts/Sigma1385CutConfig.cpp include/cuts/Sigma1385CutConfig.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/Sigma1385CutConfig.cpp -o $@
+$(LIB_DIR)/NuclearIdCutConfig.o: src/cuts/NuclearIdCutConfig.cpp include/cuts/NuclearIdCutConfig.h
+	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/NuclearIdCutConfig.cpp -o $@
 $(LIB_DIR)/MixingConfig.o: src/cuts/MixingConfig.cpp include/cuts/MixingConfig.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/MixingConfig.cpp -o $@
 $(LIB_DIR)/HistManager.o: src/HistManager.cpp include/HistManager.h
@@ -176,6 +184,13 @@ $(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ_L
 $(OBJ_LAMBDA): $(SRC_LAMBDA) $(STLAMBDA_DIR)/StLambdaMaker.h include/HistManager.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_LAMBDA) -o $@
 
+# libStNuclearIdMaker.so
+$(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ_NUCLEARID)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_NUCLEARID) -L$(LIB_DIR) -lStarAnaConfig -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+
+$(OBJ_NUCLEARID): $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
+
 clean:
-	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/libStarAnaConfig.so
+	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/libStarAnaConfig.so
 	rm -rf $(YAML_CPP_BUILD)

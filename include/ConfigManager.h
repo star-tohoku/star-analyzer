@@ -15,6 +15,7 @@ class PhiCutConfig;
 class LambdaCutConfig;
 class Lambda1520CutConfig;
 class Sigma1385CutConfig;
+class NuclearIdCutConfig;
 class MixingConfig;
 
 class ConfigManager {
@@ -38,6 +39,7 @@ public:
   LambdaCutConfig& GetLambdaCuts();
   Lambda1520CutConfig& GetLambda1520Cuts();
   Sigma1385CutConfig& GetSigma1385Cuts();
+  NuclearIdCutConfig& GetNuclearIdCuts();
   MixingConfig& GetMixingConfig();
 
 private:
@@ -59,6 +61,7 @@ private:
   LambdaCutConfig* lambdaCuts;
   Lambda1520CutConfig* lambda1520Cuts;
   Sigma1385CutConfig* sigma1385Cuts;
+  NuclearIdCutConfig* nuclearIdCuts;
   MixingConfig* mixingConfig;
 
   Bool_t isLoaded;

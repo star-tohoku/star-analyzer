@@ -7,6 +7,7 @@
 #include "cuts/LambdaCutConfig.h"
 #include "cuts/Lambda1520CutConfig.h"
 #include "cuts/Sigma1385CutConfig.h"
+#include "cuts/NuclearIdCutConfig.h"
 #include "cuts/MixingConfig.h"
 #include "YamlParser.h"
 #include <map>
@@ -33,7 +34,7 @@ ConfigManager& ConfigManager::GetInstance() {
 
 ConfigManager::ConfigManager() 
   : eventCuts(0), trackCuts(0), pidCuts(0), v0Cuts(0),
-    phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), mixingConfig(0),
+    phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), nuclearIdCuts(0), mixingConfig(0),
     isLoaded(kFALSE) {
   // Initialize all cut config instances
   eventCuts = &EventCutConfig::GetInstance();
@@ -44,6 +45,7 @@ ConfigManager::ConfigManager()
   lambdaCuts = &LambdaCutConfig::GetInstance();
   lambda1520Cuts = &Lambda1520CutConfig::GetInstance();
   sigma1385Cuts = &Sigma1385CutConfig::GetInstance();
+  nuclearIdCuts = &NuclearIdCutConfig::GetInstance();
   mixingConfig = &MixingConfig::GetInstance();
 }
 
@@ -160,6 +162,14 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
     }
   } else {
     std::cerr << "WARNING: 'sigma1385' key not found in main config" << std::endl;
+  }
+  
+  if (values.find("nuclearid") != values.end()) {
+    if (!LoadConfigFile(basePath.c_str(), values["nuclearid"].c_str(), "nuclearid")) {
+      success = kFALSE;
+    }
+  } else {
+    std::cerr << "WARNING: 'nuclearid' key not found in main config" << std::endl;
   }
   
   if (values.find("mixing") != values.end()) {
@@ -291,6 +301,8 @@ Bool_t ConfigManager::LoadConfigFile(const Char_t* basePath, const Char_t* relat
     return lambda1520Cuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "sigma1385") == 0) {
     return sigma1385Cuts->LoadFromFile(fullPath.c_str());
+  } else if (strcmp(configType, "nuclearid") == 0) {
+    return nuclearIdCuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "mixing") == 0) {
     return mixingConfig->LoadFromFile(fullPath.c_str());
   } else {
@@ -329,6 +341,10 @@ Lambda1520CutConfig& ConfigManager::GetLambda1520Cuts() {
 
 Sigma1385CutConfig& ConfigManager::GetSigma1385Cuts() {
   return *sigma1385Cuts;
+}
+
+NuclearIdCutConfig& ConfigManager::GetNuclearIdCuts() {
+  return *nuclearIdCuts;
 }
 
 MixingConfig& ConfigManager::GetMixingConfig() {

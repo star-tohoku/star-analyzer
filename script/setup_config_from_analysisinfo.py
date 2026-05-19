@@ -45,8 +45,8 @@ def load_yaml(path):
         return yaml.safe_load(f)
 
 
-def get_ana_name_no_yaml(analysis_path):
-    """When PyYAML is missing: grep for 'anaName:' and extract quoted value."""
+def get_analysis_field_no_yaml(analysis_path, key):
+    """When PyYAML is missing: grep for key and extract value."""
     with open(analysis_path, 'r') as f:
         for raw_line in f:
             line = raw_line.strip()
@@ -54,12 +54,12 @@ def get_ana_name_no_yaml(analysis_path):
                 continue
             # Ignore trailing inline comments before matching key/value.
             line = line.split('#', 1)[0].strip()
-            if 'anaName' not in line:
+            if key not in line:
                 continue
-            m = re.search(r'anaName\s*:\s*(?:&\w+\s+)?["\']([^"\']+)["\']', line)
+            m = re.search(r'{}\s*:\s*(?:&\w+\s+)?["\']([^"\']+)["\']'.format(key), line)
             if m:
                 return m.group(1).strip()
-            m = re.search(r'anaName\s*:\s*(\S+)', line)
+            m = re.search(r'{}\s*:\s*(\S+)'.format(key), line)
             if m:
                 return m.group(1).strip()
     return None
@@ -147,8 +147,12 @@ def main():
         info = load_yaml(analysis_path)
         analysis = info.get('analysis') or {}
         ana_name = analysis.get('anaName') or analysis.get('name')
+        base_ana_macro = analysis.get('baseAnaMacro')
+        base_run_macro = analysis.get('baseRunMacro')
     else:
-        ana_name = get_ana_name_no_yaml(analysis_path)
+        ana_name = get_analysis_field_no_yaml(analysis_path, 'anaName')
+        base_ana_macro = get_analysis_field_no_yaml(analysis_path, 'baseAnaMacro')
+        base_run_macro = get_analysis_field_no_yaml(analysis_path, 'baseRunMacro')
     if not ana_name:
         print("ERROR: anaName not found in analysis info: {}".format(analysis_path), file=sys.stderr)
         sys.exit(1)
@@ -186,6 +190,41 @@ def main():
         print("Created: {}".format(os.path.relpath(maker_dst, config_base)))
 
     write_mainconf(config_base, ana_name, analysis_rel)
+
+    # generate macros if base macros are defined
+    if base_ana_macro and base_run_macro:
+        maker_name = base_ana_macro[3:] if base_ana_macro.startswith('ana') else base_ana_macro
+        maker_class = "St{}Maker".format(maker_name)
+        maker_var = "{}Maker".format(maker_name.lower())
+        
+        # ana macro
+        ana_src = os.path.join(project_root, 'analysis', 'anaPhi.C')
+        ana_dst = os.path.join(project_root, 'analysis', '{}.C'.format(base_ana_macro))
+        if os.path.isfile(ana_src):
+            with open(ana_src, 'r') as f:
+                content = f.read()
+            content = content.replace('anaPhi', base_ana_macro)
+            content = content.replace('StPhiMaker', maker_class)
+            content = content.replace('phiMaker', maker_var)
+            content = content.replace('auau19_anaPhi', ana_name)
+            content = content.replace('run_anaPhi', base_run_macro)
+            with open(ana_dst, 'w') as f:
+                f.write(content)
+            print("Created: {}".format(os.path.relpath(ana_dst, project_root)))
+            
+        # run macro
+        run_src = os.path.join(project_root, 'analysis', 'run_anaPhi.C')
+        run_dst = os.path.join(project_root, 'analysis', '{}.C'.format(base_run_macro))
+        if os.path.isfile(run_src):
+            with open(run_src, 'r') as f:
+                content = f.read()
+            content = content.replace('run_anaPhi', base_run_macro)
+            content = content.replace('anaPhi', base_ana_macro)
+            content = content.replace('StPhiMaker', maker_class)
+            content = content.replace('auau19_anaPhi', ana_name)
+            with open(run_dst, 'w') as f:
+                f.write(content)
+            print("Created: {}".format(os.path.relpath(run_dst, project_root)))
 
 
 if __name__ == '__main__':
