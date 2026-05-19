@@ -12,6 +12,7 @@
 #include <TH2.h>
 #include <TLine.h>
 #include <TMath.h>
+#include <TObject.h>
 #include <TString.h>
 #include <TStyle.h>
 #include <iostream>
@@ -24,6 +25,7 @@
 #include "cuts/EventCutConfig.h"
 #include "cuts/TrackCutConfig.h"
 #include "cuts/PhiCutConfig.h"
+#include "cuts/PIDCutConfig.h"
 
 static Bool_t gConfigLoaded = kFALSE;
 
@@ -169,6 +171,8 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
 
   TString note = "Check histograms from run_anaPhi.C (StPhiMaker output).\n";
   note += "Phi KK reconstruction, opening angle / pair rapidity cuts.\n";
+  note += "TOF QA: Page 3 (global TOF-matched m2 vs p), Page 3b (TPC K vs final K m2, DCA_KK), Page 3c (m2/q2 vs p/q, delta(1/beta)).\n";
+  note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
   PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaPhi.C", inputs, note.Data(), true, anaName);
 
@@ -186,7 +190,7 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(5); h2 = (TH2*)fin->Get("hVzVsRun"); if (h2) h2->Draw("colz");
   c1->cd(6); h2 = (TH2*)fin->Get("hRefMultVsVz"); if (h2) h2->Draw("colz");
   c1->cd(7); h1 = (TH1*)fin->Get("hNTracks"); if (h1) { h1->Draw(); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); if (phi.maxNTr > 0) drawCutLine1D(h1, (Double_t)phi.maxNTr); } }
-  c1->cd(8); /* spare */;
+  c1->cd(8); h1 = (TH1*)fin->Get("hVr"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLine1D(h1, ev.maxVr); } }
   c1->cd(9); /* spare */;
   c1->Print(pdfName);
 
@@ -209,7 +213,7 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   if (gConfigLoaded) {
     TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
     c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hPt_Raw"); if (h1) { h1->Draw(); drawCutLines1D(h1, tr.minPt, tr.maxPt); }
-    c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta_Raw"); if (h1) { h1->Draw(); drawCutLines1D(h1, -tr.maxEta, tr.maxEta); }
+    c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta_Raw"); if (h1) { h1->Draw(); drawCutLines1D(h1, tr.minEta, tr.maxEta); }
     c1->cd(3); h1 = (TH1*)fin->Get("hNHitsFit_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, (Double_t)tr.minNHitsFit); }
     c1->cd(4); h1 = (TH1*)fin->Get("hNHitsRatio_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.minNHitsRatio); }
     c1->cd(5); h1 = (TH1*)fin->Get("hNHitsDedx"); if (h1) { h1->Draw(); drawCutLine1D(h1, (Double_t)tr.minNHitsDedx); }
@@ -235,10 +239,81 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   double dedxmax = 1e-6;
   c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hDedxVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->GetYaxis()->SetRangeUser(0, dedxmax); h2->Draw("colz"); }
   c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hBetaVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
-  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsP"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, pmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.minMass2Kaon);
+      drawCutLine2DH(h2, pid.maxMass2Kaon);
+    }
+  }
   c1->cd(4); gPad->SetLogz(0); h2 = (TH2*)fin->Get("hNSigmaPionVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
   c1->cd(5); h2 = (TH2*)fin->Get("hNSigmaKaonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLine2DH(h2, phi.nSigmaKaon); drawCutLine2DH(h2, -phi.nSigmaKaon); } }
   c1->cd(6); h2 = (TH2*)fin->Get("hNSigmaProtonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
+  c1->Print(pdfName);
+
+  // Page 3b: TOF m2 (TPC K vs final K) + pair DCA_KK
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsP_TpcKaon"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, pmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.minMass2Kaon);
+      drawCutLine2DH(h2, pid.maxMass2Kaon);
+    }
+  }
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsP_IsKaon"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, pmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.minMass2Kaon);
+      drawCutLine2DH(h2, pid.maxMass2Kaon);
+    }
+  }
+  c1->cd(3); h1 = (TH1*)fin->Get("hDCAKK_All"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLine1D(h1, phi.maxDCAKK);
+    }
+  }
+  c1->cd(4); h1 = (TH1*)fin->Get("hDCAKK_Pass"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLine1D(h1, phi.maxDCAKK);
+    }
+  }
+  c1->Print(pdfName);
+
+  // Page 3c: TOF diagnostics (m2/q2 vs p/q, delta(1/beta) vs p and 1D, beta vs p)
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hM2q2VsPq"); if (h2) h2->Draw("colz");
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hDeltaOneOverBetaVsP"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, pmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.maxAbsDeltaOneOverBetaKaon);
+      drawCutLine2DH(h2, -pid.maxAbsDeltaOneOverBetaKaon);
+    }
+  }
+  c1->cd(3); h1 = (TH1*)fin->Get("hDeltaOneOverBetaKaon"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLines1D(h1, -pid.maxAbsDeltaOneOverBetaKaon, pid.maxAbsDeltaOneOverBetaKaon);
+    }
+  }
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hBetaVsP"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, pmax);
+    h2->Draw("colz");
+  }
   c1->Print(pdfName);
 
   // Page 4: Event Plane & Misc
@@ -293,9 +368,27 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   // Page 9: Kaon QA (K from phi candidates)
   c1->Clear();
   c1->Divide(3, 1);
-  c1->cd(1); h1 = (TH1*)fin->Get("hK_Pt"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hK_Eta"); if (h1) h1->Draw();
-  c1->cd(3); h1 = (TH1*)fin->Get("hK_NSigma"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hK_Pt"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
+      drawCutLines1D(h1, tr.minPt, tr.maxPt);
+    }
+  }
+  c1->cd(2); h1 = (TH1*)fin->Get("hK_Eta"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
+      drawCutLines1D(h1, tr.minEta, tr.maxEta);
+    }
+  }
+  c1->cd(3); h1 = (TH1*)fin->Get("hK_NSigma"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLines1D(h1, -phi.nSigmaKaon, phi.nSigmaKaon);
+    }
+  }
   c1->Print(pdfName);
 
   // Page 10: Rapidity window variations (|y| < 0.4, 0.3, 0.2, 0.1)
@@ -333,6 +426,43 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(3); h1 = (TH1*)fin->Get("hNKaonMinus"); if (h1) h1->Draw();
   c1->cd(4); /* spare */;
   c1->Print(pdfName);
+
+  // Console: verify new TOF / K / DCA histograms exist and have entries (re-run analysis if missing or empty)
+  {
+    std::cout << "\n=== checkHistAnaPhi: TOF / K / DCA QA histogram entries ===\n";
+    const char* keys[] = {"hVr",
+                           "hBetaVsP",
+                           "hMass2VsP",
+                           "hMass2VsP_TpcKaon",
+                           "hMass2VsP_IsKaon",
+                           "hK_Pt",
+                           "hK_Eta",
+                           "hK_NSigma",
+                           "hDCAKK_All",
+                           "hDCAKK_Pass",
+                           "hM2q2VsPq",
+                           "hDeltaOneOverBetaVsP",
+                           "hDeltaOneOverBetaKaon",
+                           0};
+    for (Int_t i = 0; keys[i]; ++i) {
+      TObject* o = fin->Get(keys[i]);
+      if (!o) {
+        std::cout << "  " << keys[i] << ": NOT IN FILE\n";
+        continue;
+      }
+      if (o->InheritsFrom("TH1")) {
+        TH1* hh = (TH1*)o;
+        Double_t n = hh->GetEntries();
+        std::cout << "  " << keys[i] << ": entries=" << n;
+        if (n < 1.0)
+          std::cout << "  [empty — use ROOT from a run after new hist fills]";
+        std::cout << "\n";
+      } else {
+        std::cout << "  " << keys[i] << ": unexpected class " << o->ClassName() << "\n";
+      }
+    }
+    std::cout << "=============================================================\n\n";
+  }
 
   PdfHeader::ClosePdf(pdfName);
 

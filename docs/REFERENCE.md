@@ -185,7 +185,7 @@ root4star -b -q "analysis/run_anaLambda.C(\"$INPUT\",\"$OUTPUT\",\"$JOBID\",$NEV
 
 On some login or dev nodes (for example AL9), host `root4star` may fail before the analysis macro runs (missing `libgfortran.so.3`, mixed 32-bit ROOT plugins for `root://`, and similar linker issues). Batch jobs already run `root4star` inside `singularity exec ... star-bnl/star-sw:latest`; use the matching **`singularity_*` wrappers** for local builds and runs on those hosts instead of calling host `root4star` or host `make` directly.
 
-- **Build:** `./script/singularity_make.sh MAINCONF [--no-clean] [make-args...]` — default `make clean && make` with `BUILD_BITS=64`; writes `lib/*.so` under the project root. After `make clean`, CMake is required to rebuild `src/third_party/yaml-cpp` (the wrapper prepends a cvmfs `cmake` when available).
+- **Build:** `./script/singularity_make.sh MAINCONF [--no-clean] [make-args...]` — default `make clean && make` with `BUILD_BITS=64`; writes `lib/*.so` under the project root. After `make clean`, CMake is required to rebuild `src/third_party/yaml-cpp` (the wrapper prepends a cvmfs `cmake` when available). **This is the standard SL7-equivalent build:** `make` runs inside `star-bnl/star-sw:latest` with the same `STAR_HOST_SYS` resolution as batch (e.g. `sl73_x8664_gcc485`), so agents and humans can use it instead of an interactive `sl7` session whenever Singularity is available.
 - **Lambda:** `./script/singularity_run_anaLambda.sh` — same arguments as `run_anaLambda.sh`.
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
@@ -250,6 +250,7 @@ First-time flow (after git clone): customize analysis info → setup → build �
    source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
    make
    ```
+   Or use **`./script/singularity_make.sh config/mainconf/main_auau19_anaLambda.yaml`** for the same batch-like STAR toolchain without interactive `sl7`.
    For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead. The setup script must be sourced so the selected STAR and ROOT environment persist for `make`.
 
 3. **Generate the joblist** (from project root). Pass the mainconf path:

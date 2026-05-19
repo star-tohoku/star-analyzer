@@ -12,7 +12,7 @@ Adds a new analysis with Maker, macros, run script, config, and joblist.
 6. `config/analysis/analysis_info_*.yaml` with synchronized fields
 7. `job/joblist/joblist_<anaName>.xml` from `script/generate_joblist.sh` (`analysis.anaName`)
 
-For local validation on hosts where host `make` or `root4star` is unreliable, use `singularity-local-build-run.md` with the same `mainconf`.
+For local validation on hosts where host `make` or `root4star` is unreliable — or whenever you want an **SL7-class / batch-matched build** without interactive `sl7` — use **`./script/singularity_make.sh <mainconf>`** and the other wrappers in `singularity-local-build-run.md` with the same `mainconf`.
 
 ## Rules
 

@@ -40,6 +40,14 @@ axes:
     nBins: 200
     min: -10.0
     max: 10.0
+  Vr: &Vr
+    nBins: 200
+    min: 0.0
+    max: 5.0
+  DCAKK: &DCAKK
+    nBins: 200
+    min: 0.0
+    max: 5.0
   TriggerIds: &TriggerIds
     nBins: 100
     min: 0.0
@@ -183,6 +191,10 @@ histograms:
     axis: *VzDiff
     title: "V_{z}^{TPC} - V_{z}^{VPD};#Delta V_{z} [cm];Counts"
 
+  hVr:
+    axis: *Vr
+    title: "Primary vertex transverse radius;V_{r} [cm];Counts"
+
   hTriggerIds:
     axis: *TriggerIds
     title: "Trigger IDs;Trigger ID;Counts"
@@ -295,7 +307,17 @@ histograms:
   hMass2VsP:
     xAxis: *Momentum
     yAxis: *Mass2Y
-    title: "m^{2} vs p;p [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
+    title: "m^{2} vs p (TOF-matched tracks);p [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
+
+  hMass2VsP_TpcKaon:
+    xAxis: *Momentum
+    yAxis: *Mass2Y
+    title: "m^{2} vs p (TPC K candidates, TOF hit);p [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
+
+  hMass2VsP_IsKaon:
+    xAxis: *Momentum
+    yAxis: *Mass2Y
+    title: "m^{2} vs p (final IsKaon, TOF hit);p [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
 
   # Event plane
   hPsi2:
@@ -316,6 +338,14 @@ histograms:
   hMKK_SameEvent:
     axis: *MKK
     title: "K^{+}K^{-} Invariant Mass (ReconstructPhi pass);M_{KK} [GeV/c^{2}];Counts"
+
+  hDCAKK_All:
+    axis: *DCAKK
+    title: "K^{+}K^{-} DCA at pair vertex (all pairs);DCA_{KK} [cm];Counts"
+
+  hDCAKK_Pass:
+    axis: *DCAKK
+    title: "K^{+}K^{-} DCA at pair vertex (ReconstructPhi pass);DCA_{KK} [cm];Counts"
 
   hOpeningAngle_Raw:
     axis: *OpeningAngle

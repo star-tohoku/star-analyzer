@@ -105,6 +105,7 @@ Int_t StPhiMaker::Make() {
   // Event-level fills
   if (m_histManager) {
     m_histManager->Fill("hVz", pVtx.Z());
+    m_histManager->Fill("hVr", vr);
     m_histManager->Fill("hVxVy", pVtx.X(), pVtx.Y());
     m_histManager->Fill("hRefMult", refMult);
     m_histManager->Fill("hVzVsRun", (Double_t)event->runId(), pVtx.Z());
@@ -190,6 +191,9 @@ Int_t StPhiMaker::Make() {
             if (beta > 1e-4) {
               Double_t mass2 = pMom.Mag2() * (1.0 / (beta * beta) - 1.0);
               m_histManager->Fill("hM2q2VsPq", pOverQ, mass2);
+              Double_t pMag = pMom.Mag();
+              m_histManager->Fill("hBetaVsP", pMag, 1.0 / beta);
+              m_histManager->Fill("hMass2VsP", pMag, mass2);
               Double_t deltaInvBeta = DeltaOneOverBeta(beta, kKaonMass, pMom.Mag());
               if (TMath::Abs(deltaInvBeta) < 10.0) {
                 m_histManager->Fill("hDeltaOneOverBetaKaon", deltaInvBeta);
@@ -214,7 +218,19 @@ Int_t StPhiMaker::Make() {
     BuildTrack(track, trk, event, pVtx);
     FillTofInfo(track, trk, pMom, btofIndex);
 
+    if (m_histManager && track.tofMatch) {
+      m_histManager->Fill("hMass2VsP_TpcKaon", pMom.Mag(), track.mass2);
+    }
+
     if (IsKaon(track)) {
+      if (m_histManager) {
+        m_histManager->Fill("hK_Pt", track.pT);
+        m_histManager->Fill("hK_Eta", track.eta);
+        m_histManager->Fill("hK_NSigma", track.nSigmaKaon);
+        if (track.tofMatch) {
+          m_histManager->Fill("hMass2VsP_IsKaon", pMom.Mag(), track.mass2);
+        }
+      }
       if (track.charge > 0 && (Int_t)kaonsPlus.size() < kMaxKaons) {
         kaonsPlus.push_back(track);
       } else if (track.charge < 0 && (Int_t)kaonsMinus.size() < kMaxKaons) {
@@ -236,9 +252,19 @@ Int_t StPhiMaker::Make() {
   // Phi reconstruction: ReconstructPhi pairs
   for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
     for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
+      TVector3 dcaMeasPlus, dcaMeasMinus;
+      Double_t dcaKK = CalculateDCA(kaonsPlus[iPlus], kaonsMinus[iMinus], dcaMeasPlus, dcaMeasMinus);
+      if (m_histManager) {
+        m_histManager->Fill("hDCAKK_All", dcaKK);
+      }
+
       Double_t invMass;
       TVector3 phiMom, dcaPosPlus, dcaPosMinus;
       if (!ReconstructPhi(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom, dcaPosPlus, dcaPosMinus)) continue;
+
+      if (m_histManager) {
+        m_histManager->Fill("hDCAKK_Pass", dcaKK);
+      }
 
       Double_t openingAngle = CalculateOpeningAngle(kaonsPlus[iPlus], kaonsMinus[iMinus]);
       Double_t pairRapidity = CalculatePairRapidity(invMass, phiMom);

@@ -1,6 +1,6 @@
 ---
 name: singularity-local-build-run
-description: Build and debug locally through the batch-like Singularity runtime when host `make` or `root4star` is unreliable (for example AL9 login nodes, missing `libgfortran.so.3`, or mixed 32-bit ROOT plugins for `root://`). Use when the user asks to run the 'Skill: singularity-local-build-run' workflow or related tasks.
+description: Build and debug locally through the batch-like Singularity image (`star-bnl/star-sw:latest`). **`./script/singularity_make.sh <mainconf>` is the standard SL7-equivalent `make`** (same STAR `sl73_*` toolchain as batch) when not inside interactive `sl7`; also use when host `make` or `root4star` is unreliable (AL9, missing `libgfortran.so.3`, etc.). Use when the user asks for this skill or Singularity local build/run.
 ---
 
 # Skill wrapper: singularity-local-build-run

@@ -1,14 +1,14 @@
 # Skill: singularity-local-build-run
 
-Build and debug locally through the batch-like Singularity runtime when host `make` or `root4star` is unreliable (for example AL9 login nodes, missing `libgfortran.so.3`, or mixed 32-bit ROOT plugins for `root://`).
+Build and debug locally through the **same batch-like Singularity image** as farm jobs (`singularity exec ... star-bnl/star-sw:latest`). This is the **recommended way to get an SL7-class STAR toolchain build** (`sl73_x8664_gcc485`, etc.) when you are not already inside an interactive `sl7` shell, and it is also the right fallback when host `make` or `root4star` is unreliable (for example AL9 login nodes, missing `libgfortran.so.3`, or mixed 32-bit ROOT plugins for `root://`).
 
 ## When to use
 
+- **Any** StMaker or Config C++ change: rebuild `lib/*.so` before local validation, preflight, or farm submit.
+- You want **`make` parity with batch** without typing `sl7` by hand: use **`./script/singularity_make.sh <mainconf>`** (same container STAR as workers).
 - Host `make` or `root4star` fails before the analysis macro runs.
-- Farm preflight or batch jobs already use `singularity exec ... star-bnl/star-sw:latest`, and local behavior should match that runtime.
-- After StMaker or Config C++ changes, rebuild `lib/*.so` before local or smoke validation.
 
-## Build
+## Build (SL7-equivalent)
 
 From the project root:
 
@@ -16,10 +16,11 @@ From the project root:
 ./script/singularity_make.sh config/mainconf/main_<anaName>.yaml
 ```
 
+- **Treat this as satisfying the “build in SL7 / batch-like STAR” rule** in `docs/ai/AGENT_RULES.md`: the wrapper runs `make` inside `star-bnl/star-sw:latest` with `STAR_HOST_SYS` resolved to the same `sl73_*` / `sl74_*` tree used for batch, not the host OS compiler.
 - Default: `make clean && make` with `BUILD_BITS=64`.
 - Use `--no-clean` when `src/third_party/yaml-cpp/build` already exists and you only need to rebuild project libraries.
 - After `make clean`, CMake is required to rebuild `yaml-cpp`; the wrapper prepends cvmfs `cmake` when available.
-- Prefer SL7 + `source ./script/setup.sh <mainconf> && make` when that host environment is healthy; use this skill as the fallback.
+- **Alternative (interactive SL7 node):** `sl7` → `source ./script/setup.sh <mainconf>` → `make`. Use whichever is faster for you; both produce STAR-matched binaries when the same `mainconf` / `libraryTag` is used.
 
 ## Run and QA
 

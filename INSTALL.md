@@ -119,7 +119,7 @@ make
 
 **Note:** `setup.sh` / `setup.csh` must be **sourced**, not executed, because they set `STAR`, `STAR_HOST_SYS`, `PATH`, and `LD_LIBRARY_PATH` in your current shell before `make`.
 
-On login or dev nodes where host `make` is unreliable (for example AL9), build inside the same batch-like Singularity runtime with **`./script/singularity_make.sh config/mainconf/main_<anaName>.yaml`**. The default is `make clean && make` with `BUILD_BITS=64`. Use **`--no-clean`** to skip `make clean` when `src/third_party/yaml-cpp/build` is already present. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
+**SL7-class build without an interactive `sl7` shell:** from the project root you can run **`./script/singularity_make.sh config/mainconf/main_<anaName>.yaml`**. That invokes `make` inside the same **`star-bnl/star-sw:latest`** Singularity image as batch jobs (STAR `sl73_*` / `sl74_*` toolchain), so it is the usual way to satisfy “build like SL7 / like the farm” when you are on AL9, a generic login node, or simply prefer one command over entering `sl7` manually. Default is `make clean && make` with `BUILD_BITS=64`. Use **`--no-clean`** to skip `make clean` when `src/third_party/yaml-cpp/build` is already present. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
 
 ---
 
@@ -135,7 +135,7 @@ Example (Lambda, first 100 events):
 
 Pass a fifth argument to override mainconf (see [docs/REFERENCE.md](docs/REFERENCE.md) — How to run). For Phi, use `./script/run_anaPhi.sh` and the matching list/mainconf.
 
-On hosts where host `root4star` is unreliable, run locally through the batch-like Singularity runtime instead. For **Lambda**, use **`./script/singularity_run_anaLambda.sh`** with the same arguments as `run_anaLambda.sh`. For **Phi**, use **`./script/singularity_run_anaPhi.sh`** with the same arguments as `run_anaPhi.sh`. Phi QA PDFs can use **`./script/singularity_checkHistAnaPhi.sh`** when `checkHistAnaPhi.sh` fails for the same reason. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
+On hosts such as **AL9**, host `root4star` and host `make` may fail unless you use the same **SL7-class STAR environment** as batch jobs—either an interactive `sl7` session or `singularity exec` into `star-bnl/star-sw:latest`. When you cannot run or build on the host alone, stay on that host and call the **`singularity_*` wrappers** from the project root instead of the plain scripts: for **Lambda**, **`./script/singularity_run_anaLambda.sh`** (same arguments as `run_anaLambda.sh`); for **Phi**, **`./script/singularity_run_anaPhi.sh`** (same arguments as `run_anaPhi.sh`); for Phi QA PDFs, **`./script/singularity_checkHistAnaPhi.sh`** when **`checkHistAnaPhi.sh`** fails for the same reason. For compilation, use **`./script/singularity_make.sh`** (Step 6). See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
 
 The run scripts set **`LD_LIBRARY_PATH`** (and related env) before `root4star`. If you invoke `root4star` by hand, you must reproduce that environment or linking may fail.
 

@@ -4,15 +4,20 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
 
 ## Steps
 
-1. **Build at the project root**
+1. **Build at the project root** (batch-matched STAR toolchain — **either** path is valid)
+   ```bash
+   cd /path/to/star-analysis
+   ./script/singularity_make.sh config/mainconf/main_auau19_anaLambda.yaml
+   ```
+   **Or** interactive SL7:
    ```bash
    cd /path/to/star-analysis
    sl7
    source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
    make
    ```
-   For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead.
-   For debug/repro jobs (especially heap/exit issues), always build in SL7 before submit.
+   `singularity_make.sh` runs `make` inside `star-bnl/star-sw:latest` with the same `sl73_*` / `sl74_*` toolchain as farm jobs; use it when you do not want to enter `sl7` manually (for example on AL9 login nodes). For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead when building inside `sl7`.
+   For debug/repro jobs (especially heap/exit issues), always use one of these batch-like builds before submit — not host-only `make` on a mismatched OS.
 
 2. **Move to this directory and submit**
    ```bash
@@ -28,7 +33,7 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
    ```bash
    ./submit.sh --rebuild-if-needed ../joblist/joblist_auau19_anaLambda_test.xml
    ```
-   This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight with the same embedded mainconf.
+   This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight with the same embedded mainconf. If host `make` is not batch-matched (for example AL9), run **`./script/singularity_make.sh <embedded-mainconf>`** at the project root first, then re-run `submit.sh` without relying on this recovery path.
 
   On successful submit, reproducibility artifacts are saved per `jobid`:
   - **joblistlog/joblist_<anaName>_<jobid>.xml** — submitted XML after `__PROJECT_ROOT__` replacement
