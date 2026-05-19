@@ -32,16 +32,9 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV_lambda.li
   const char* pwd = gSystem->Getenv("PWD");
   if (!pwd) pwd = ".";
 
-  gROOT->LoadMacro("$STAR/StRoot/StMuDSTMaker/COMMON/macros/loadSharedLibraries.C");
-  gROOT->ProcessLine("loadSharedLibraries()");
-  gSystem->Load("StPicoEvent");
-  gSystem->Load("StPicoDstMaker");
-
-  if (gSystem->Load(TString(pwd) + "/lib/libStLambdaMaker.so") < 0 && gSystem->Load("StLambdaMaker") < 0) {
-    std::cerr << "ERROR: failed to load StLambdaMaker. Run from project root and ensure make has built lib/libStLambdaMaker.so" << std::endl;
-    return;
-  }
-
+  // `run_anaLambda.C` loads the STAR/Pico/Maker libraries before ACLiC-compiling
+  // this macro. Re-loading them here can mix STAR releases in one process and
+  // has been correlated with exit-time ROOT heap corruption.
   TString mainConfigPath;
   if (configPath && strlen(configPath) > 0) {
     mainConfigPath = configPath;
