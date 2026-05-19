@@ -137,6 +137,12 @@ Pass a fifth argument to override mainconf (see [docs/REFERENCE.md](docs/REFEREN
 
 On hosts such as **AL9**, host `root4star` and host `make` may fail unless you use the same **SL7-class STAR environment** as batch jobs—either an interactive `sl7` session or `singularity exec` into `star-bnl/star-sw:latest`. When you cannot run or build on the host alone, stay on that host and call the **`singularity_*` wrappers** from the project root instead of the plain scripts: for **Lambda**, **`./script/singularity_run_anaLambda.sh`** (same arguments as `run_anaLambda.sh`); for **Phi**, **`./script/singularity_run_anaPhi.sh`** (same arguments as `run_anaPhi.sh`); for Phi QA PDFs, **`./script/singularity_checkHistAnaPhi.sh`** when **`checkHistAnaPhi.sh`** fails for the same reason. For compilation, use **`./script/singularity_make.sh`** (Step 6). See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
 
+Example (Lambda via Singularity, first 100 events; same arguments as above):
+
+```bash
+./script/singularity_run_anaLambda.sh config/picoDstList/auau19GeV.list rootfile/auau19_anaLambda_temp/out.root 0 100
+```
+
 The run scripts set **`LD_LIBRARY_PATH`** (and related env) before `root4star`. If you invoke `root4star` by hand, you must reproduce that environment or linking may fail.
 
 ---
