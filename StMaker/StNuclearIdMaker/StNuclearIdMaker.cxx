@@ -95,7 +95,7 @@ StNuclearIdMaker::~StNuclearIdMaker() {
 }
 
 Int_t StNuclearIdMaker::Init() {
-  std::string histPath = ConfigManager::GetInstance().GetHistConfigPath();
+  std::string histPath = ConfigManager::GetInstance().GetHistConfigPath(GetName());
   if (histPath.empty()) {
     std::cerr << "[StNuclearIdMaker] GetHistConfigPath() returned empty; no histograms will be filled." << std::endl;
     m_histManager = 0;
