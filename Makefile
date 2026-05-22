@@ -82,6 +82,7 @@ STAR_INC_DIR := $(STAR_OBJ)/include
 STAR_LIB_DIR := $(STAR_OBJ)/lib
 
 STMAKER_DIR := StMaker/StPhiMaker
+RMC_DIR := StRoot/StRefMultCorr
 LIB_DIR := lib
 YAML_CPP_DIR := src/third_party/yaml-cpp
 YAML_CPP_BUILD := $(YAML_CPP_DIR)/build
@@ -101,17 +102,29 @@ STAR_LDFLAGS := -L$(STAR_LIB_DIR) \
 STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager.cpp src/kinematics.cpp \
   src/cuts/EventCutConfig.cpp src/cuts/TrackCutConfig.cpp src/cuts/PIDCutConfig.cpp \
   src/cuts/V0CutConfig.cpp src/cuts/PhiCutConfig.cpp src/cuts/LambdaCutConfig.cpp \
+<<<<<<< HEAD
   src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/NuclearIdCutConfig.cpp src/cuts/MixingConfig.cpp
+=======
+  src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/MixingConfig.cpp \
+  src/cuts/CentralityCutConfig.cpp
+>>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
 STAR_ANA_CONFIG_OBJS := $(addprefix $(LIB_DIR)/,$(notdir $(STAR_ANA_CONFIG_SRCS:.cpp=.o)))
 CXXFLAGS_CONFIG := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -Iinclude -I$(YAML_CPP_DIR)/include
 LDFLAGS_CONFIG := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(YAML_CPP_BUILD) -lyaml-cpp -Wl,--no-whole-archive
 
-# --- libStPhiMaker (depends on libStarAnaConfig) ---
+# --- libStRefMultCorr (vendored, no STAR link beyond headers) ---
+LIB_RMC_NAME := libStRefMultCorr.so
+RMC_SRCS := $(RMC_DIR)/StRefMultCorr.cxx $(RMC_DIR)/CentralityMaker.cxx $(RMC_DIR)/Param.cxx
+RMC_OBJS := $(LIB_DIR)/StRefMultCorr.o $(LIB_DIR)/CentralityMaker.o $(LIB_DIR)/Param.o
+CXXFLAGS_RMC := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -IStRoot -I$(RMC_DIR)
+LDFLAGS_RMC := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared
+
+# --- libStPhiMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 LIB_NAME := libStPhiMaker.so
-CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude $(STAR_INC)
+CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude -IStRoot -I$(RMC_DIR) $(STAR_INC)
 LDFLAGS_MAKER := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,-rpath,$(STAR_LIB_DIR)
-SRC := $(STMAKER_DIR)/StPhiMaker.cxx
-OBJ := $(LIB_DIR)/StPhiMaker.o
+SRC := $(STMAKER_DIR)/StPhiMaker.cxx $(STMAKER_DIR)/CentralityHelper.cxx
+OBJ := $(LIB_DIR)/StPhiMaker.o $(LIB_DIR)/CentralityHelper.o
 
 # --- libStLambdaMaker (depends on libStarAnaConfig) ---
 STLAMBDA_DIR := StMaker/StLambdaMaker
@@ -127,7 +140,11 @@ OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
 
 .PHONY: all clean
 
+<<<<<<< HEAD
 all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME)
+=======
+all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME)
+>>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -165,17 +182,32 @@ $(LIB_DIR)/NuclearIdCutConfig.o: src/cuts/NuclearIdCutConfig.cpp include/cuts/Nu
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/NuclearIdCutConfig.cpp -o $@
 $(LIB_DIR)/MixingConfig.o: src/cuts/MixingConfig.cpp include/cuts/MixingConfig.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/MixingConfig.cpp -o $@
+$(LIB_DIR)/CentralityCutConfig.o: src/cuts/CentralityCutConfig.cpp include/cuts/CentralityCutConfig.h
+	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/CentralityCutConfig.cpp -o $@
+
+# libStRefMultCorr.so (no rootcint dict; used from compiled Makers only)
+$(LIB_DIR)/$(LIB_RMC_NAME): $(LIB_DIR) $(RMC_OBJS)
+	$(CXX) $(LDFLAGS_RMC) -o $@ $(RMC_OBJS) $(ROOTLIBS)
+
+$(LIB_DIR)/StRefMultCorr.o: $(RMC_DIR)/StRefMultCorr.cxx $(RMC_DIR)/StRefMultCorr.h
+	$(CXX) $(CXXFLAGS_RMC) -c $(RMC_DIR)/StRefMultCorr.cxx -o $@
+$(LIB_DIR)/CentralityMaker.o: $(RMC_DIR)/CentralityMaker.cxx $(RMC_DIR)/CentralityMaker.h
+	$(CXX) $(CXXFLAGS_RMC) -c $(RMC_DIR)/CentralityMaker.cxx -o $@
+$(LIB_DIR)/Param.o: $(RMC_DIR)/Param.cxx $(RMC_DIR)/Param.h
+	$(CXX) $(CXXFLAGS_RMC) -c $(RMC_DIR)/Param.cxx -o $@
 $(LIB_DIR)/HistManager.o: src/HistManager.cpp include/HistManager.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/HistManager.cpp -o $@
 $(LIB_DIR)/kinematics.o: src/kinematics.cpp include/kinematics.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/kinematics.cpp -o $@
 
-# libStPhiMaker.so (links against libStarAnaConfig)
-$(LIB_DIR)/$(LIB_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ) -L$(LIB_DIR) -lStarAnaConfig -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+# libStPhiMaker.so (links against libStarAnaConfig + libStRefMultCorr)
+$(LIB_DIR)/$(LIB_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
 
-$(OBJ): $(SRC) $(STMAKER_DIR)/StPhiMaker.h include/HistManager.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC) -o $@
+$(LIB_DIR)/StPhiMaker.o: $(STMAKER_DIR)/StPhiMaker.cxx $(STMAKER_DIR)/StPhiMaker.h include/HistManager.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(STMAKER_DIR)/StPhiMaker.cxx -o $@
+$(LIB_DIR)/CentralityHelper.o: $(STMAKER_DIR)/CentralityHelper.cxx $(STMAKER_DIR)/CentralityHelper.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(STMAKER_DIR)/CentralityHelper.cxx -o $@
 
 # libStLambdaMaker.so (links against libStarAnaConfig)
 $(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ_LAMBDA)
@@ -192,5 +224,9 @@ $(OBJ_NUCLEARID): $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
 
 clean:
+<<<<<<< HEAD
 	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/libStarAnaConfig.so
+=======
+	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
+>>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
 	rm -rf $(YAML_CPP_BUILD)

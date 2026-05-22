@@ -17,6 +17,7 @@ class Lambda1520CutConfig;
 class Sigma1385CutConfig;
 class NuclearIdCutConfig;
 class MixingConfig;
+class CentralityCutConfig;
 
 class ConfigManager {
 public:
@@ -41,6 +42,7 @@ public:
   Sigma1385CutConfig& GetSigma1385Cuts();
   NuclearIdCutConfig& GetNuclearIdCuts();
   MixingConfig& GetMixingConfig();
+  CentralityCutConfig& GetCentralityCuts();
 
 private:
   ConfigManager();
@@ -63,6 +65,7 @@ private:
   Sigma1385CutConfig* sigma1385Cuts;
   NuclearIdCutConfig* nuclearIdCuts;
   MixingConfig* mixingConfig;
+  CentralityCutConfig* centralityCuts;
 
   Bool_t isLoaded;
   std::map<std::string, std::string> m_mainConfigValues;  ///< Parsed key-value from main.yaml

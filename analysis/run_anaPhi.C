@@ -21,6 +21,10 @@ void run_anaPhi(const Char_t* inputFile,
     std::cerr << "ERROR: failed to load libStarAnaConfig.so" << std::endl;
     return;
   }
+  if (gSystem->Load(TString(pwd) + "/lib/libStRefMultCorr.so") < 0) {
+    std::cerr << "ERROR: failed to load libStRefMultCorr.so" << std::endl;
+    return;
+  }
   if (gSystem->Load(TString(pwd) + "/lib/libStPhiMaker.so") < 0) {
     std::cerr << "ERROR: failed to load libStPhiMaker.so" << std::endl;
     return;
@@ -29,7 +33,7 @@ void run_anaPhi(const Char_t* inputFile,
   gInterpreter->AddIncludePath(pwd);
   gInterpreter->AddIncludePath(TString::Format("%s/include", pwd));
   gInterpreter->AddIncludePath("$STAR/StRoot");
-  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStPhiMaker -Wl,-rpath,%s/lib", pwd, pwd));
+  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStPhiMaker -Wl,-rpath,%s/lib", pwd, pwd));
 
   gROOT->ProcessLine(TString::Format(".L %s/analysis/anaPhi.C+", pwd));
   anaPhi(inputFile, outputFile, jobid, nEventsMax, configPath);

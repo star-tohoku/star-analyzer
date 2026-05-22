@@ -7,6 +7,7 @@ track:         cuts/track/track_auau19_anaPhi.yaml
 pid:           cuts/pid/pid_auau19_anaPhi.yaml
 v0:            cuts/v0reco/v0_auau19_anaPhi.yaml
 mixing:        cuts/mixing/mixing_auau19_anaPhi.yaml
+centrality:    cuts/centrality/centrality_auau19_anaPhi.yaml
 
 # Maker config (key name should match your analysis macro expectation)
 phi:           maker/maker_auau19_anaPhi.yaml

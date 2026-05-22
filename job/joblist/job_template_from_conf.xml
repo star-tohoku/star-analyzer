@@ -14,7 +14,7 @@
     set runtime_dir="$SCRATCH/runtime_bundle"
     /bin/rm -rf "$runtime_dir"
     /bin/mkdir -p "$runtime_dir"
-    foreach d (analysis config lib include StMaker .sl73_x8664_gcc485)
+    foreach d (analysis config lib include StMaker StRoot .sl73_x8664_gcc485)
       if ( -e "$d" ) then
         /bin/cp -RL "$d" "$runtime_dir/"
       endif
@@ -41,6 +41,7 @@
       <File>file:./config/</File>
       <File>file:./include/</File>
       <File>file:./StMaker/</File>
+      <File>file:./StRoot/</File>
     </Package>
   </SandBox>
 

@@ -15,6 +15,7 @@
 #include <TObject.h>
 #include <TString.h>
 #include <TStyle.h>
+#include <TLatex.h>
 #include <iostream>
 #include <vector>
 #include <limits.h>
@@ -79,6 +80,15 @@ static void drawCutLine2DH(TH2* h, Double_t yVal, Int_t color = kRed, Int_t styl
   l->SetLineColor(color);
   l->SetLineStyle(style);
   l->Draw("same");
+}
+
+static void drawCent9ConventionNote() {
+  if (!gPad) return;
+  TLatex* note = new TLatex();
+  note->SetNDC(kTRUE);
+  note->SetTextSize(0.028);
+  note->SetTextColor(kBlue + 1);
+  note->DrawLatex(0.12, 0.96, "cent9: StRefMultCorr (0=peripheral, 8=central)");
 }
 
 static Bool_t isHex32(const TString& s) {
@@ -192,6 +202,50 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(7); h1 = (TH1*)fin->Get("hNTracks"); if (h1) { h1->Draw(); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); if (phi.maxNTr > 0) drawCutLine1D(h1, (Double_t)phi.maxNTr); } }
   c1->cd(8); h1 = (TH1*)fin->Get("hVr"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLine1D(h1, ev.maxVr); } }
   c1->cd(9); /* spare */;
+  c1->Print(pdfName);
+
+  // Page 1b: Centrality QA (event-level)
+  c1->Clear();
+  c1->Divide(3, 3);
+  c1->cd(1); h1 = (TH1*)fin->Get("hCentrality"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hCentralityRaw"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hCentrality16"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hRefMultCorr"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hRefMultWeight"); if (h1) h1->Draw();
+  c1->cd(6); h2 = (TH2*)fin->Get("hRefMultVsNTOFMatch"); if (h2) h2->Draw("colz");
+  c1->cd(7); h2 = (TH2*)fin->Get("hRefMultVsNTOFMatchAfter"); if (h2) h2->Draw("colz");
+  c1->cd(8); h2 = (TH2*)fin->Get("hCentralityVsVz"); if (h2) h2->Draw("colz");
+  c1->cd(9); h1 = (TH1*)fin->Get("hRawMult"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 1c: Centrality correlations (event observables vs cent9)
+  c1->Clear();
+  c1->Divide(3, 3);
+  c1->cd(1); h2 = (TH2*)fin->Get("hRawMult_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(2); h2 = (TH2*)fin->Get("hRefMultCorr_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(3); h2 = (TH2*)fin->Get("hNTracks_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(4); h2 = (TH2*)fin->Get("hTofMatchMult_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(5); h2 = (TH2*)fin->Get("hNKaonPlus_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(6); h2 = (TH2*)fin->Get("hNKaonMinus_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(7); h2 = (TH2*)fin->Get("hNPhiPairs_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(8); h2 = (TH2*)fin->Get("hMKK_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(9); h2 = (TH2*)fin->Get("hMKK_vs_RefMultCorr"); if (h2) h2->Draw("colz");
+  drawCent9ConventionNote();
+  c1->Print(pdfName);
+
+  // Page 1d: M_KK per centrality bin (opening+rapidity cut)
+  c1->Clear();
+  c1->Divide(3, 3);
+  c1->cd(1); h1 = (TH1*)fin->Get("hMKK_CentBin0"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hMKK_CentBin1"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hMKK_CentBin2"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hMKK_CentBin3"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hMKK_CentBin4"); if (h1) h1->Draw();
+  c1->cd(6); h1 = (TH1*)fin->Get("hMKK_CentBin5"); if (h1) h1->Draw();
+  c1->cd(7); h1 = (TH1*)fin->Get("hMKK_CentBin6"); if (h1) h1->Draw();
+  c1->cd(8); h1 = (TH1*)fin->Get("hMKK_CentBin7"); if (h1) h1->Draw();
+  c1->cd(9); h1 = (TH1*)fin->Get("hMKK_CentBin8"); if (h1) h1->Draw();
+  drawCent9ConventionNote();
   c1->Print(pdfName);
 
   // Page 2: Track Kinematics & Quality

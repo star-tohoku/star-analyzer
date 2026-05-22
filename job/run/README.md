@@ -42,7 +42,7 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   - **runmeta/gitstatus_<anaName>_<jobid>.txt** — `git status --porcelain=v2 --branch` at submit time
   - **runmeta/gitdiff_<anaName>_<jobid>.patch** — `git diff --binary HEAD` at submit time
   - **runmeta/gitsubmodules_<anaName>_<jobid>.txt** — `git submodule status --recursive` at submit time
-  - **runmeta/runtime_bundle_<anaName>_<jobid>.tar.gz** — submit-time code/runtime bundle for replay (`analysis/`, `config/`, `include/`, `StMaker/`, `lib/`, and build/source metadata when present)
+  - **runmeta/runtime_bundle_<anaName>_<jobid>.tar.gz** — submit-time code/runtime bundle for replay (`analysis/`, `config/`, `include/`, `StMaker/`, `StRoot/`, `lib/`, and build/source metadata when present)
   - **runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `anaName+jobid+*` files such as `.list`, `.csh`, `.condor`, `.report`, and `.session.xml`
   - **runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` console output
 
@@ -70,7 +70,7 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 - To use a different joblist template, run e.g. `./submit.sh ../joblist/YourJoblist.xml`.
 - Submit-time reproducibility artifacts now live in `job/run/runmeta/`; `script/archive_all_job_logs.sh` archives that directory alongside `configlog` and `joblistlog`.
 - Batch command now clears `analysis/<baseAnaMacro>_C.*` before `root4star` so stale ACLiC outputs (`.so/.d/.pcm` etc.) do not mix across environments.
-- Batch runtime now copies `analysis/`, `config/`, `lib/`, `include/`, `StMaker/`, and optional build artifacts into a scratch-local runtime bundle before `singularity exec`, so moved or symlinked repositories do not break macro lookup inside the container.
+- Batch runtime now copies `analysis/`, `config/`, `lib/`, `include/`, `StMaker/`, `StRoot/`, and optional build artifacts into a scratch-local runtime bundle before `singularity exec`, so moved or symlinked repositories do not break macro lookup inside the container.
 - Current `auau19_anaLambda` joblists run `root4star` via `singularity exec ... star-bnl/star-sw:latest` with `-B /star/nfs4/AFS`, `-B /home/starlib:/home/starlib`, and inherited `LD_LIBRARY_PATH` to satisfy `libgfortran.so.3`.
 - The same container strategy is available for local Phi QA via `script/singularity_checkHistAnaPhi.sh` when host `root4star` cannot start due to missing runtime libraries.
 - Spack `root-config` / batch `root4star` builds here omit `Netx`/`RFIO` plugins, so `root://` and `rfio://` URLs in the SUMS `.list` cannot be opened. The test joblist rewrites the list to POSIX paths (`sed` strips `root://host:port//` and `rfio://`) before `root4star`, then reads `/home/starlib/...` as local files inside the container.

@@ -58,7 +58,7 @@ fi
 )
 
 bundle_entries=()
-for entry in analysis config include StMaker lib src Makefile .gitmodules .sl73_x8664_gcc485; do
+for entry in analysis config include StMaker StRoot lib src Makefile .gitmodules .sl73_x8664_gcc485; do
   if [[ -e "$PROJECT_ROOT/$entry" ]]; then
     bundle_entries+=("$entry")
   fi

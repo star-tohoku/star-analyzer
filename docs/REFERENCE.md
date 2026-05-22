@@ -236,7 +236,17 @@ Example:
 ./script/singularity_checkHistAnaPhi.sh /direct/star+u/oura/rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
 ```
 
-If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`. When config is loaded, cut regions (event, track, phi) are overlaid on pre-cut histograms as red dashed lines.
+If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`. When config is loaded, cut regions (event, track, phi) are overlaid on pre-cut histograms as red dashed lines. Page **1b** shows centrality QA histograms (`hCentrality`, pileup 2D plots, etc.) when present in the ROOT file.
+
+### Centrality (StRefMultCorr)
+
+- **Vendored library:** `StRoot/StRefMultCorr/` → `lib/libStRefMultCorr.so` (see `PROVENANCE.md`). Loaded by `run_anaPhi.C` before `libStPhiMaker.so`.
+- **mainconf key:** `centrality: cuts/centrality/centrality_<anaName>.yaml` — `mode` is `refmult` (19 GeV collider) or `fxtmult` (FXT).
+- **Bin index convention (`cent9`, `cent16`):** StRefMultCorr bin numbers follow STAR’s table in `StRefMultCorr.h`. For **cent9**, **0 = 70–80% (most peripheral)** and **8 = 0–5% (most central)**; larger bin index means higher multiplicity. Do not confuse the percentile label “0–5% central” with **bin 0**. `StPhiMaker` stores `getCentralityBin9()` without remapping.
+- **`acceptedCentBins`:** comma-separated **StRefMultCorr cent9** indices (e.g. most central only: `8` or `7,8`; peripheral only: `0,1`). Empty or default accepts all bins 0–8.
+- **`CentralityHelper::Cent9ToPercentile`:** cent9 0 → 77.5%, …, cent9 8 → 2.5% (mid-percentile of each 10%-wide bin except 0–5% and 5–10%).
+- **Integrated QA:** centrality histograms are filled in `StPhiMaker` and appear in the Phi QA PDF via `checkHistAnaPhi.sh` (Pages **1b–1d**; Page **1c** expects **cent9 vs multiplicity to increase** left to right). See `analysisnote/20260521/centrality_qa_histograms.md`.
+- **Standalone QA (picoDst only):** `./script/checkCentrality.sh <picoDst_or_list> <mainconf_path> [output.root] [maxEvents]` — reads `centrality:` from mainconf (`refmult` / `fxtmult`). On fragile login nodes: `./script/singularity_checkCentrality.sh` with the same arguments.
 
 ### Batch (star-submit)
 
