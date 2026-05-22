@@ -35,13 +35,8 @@ ConfigManager& ConfigManager::GetInstance() {
 
 ConfigManager::ConfigManager() 
   : eventCuts(0), trackCuts(0), pidCuts(0), v0Cuts(0),
-<<<<<<< HEAD
     phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), nuclearIdCuts(0), mixingConfig(0),
-    isLoaded(kFALSE) {
-=======
-    phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), mixingConfig(0),
     centralityCuts(0), isLoaded(kFALSE) {
->>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
   // Initialize all cut config instances
   eventCuts = &EventCutConfig::GetInstance();
   trackCuts = &TrackCutConfig::GetInstance();

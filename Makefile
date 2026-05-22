@@ -102,12 +102,8 @@ STAR_LDFLAGS := -L$(STAR_LIB_DIR) \
 STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager.cpp src/kinematics.cpp \
   src/cuts/EventCutConfig.cpp src/cuts/TrackCutConfig.cpp src/cuts/PIDCutConfig.cpp \
   src/cuts/V0CutConfig.cpp src/cuts/PhiCutConfig.cpp src/cuts/LambdaCutConfig.cpp \
-<<<<<<< HEAD
-  src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/NuclearIdCutConfig.cpp src/cuts/MixingConfig.cpp
-=======
-  src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/MixingConfig.cpp \
+  src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/NuclearIdCutConfig.cpp src/cuts/MixingConfig.cpp \
   src/cuts/CentralityCutConfig.cpp
->>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
 STAR_ANA_CONFIG_OBJS := $(addprefix $(LIB_DIR)/,$(notdir $(STAR_ANA_CONFIG_SRCS:.cpp=.o)))
 CXXFLAGS_CONFIG := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -Iinclude -I$(YAML_CPP_DIR)/include
 LDFLAGS_CONFIG := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(YAML_CPP_BUILD) -lyaml-cpp -Wl,--no-whole-archive
@@ -140,11 +136,7 @@ OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
 
 .PHONY: all clean
 
-<<<<<<< HEAD
-all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME)
-=======
-all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME)
->>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
+all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -224,9 +216,5 @@ $(OBJ_NUCLEARID): $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
 
 clean:
-<<<<<<< HEAD
-	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/libStarAnaConfig.so
-=======
-	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
->>>>>>> 23ef724 (Add StRoot/StRefMultCorr to anaPhi)
+	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
 	rm -rf $(YAML_CPP_BUILD)
