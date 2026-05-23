@@ -179,6 +179,12 @@ if ! run_preflight "$anaName" "$mainconf_rel"; then
   fi
 fi
 
+echo "Ensuring batch output directories from joblist..."
+if ! (cd "$PROJECT_ROOT" && python script/analysis_info_helper.py --ensure-batch-dirs "$TEMPLATE_ABS"); then
+  echo "ERROR: failed to create or verify batch log/err/rootfile directories." >&2
+  exit 1
+fi
+
 sed "s|__PROJECT_ROOT__|$PROJECT_ROOT|g" "$TEMPLATE" > "$OUTPUT"
 echo "Submitting with PROJECT_ROOT=$PROJECT_ROOT"
 

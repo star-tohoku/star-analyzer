@@ -57,7 +57,7 @@ mkdir -p log err rootfile
 - **err/** — job stderr.
 - **rootfile/** — output ROOT files (use subdirs per analysis, e.g. `rootfile/auau19_anaLambda/`).
 - **lib/** — produced by `make` (no need to create).
-- **share/figure/** — QA PDFs from `checkHistAnaPhi.sh` or `singularity_checkHistAnaPhi.sh`; often created on demand.
+- **share/figure/** — QA PDFs from `checkHistAnaPhi.sh` / `checkHistAnaLambda.sh` or the matching `singularity_checkHistAna*` scripts; often created on demand.
 
 ---
 
@@ -135,7 +135,7 @@ Example (Lambda, first 100 events):
 
 Pass a fifth argument to override mainconf (see [docs/REFERENCE.md](docs/REFERENCE.md) — How to run). For Phi, use `./script/run_anaPhi.sh` and the matching list/mainconf.
 
-On hosts such as **AL9**, host `root4star` and host `make` may fail unless you use the same **SL7-class STAR environment** as batch jobs—either an interactive `sl7` session or `singularity exec` into `star-bnl/star-sw:latest`. When you cannot run or build on the host alone, stay on that host and call the **`singularity_*` wrappers** from the project root instead of the plain scripts: for **Lambda**, **`./script/singularity_run_anaLambda.sh`** (same arguments as `run_anaLambda.sh`); for **Phi**, **`./script/singularity_run_anaPhi.sh`** (same arguments as `run_anaPhi.sh`); for Phi QA PDFs, **`./script/singularity_checkHistAnaPhi.sh`** when **`checkHistAnaPhi.sh`** fails for the same reason. For compilation, use **`./script/singularity_make.sh`** (Step 6). See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
+STAR login nodes are moving from **SL7 to AL9**. On **SL7** (or when host `root4star` works as on legacy nodes), use the plain `run_ana*` and `checkHistAna*` scripts. On **AL9**, prefer the **`singularity_*` wrappers** (same **`star-bnl/star-sw:latest`** image as batch jobs) for build, run, and QA PDFs: **`singularity_make.sh`**, **`singularity_run_anaLambda.sh`** / **`singularity_run_anaPhi.sh`**, and **`singularity_checkHistAnaLambda.sh`** / **`singularity_checkHistAnaPhi.sh`**. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
 
 Example (Lambda via Singularity, first 100 events; same arguments as above):
 
@@ -144,6 +144,41 @@ Example (Lambda via Singularity, first 100 events; same arguments as above):
 ```
 
 The run scripts set **`LD_LIBRARY_PATH`** (and related env) before `root4star`. If you invoke `root4star` by hand, you must reproduce that environment or linking may fail.
+
+---
+
+## Optional: Histogram QA (Lambda)
+
+**What:** Build a PDF of histograms from `run_anaLambda.sh` (or batch merge) output.  
+**Why:** Quick visual check of event-level QA, centrality (Pages 1b–1d when enabled in mainconf), and Λ invariant-mass spectra.
+
+**When:** After Step 7 (local run) or after merging batch ROOT files under `rootfile/<anaName>/`.
+
+**SL7** — from the project root:
+
+```bash
+./script/checkHistAnaLambda.sh <root_file> <mainconf_path>
+```
+
+**AL9 (recommended during SL7→AL9 transition)** — same arguments via Singularity:
+
+```bash
+./script/singularity_checkHistAnaLambda.sh <root_file> <mainconf_path>
+```
+
+Example (19 GeV Lambda):
+
+```bash
+./script/singularity_checkHistAnaLambda.sh \
+  rootfile/auau19_anaLambda/auau19_anaLambda_<jobid>.root \
+  config/mainconf/main_auau19_anaLambda.yaml
+```
+
+- **PDF output:** `share/figure/<anaName>/<anaName>_checkHistAnaLambda[_<jobid>].pdf` (same jobid naming as Phi when the input is `anaName_<32hex>_merge.root`).
+- **mainconf:** Must match the run that produced the ROOT file.
+- **Centrality pages:** Present only if centrality is enabled (`centrality:` in mainconf) and the ROOT file contains `hCentrality`, etc.
+
+See [docs/REFERENCE.md](docs/REFERENCE.md) — Result QA (Lambda) and Centrality.
 
 ---
 
@@ -183,7 +218,7 @@ After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `clean
 |---------|-------------------|
 | `make` fails in yaml-cpp / config lib | Submodule: Step 2. After `make clean`, CMake is required to rebuild `yaml-cpp`; on hosts without a usable host `cmake`, use **`./script/singularity_make.sh <mainconf>`** or **`--no-clean`** if the yaml-cpp build tree already exists. |
 | Wrong STAR / missing `root-config` | Re-source `script/setup.sh` / `script/setup.csh` (Step 6), then verify `echo $STAR`, `echo $STAR_HOST_SYS`, `which root-config`, and `root-config --cflags` before `make`. On hosts where host `make` fails, use **`script/singularity_make.sh <mainconf>`**. |
-| Library load errors at runtime | Run via **`script/run_anaXxx.sh`** or match its `LD_LIBRARY_PATH` setup. On hosts where host `root4star` fails to start, use **`script/singularity_run_anaLambda.sh`** or **`script/singularity_run_anaPhi.sh`** (and **`script/singularity_checkHistAnaPhi.sh`** for Phi QA). |
+| Library load errors at runtime | On **SL7**, run via **`script/run_anaXxx.sh`** (or match its `LD_LIBRARY_PATH`). On **AL9**, use **`singularity_run_anaLambda.sh`** / **`singularity_run_anaPhi.sh`** and **`singularity_checkHistAnaLambda.sh`** / **`singularity_checkHistAnaPhi.sh`** for QA PDFs. |
 | Joblist script errors | Install PyYAML for the same `python3` you use. |
 | Batch paths wrong | **analysis.workDir** in analysis_info (output destination only), plus any hand-written stdout/stderr/output paths in custom joblists (Step 4). |
 

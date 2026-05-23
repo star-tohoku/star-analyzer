@@ -82,6 +82,7 @@ STAR_INC_DIR := $(STAR_OBJ)/include
 STAR_LIB_DIR := $(STAR_OBJ)/lib
 
 STMAKER_DIR := StMaker/StPhiMaker
+COMMON_DIR := StMaker/common
 RMC_DIR := StRoot/StRefMultCorr
 LIB_DIR := lib
 YAML_CPP_DIR := src/third_party/yaml-cpp
@@ -117,16 +118,17 @@ LDFLAGS_RMC := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared
 
 # --- libStPhiMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 LIB_NAME := libStPhiMaker.so
-CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude -IStRoot -I$(RMC_DIR) $(STAR_INC)
+CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude -IStRoot -I$(COMMON_DIR) -I$(RMC_DIR) $(STAR_INC)
 LDFLAGS_MAKER := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,-rpath,$(STAR_LIB_DIR)
-SRC := $(STMAKER_DIR)/StPhiMaker.cxx $(STMAKER_DIR)/CentralityHelper.cxx
+SRC := $(STMAKER_DIR)/StPhiMaker.cxx
 OBJ := $(LIB_DIR)/StPhiMaker.o $(LIB_DIR)/CentralityHelper.o
+CENTRALITY_HELPER_SRC := $(COMMON_DIR)/CentralityHelper.cxx
 
-# --- libStLambdaMaker (depends on libStarAnaConfig) ---
+# --- libStLambdaMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 STLAMBDA_DIR := StMaker/StLambdaMaker
 LIB_LAMBDA_NAME := libStLambdaMaker.so
 SRC_LAMBDA := $(STLAMBDA_DIR)/StLambdaMaker.cxx
-OBJ_LAMBDA := $(LIB_DIR)/StLambdaMaker.o
+OBJ_LAMBDA := $(LIB_DIR)/StLambdaMaker.o $(LIB_DIR)/CentralityHelper.o
 
 # --- libStNuclearIdMaker (depends on libStarAnaConfig or none? needs STAR_INC) ---
 STNUCLEARID_DIR := StMaker/StNuclearIdMaker
@@ -198,14 +200,14 @@ $(LIB_DIR)/$(LIB_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME
 
 $(LIB_DIR)/StPhiMaker.o: $(STMAKER_DIR)/StPhiMaker.cxx $(STMAKER_DIR)/StPhiMaker.h include/HistManager.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(STMAKER_DIR)/StPhiMaker.cxx -o $@
-$(LIB_DIR)/CentralityHelper.o: $(STMAKER_DIR)/CentralityHelper.cxx $(STMAKER_DIR)/CentralityHelper.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(STMAKER_DIR)/CentralityHelper.cxx -o $@
+$(LIB_DIR)/CentralityHelper.o: $(CENTRALITY_HELPER_SRC) $(COMMON_DIR)/CentralityHelper.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(CENTRALITY_HELPER_SRC) -o $@
 
-# libStLambdaMaker.so (links against libStarAnaConfig)
-$(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ_LAMBDA)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_LAMBDA) -L$(LIB_DIR) -lStarAnaConfig -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+# libStLambdaMaker.so (links against libStarAnaConfig + libStRefMultCorr)
+$(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_LAMBDA)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(LIB_DIR)/StLambdaMaker.o $(LIB_DIR)/CentralityHelper.o -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
 
-$(OBJ_LAMBDA): $(SRC_LAMBDA) $(STLAMBDA_DIR)/StLambdaMaker.h include/HistManager.h
+$(LIB_DIR)/StLambdaMaker.o: $(SRC_LAMBDA) $(STLAMBDA_DIR)/StLambdaMaker.h include/HistManager.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_LAMBDA) -o $@
 
 # libStNuclearIdMaker.so

@@ -134,6 +134,54 @@ def extract_mainconf_from_joblist(joblist_path):
     return unique[0]
 
 
+def extract_batch_dirs_from_joblist(joblist_path):
+    """Return log, err, and rootfile output directories from SUMS joblist URLs."""
+    with open(joblist_path, 'r') as f:
+        content = f.read()
+    patterns = [
+        r'<stdout\s+URL="file:([^"]+/log)/',
+        r'<stderr\s+URL="file:([^"]+/err)/',
+        r'<output[^>]*\s+toURL="file:([^"]+)"',
+    ]
+    dirs = []
+    missing = []
+    labels = ('log', 'err', 'rootfile output')
+    for label, pat in zip(labels, patterns):
+        match = re.search(pat, content)
+        if not match:
+            missing.append(label)
+            continue
+        path = match.group(1).rstrip('/')
+        dirs.append(os.path.abspath(os.path.expandvars(os.path.expanduser(path))))
+    if missing:
+        print("ERROR: could not parse {} path(s) from joblist: {}".format(
+            ', '.join(missing), joblist_path), file=sys.stderr)
+        sys.exit(1)
+    return dirs
+
+
+def ensure_batch_dirs_from_joblist(joblist_path):
+    """Create batch log/err/rootfile directories and verify they are writable."""
+    dirs = extract_batch_dirs_from_joblist(joblist_path)
+    for directory in dirs:
+        created = False
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+            created = True
+        probe = os.path.join(directory, '.submit_write_probe')
+        try:
+            with open(probe, 'w') as handle:
+                handle.write('ok\n')
+            os.remove(probe)
+        except (IOError, OSError) as exc:
+            print("ERROR: batch directory not writable: {} ({})".format(directory, exc), file=sys.stderr)
+            sys.exit(1)
+        if created:
+            print("Created {}".format(directory))
+        else:
+            print("OK {}".format(directory))
+
+
 def build_catalog_url(star_tag):
     """Build SUMS catalog URL from starTag."""
     base = "catalog:star.bnl.gov"
@@ -195,10 +243,23 @@ def main():
     parser.add_argument('--generate-joblist', action='store_true', help='Generate joblist XML from template')
     parser.add_argument('--mainconf-from-joblist', dest='joblist_path', default=None,
                         help='Extract embedded config/mainconf/...yaml path from a joblist XML')
+    parser.add_argument('--ensure-batch-dirs', dest='ensure_batch_dirs_joblist', default=None,
+                        metavar='JOBLIST_XML',
+                        help='Create log/err/rootfile dirs from joblist stdout/stderr/output URLs')
     args = parser.parse_args()
 
     project_root = os.path.abspath(args.project_root)
     config_base = os.path.join(project_root, 'config')
+
+    if args.ensure_batch_dirs_joblist:
+        joblist_path = args.ensure_batch_dirs_joblist
+        if not os.path.isabs(joblist_path):
+            joblist_path = os.path.join(project_root, joblist_path)
+        if not os.path.isfile(joblist_path):
+            print("ERROR: joblist not found: {}".format(joblist_path), file=sys.stderr)
+            sys.exit(1)
+        ensure_batch_dirs_from_joblist(joblist_path)
+        return
 
     if args.joblist_path:
         joblist_path = args.joblist_path
@@ -337,7 +398,7 @@ def main():
         print("Wrote {}".format(out_path))
         return
 
-    print("ERROR: specify --library-tag, --ana-name, --pico-dst-list, --output-rootfile, or --generate-joblist", file=sys.stderr)
+    print("ERROR: specify --library-tag, --ana-name, --pico-dst-list, --output-rootfile, --generate-joblist, or --ensure-batch-dirs", file=sys.stderr)
     sys.exit(1)
 
 
