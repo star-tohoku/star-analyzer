@@ -75,7 +75,7 @@ extern "C" void* createStPhiMakerC(const char* name, void* picoMaker, const char
 
 //-----------------------------------------------------------------------------
 Int_t StPhiMaker::Init() {
-  std::string histPath = ConfigManager::GetInstance().GetHistConfigPath();
+  std::string histPath = ConfigManager::GetInstance().GetHistConfigPath(GetName());
   if (histPath.empty()) {
     std::cerr << "[StPhiMaker] GetHistConfigPath() returned empty; no histograms will be filled." << std::endl;
     m_histManager = 0;

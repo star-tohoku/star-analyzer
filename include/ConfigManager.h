@@ -26,7 +26,7 @@ public:
 
   /** Return full path for hist config from main.yaml key "hist".
    *  Returns empty string if key missing or value empty. */
-  std::string GetHistConfigPath();
+  std::string GetHistConfigPath(const std::string& makerName = "");
 
   /** Return anaName from analysis_info (mainconf key "analysis"). Empty if not set. */
   std::string GetAnaName() const;

@@ -10,7 +10,7 @@ mixing:        cuts/mixing/mixing_auau19_anaPhi.yaml
 centrality:    cuts/centrality/centrality_auau19_anaPhi.yaml
 
 # Maker config (key name should match your analysis macro expectation)
-phi:           maker/maker_auau19_anaPhi.yaml
+phi:        maker/maker_auau19_anaPhi.yaml
 
 # Histogram config
 hist:          hist/hist_auau19_anaPhi.yaml

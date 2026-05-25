@@ -1,26 +1,28 @@
-// anaLambda.C - StChain based phi analysis macro
-// Usage: root4star -b -q 'anaLambda.C("input.list","output.root","0",-1)'
-//        anaLambda.C("input.list","output.root","0",-1,"config/mainconf/main_auau19_anaLambda.yaml")
-// Run from project root: ./script/run_anaLambda.sh
-// ACLiC (.L anaLambda.C+) links against libStLambdaMaker for StLambdaMaker
+// anaLambdaNuclearId.C - StChain based integrated Lambda and NuclearId analysis macro
+// Usage: root4star -b -q 'anaLambdaNuclearId.C("input.list","output.root","0",-1)'
+//        anaLambdaNuclearId.C("input.list","output.root","0",-1,"config/mainconf/main_auau19_anaLambdaNuclearId.yaml")
+// Run from project root: ./script/run_anaLambdaNuclearId.sh
 
 #include "TROOT.h"
 #include "TInterpreter.h"
 #include "TSystem.h"
 #include "TStopwatch.h"
 #include "TString.h"
+#include "TFile.h"
 #include "TChain.h"
 #include "StChain.h"
 #include "StPicoDstMaker/StPicoDstMaker.h"
 #include "StMaker/StLambdaMaker/StLambdaMaker.h"
+#include "StMaker/StNuclearIdMaker/StNuclearIdMaker.h"
 #include "ConfigManager.h"
 #include <iostream>
 
 StChain* chain = 0;
 StLambdaMaker* lambdaMaker = 0;
+StNuclearIdMaker* nuclearidMaker = 0;
 
-void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
-            const Char_t* outputFile = "rootfile/auau19_anaLambda_temp/auau19_anaLambda_temp.root",
+void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_lambda.list",
+            const Char_t* outputFile = "rootfile/auau19_anaLambdaNuclearId_temp/auau19_anaLambdaNuclearId_temp.root",
             const Char_t* jobid = "0",
             Long64_t nEventsMax = -1,
             const Char_t* configPath = 0)
@@ -33,16 +35,12 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   const char* pwd = gSystem->Getenv("PWD");
   if (!pwd) pwd = ".";
 
-  // `run_anaLambda.C` loads the STAR/Pico/Maker libraries before ACLiC-compiling
-  // this macro. Re-loading them here can mix STAR releases in one process and
-  // has been correlated with exit-time ROOT heap corruption.
-
   TString mainConfigPath;
   if (configPath && strlen(configPath) > 0) {
     mainConfigPath = configPath;
     if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
   } else {
-    mainConfigPath = TString(pwd) + "/config/mainconf/main_auau19_anaLambda.yaml";
+    mainConfigPath = TString(pwd) + "/config/mainconf/main_auau19_anaLambdaNuclearId.yaml";
   }
   if (!ConfigManager::GetInstance().LoadConfig(mainConfigPath.Data())) {
     std::cerr << "ERROR: Failed to load config: " << mainConfigPath.Data() << std::endl;
@@ -62,15 +60,20 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   picoMaker->SetStatus("BTowHit", 1);
   picoMaker->SetStatus("ETofPidTraits", 1);
 
-  lambdaMaker = new StLambdaMaker("lambda", picoMaker, outputFile);
+  // Pass empty string as output file so the makers don't write during their Finish()
+  lambdaMaker = new StLambdaMaker("lambda", picoMaker, "");
+  nuclearidMaker = new StNuclearIdMaker("nuclearid", picoMaker, "");
+
   chain->AddMaker(picoMaker);
   chain->AddMaker(lambdaMaker);
+  chain->AddMaker(nuclearidMaker);
 
   if (chain->Init() == kStErr) {
     std::cerr << "ERROR: chain->Init() returned kStErr" << std::endl;
     delete chain;
     chain = 0;
     lambdaMaker = 0;
+    nuclearidMaker = 0;
     return;
   }
 
@@ -83,6 +86,7 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
     delete chain;
     chain = 0;
     lambdaMaker = 0;
+    nuclearidMaker = 0;
     return;
   }
 
@@ -103,6 +107,29 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   std::cout << "******************************************" << std::endl;
   chain->Finish();
 
+  // Create single combined ROOT file and write histograms from both makers
+  if (outputFile && strlen(outputFile) > 0) {
+    // Ensure parent directories exist
+    gSystem->mkdir(gSystem->DirName(outputFile), kTRUE);
+    TFile* fout = new TFile(outputFile, "RECREATE");
+    if (fout && !fout->IsZombie()) {
+      fout->cd();
+      if (lambdaMaker) {
+        std::cout << "Writing Lambda histograms..." << std::endl;
+        lambdaMaker->WriteHistograms();
+      }
+      if (nuclearidMaker) {
+        std::cout << "Writing NuclearId histograms..." << std::endl;
+        nuclearidMaker->WriteHistograms();
+      }
+      fout->Close();
+      delete fout;
+      std::cout << "Successfully saved all histograms to " << outputFile << std::endl;
+    } else {
+      std::cerr << "ERROR: Failed to open ROOT file: " << outputFile << std::endl;
+    }
+  }
+
   timer.Stop();
   std::cout << "Processed events: " << nEvents << std::endl;
   std::cout << "RealTime: " << timer.RealTime() << " CpuTime: " << timer.CpuTime() << std::endl;
@@ -110,4 +137,5 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   delete chain;
   chain = 0;
   lambdaMaker = 0;
+  nuclearidMaker = 0;
 }

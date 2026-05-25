@@ -267,8 +267,14 @@ std::string ConfigManager::GetAnaName() const {
   return m_anaName;
 }
 
-std::string ConfigManager::GetHistConfigPath() {
-  const std::string key("hist");
+std::string ConfigManager::GetHistConfigPath(const std::string& makerName) {
+  std::string key = "hist";
+  if (!makerName.empty()) {
+    std::string customKey = makerName + "Hist";
+    if (m_mainConfigValues.find(customKey) != m_mainConfigValues.end()) {
+      key = customKey;
+    }
+  }
   std::map<std::string, std::string>::const_iterator it = m_mainConfigValues.find(key);
   if (it == m_mainConfigValues.end()) {
     std::cerr << "WARNING: GetHistConfigPath: key '" << key << "' not found in main config" << std::endl;

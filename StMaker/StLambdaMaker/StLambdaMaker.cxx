@@ -65,7 +65,7 @@ extern "C" void* createStLambdaMakerC(const char* name, void* picoMaker, const c
 
 //-----------------------------------------------------------------------------
 Int_t StLambdaMaker::Init() {
-  std::string histPath = ConfigManager::GetInstance().GetHistConfigPath();
+  std::string histPath = ConfigManager::GetInstance().GetHistConfigPath(GetName());
   if (histPath.empty()) {
     std::cerr << "[StLambdaMaker] GetHistConfigPath() returned empty; no histograms will be filled." << std::endl;
     m_histManager = 0;

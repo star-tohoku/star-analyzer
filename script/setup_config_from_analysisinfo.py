@@ -72,6 +72,7 @@ CUTS_COPIES = [
     ('cuts/pid/pid.yaml', 'cuts/pid', 'pid'),
     ('cuts/track/track.yaml', 'cuts/track', 'track'),
     ('cuts/v0reco/v0.yaml', 'cuts/v0reco', 'v0'),
+    ('cuts/centrality/centrality.yaml', 'cuts/centrality', 'centrality'),
 ]
 MAKER_SRC = 'maker/maker_anaPhi.yaml'
 MAKER_DIR = 'maker'
@@ -91,9 +92,26 @@ def write_mainconf(config_base, ana_name, analysis_rel):
     with open(template_path, 'r') as f:
         content = f.read()
     content = content.replace(MAINCONF_TEMPLATE_ANANAME, ana_name)
+    
+    # Determine the maker key based on analysis name (e.g. lambda:, nuclearid:, phi:)
+    maker_key = 'lambda'
+    if 'nuclearid' in ana_name.lower():
+        maker_key = 'nuclearid'
+    elif 'phi' in ana_name.lower():
+        maker_key = 'phi'
+    elif 'lambda' in ana_name.lower():
+        maker_key = 'lambda'
+
+    content = re.sub(
+        r'^lambda\s*:\s*(maker/maker_{}\.yaml)'.format(re.escape(ana_name)),
+        '{}:        \\1'.format(maker_key),
+        content,
+        flags=re.MULTILINE
+    )
+
     # Point to analysis-specific cut configs we create
     for _subdir, _base in [('event', 'event'), ('track', 'track'), ('pid', 'pid'),
-                           ('v0reco', 'v0'), ('mixing', 'mixing')]:
+                           ('v0reco', 'v0'), ('mixing', 'mixing'), ('centrality', 'centrality')]:
         content = content.replace(
             'cuts/{}/{}.yaml'.format(_subdir, _base),
             'cuts/{}/{}_{}.yaml'.format(_subdir, _base, ana_name)
@@ -180,11 +198,19 @@ def main():
     for src_rel, subdir, base_name in CUTS_COPIES:
         copy_one(src_rel, subdir, base_name)
 
-    # maker: maker/maker_anaPhi.yaml -> maker/maker_{anaName}.yaml
-    maker_src = os.path.join(config_base, MAKER_SRC)
+    # maker: template based on analysis name -> maker/maker_{anaName}.yaml
+    maker_template_rel = 'maker/maker_anaPhi.yaml'
+    if 'nuclearid' in ana_name.lower():
+        maker_template_rel = 'maker/maker_anaNuclearId.yaml'
+    elif 'lambda' in ana_name.lower():
+        maker_template_rel = 'maker/maker_anaLambda.yaml'
+    elif 'phi' in ana_name.lower():
+        maker_template_rel = 'maker/maker_anaPhi.yaml'
+
+    maker_src = os.path.join(config_base, maker_template_rel)
     maker_dst = os.path.join(config_base, MAKER_DIR, "{}_{}.yaml".format(MAKER_BASE, ana_name))
     if not os.path.isfile(maker_src):
-        print("WARNING: template not found, skip: {}".format(MAKER_SRC))
+        print("WARNING: template not found, skip: {}".format(maker_template_rel))
     else:
         shutil.copy2(maker_src, maker_dst)
         print("Created: {}".format(os.path.relpath(maker_dst, config_base)))
@@ -206,6 +232,7 @@ def main():
             content = content.replace('anaPhi', base_ana_macro)
             content = content.replace('StPhiMaker', maker_class)
             content = content.replace('phiMaker', maker_var)
+            content = content.replace('"phi"', '"{}"'.format(maker_name.lower()))
             content = content.replace('auau19_anaPhi', ana_name)
             content = content.replace('run_anaPhi', base_run_macro)
             with open(ana_dst, 'w') as f:
