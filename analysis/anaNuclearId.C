@@ -62,7 +62,11 @@ void anaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   picoMaker->SetStatus("BTowHit", 1);
   picoMaker->SetStatus("ETofPidTraits", 1);
 
+<<<<<<< HEAD
   nuclearidMaker = new StNuclearIdMaker("phi", picoMaker, outputFile);
+=======
+  nuclearidMaker = new StNuclearIdMaker("nuclearid", picoMaker, outputFile);
+>>>>>>> temp_work
   chain->AddMaker(picoMaker);
   chain->AddMaker(nuclearidMaker);
 

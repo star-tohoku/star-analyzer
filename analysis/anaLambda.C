@@ -62,7 +62,11 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   picoMaker->SetStatus("BTowHit", 1);
   picoMaker->SetStatus("ETofPidTraits", 1);
 
+<<<<<<< HEAD
   lambdaMaker = new StLambdaMaker("phi", picoMaker, outputFile);
+=======
+  lambdaMaker = new StLambdaMaker("lambda", picoMaker, outputFile);
+>>>>>>> temp_work
   chain->AddMaker(picoMaker);
   chain->AddMaker(lambdaMaker);
 

@@ -21,7 +21,7 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, `snapshot_runmeta.sh`, generated/copied files). On successful submit, `submit.sh` saves `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`, `job/run/configlog/config_<anaName>_<jobid>.txt`, and `job/run/runmeta/runmeta_<anaName>_<jobid>.json` plus sidecars (`gitstatus`, `gitdiff`, `gitsubmodules`, `runtime_bundle`, `sums_artifacts`, `submit_stdout`). Files under `job/run/*.xml` and generated job artifacts are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. |
-| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh` (local analysis via the same singularity runtime), `checkHistAnaPhi.sh` (QA PDF from run_anaPhi output ROOT), `singularity_checkHistAnaPhi.sh` (QA PDF via the same singularity runtime), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
+| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh` (local analysis via the same singularity runtime), `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh` (QA PDF from Maker output ROOT), `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh` (QA PDF via the same singularity runtime; **recommended on AL9**), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
 
 ## Prerequisites and setup
 
@@ -84,6 +84,7 @@ The file **config/analysis/analysis_info_temp.yaml** (or the one referenced by y
 - **`--library-tag`**: Reads mainconf → analysis info and prints `starTag.libraryTag`. Used by `setup.sh`. Works without PyYAML (minimal grep fallback).
 - **`--generate-joblist`**: Reads mainconf → analysis info and fills **job/joblist/job_template_from_conf.xml**, then writes **`job/joblist/joblist_<anaName>.xml`** using **`analysis.anaName`** for `anaName`. The embedded `__MAINCONF__` path is the same mainconf you pass to the command, and **`analysis.maxEvents`** (if present) is passed to batch `root4star` as the 4th argument. Requires PyYAML; use the **Python 3 environment** above.
 - **`--mainconf-from-joblist`**: Reads a generated joblist XML and prints the embedded `config/mainconf/...yaml` path used by batch runtime and by `submit.sh` preflight.
+- **`--ensure-batch-dirs JOBLIST`**: Creates `log/`, `err/`, and `rootfile/<subdir>/` parsed from the joblist; used by `submit.sh` before `star-submit`.
 
 **Config bootstrap script:** `script/setup_config_from_analysisinfo.py`
 
@@ -185,7 +186,7 @@ root4star -b -q "analysis/run_anaLambda.C(\"$INPUT\",\"$OUTPUT\",\"$JOBID\",$NEV
 
 On some login or dev nodes (for example AL9), host `root4star` may fail before the analysis macro runs (missing `libgfortran.so.3`, mixed 32-bit ROOT plugins for `root://`, and similar linker issues). Batch jobs already run `root4star` inside `singularity exec ... star-bnl/star-sw:latest`; use the matching **`singularity_*` wrappers** for local builds and runs on those hosts instead of calling host `root4star` or host `make` directly.
 
-- **Build:** `./script/singularity_make.sh MAINCONF [--no-clean] [make-args...]` — default `make clean && make` with `BUILD_BITS=64`; writes `lib/*.so` under the project root. After `make clean`, CMake is required to rebuild `src/third_party/yaml-cpp` (the wrapper prepends a cvmfs `cmake` when available).
+- **Build:** `./script/singularity_make.sh MAINCONF [--no-clean] [make-args...]` — default `make clean && make` with `BUILD_BITS=64`; writes `lib/*.so` under the project root. After `make clean`, CMake is required to rebuild `src/third_party/yaml-cpp` (the wrapper prepends a cvmfs `cmake` when available). **This is the standard SL7-equivalent build:** `make` runs inside `star-bnl/star-sw:latest` with the same `STAR_HOST_SYS` resolution as batch (e.g. `sl73_x8664_gcc485`), so agents and humans can use it instead of an interactive `sl7` session whenever Singularity is available.
 - **Lambda:** `./script/singularity_run_anaLambda.sh` — same arguments as `run_anaLambda.sh`.
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
@@ -224,19 +225,39 @@ Example (single or merged ROOT file):
 ./script/checkHistAnaPhi.sh rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
 ```
 
-If host `root4star` fails to start due to runtime dependencies (for example `libgfortran.so.3`), run the same QA macro inside the batch-like singularity environment instead:
+On **AL9** login nodes (SL7→AL9 transition), prefer the Singularity wrapper (same batch-like STAR runtime):
 
 ```bash
 ./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>
 ```
 
-Example:
+On **SL7**, the host script above is sufficient. Example (Singularity):
 
 ```bash
 ./script/singularity_checkHistAnaPhi.sh /direct/star+u/oura/rootfile/auau3p85fxt_anaPhi/auau3p85fxt_anaPhi_CCBCC32EA67793F5A24B5F6BA44EE413_merge.root config/mainconf/main_auau3p85fxt_anaPhi.yaml
 ```
 
-If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`. When config is loaded, cut regions (event, track, phi) are overlaid on pre-cut histograms as red dashed lines.
+If the input filename has the form `anaName_jobid_merge.root` (32‑char hex jobid), the PDF is written as `share/figure/<anaName>/<anaName>_checkHistAnaPhi_<jobid>.pdf`; otherwise as `share/figure/<anaName>/<anaName>_checkHistAnaPhi.pdf`. When config is loaded, cut regions (event, track, phi) are overlaid on pre-cut histograms as red dashed lines. Page **1b** shows centrality QA histograms (`hCentrality`, pileup 2D plots, etc.) when present in the ROOT file.
+
+### Result QA (Lambda): checkHistAnaLambda.sh
+
+After running the Lambda analysis (locally or after merging batch output), produce a histogram QA PDF:
+
+```bash
+./script/checkHistAnaLambda.sh <root_file> <mainconf_path>
+```
+
+On **AL9**, use **`./script/singularity_checkHistAnaLambda.sh`** with the same arguments (recommended during the SL7→AL9 transition). PDF naming: `share/figure/<anaName>/<anaName>_checkHistAnaLambda[_<jobid>].pdf`. Pages **1b–1d** show centrality QA when `centrality:` is enabled in mainconf and the ROOT file contains the corresponding histograms. Page **1d** shows `hLambda_InvMass_CentBin0`–`8`.
+
+### Centrality (StRefMultCorr)
+
+- **Vendored library:** `StRoot/StRefMultCorr/` → `lib/libStRefMultCorr.so` (see `PROVENANCE.md`). Loaded by `run_anaPhi.C` / `run_anaLambda.C` before `libStPhiMaker.so` / `libStLambdaMaker.so`.
+- **mainconf key:** `centrality: cuts/centrality/centrality_<anaName>.yaml` — `mode` is `refmult` (19 GeV collider) or `fxtmult` (FXT).
+- **Bin index convention (`cent9`, `cent16`):** StRefMultCorr bin numbers follow STAR’s table in `StRefMultCorr.h`. For **cent9**, **0 = 70–80% (most peripheral)** and **8 = 0–5% (most central)**; larger bin index means higher multiplicity. Do not confuse the percentile label “0–5% central” with **bin 0**. `StPhiMaker` stores `getCentralityBin9()` without remapping.
+- **`acceptedCentBins`:** comma-separated **StRefMultCorr cent9** indices (e.g. most central only: `8` or `7,8`; peripheral only: `0,1`). Empty or default accepts all bins 0–8.
+- **`CentralityHelper::Cent9ToPercentile`:** cent9 0 → 77.5%, …, cent9 8 → 2.5% (mid-percentile of each 10%-wide bin except 0–5% and 5–10%).
+- **Integrated QA:** centrality histograms are filled in `StPhiMaker` / `StLambdaMaker` and appear in the Phi / Lambda QA PDFs via `checkHistAnaPhi.sh` / `checkHistAnaLambda.sh` (Pages **1b–1d**; Page **1c** expects **cent9 vs multiplicity to increase** left to right). See `analysisnote/20260521/centrality_qa_histograms.md`.
+- **Standalone QA (picoDst only):** `./script/checkCentrality.sh <picoDst_or_list> <mainconf_path> [output.root] [maxEvents]` — reads `centrality:` from mainconf (`refmult` / `fxtmult`). On fragile login nodes: `./script/singularity_checkCentrality.sh` with the same arguments.
 
 ### Batch (star-submit)
 
@@ -250,6 +271,7 @@ First-time flow (after git clone): customize analysis info → setup → build �
    source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
    make
    ```
+   Or use **`./script/singularity_make.sh config/mainconf/main_auau19_anaLambda.yaml`** for the same batch-like STAR toolchain without interactive `sl7`.
    For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead. The setup script must be sourced so the selected STAR and ROOT environment persist for `make`.
 
 3. **Generate the joblist** (from project root). Pass the mainconf path:
@@ -279,6 +301,7 @@ First-time flow (after git clone): customize analysis info → setup → build �
    - checks `python script/analysis_info_helper.py --library-tag --mainconf ...` resolves
    - checks ELF class consistency between `root4star` and key libraries under `lib/`
    - checks runtime linker resolution in singularity context (fails fast if `ldd` reports `not found`)
+   - creates missing `log/`, `err/`, and `rootfile/<scratchSubdir>/` under the joblist `workDir` (from `<stdout>`, `<stderr>`, `<output toURL>`) and verifies they are writable
 
    If preflight fails with ABI mismatch hints (`wrong ELF class` class of issue), submit is stopped before scheduling. You can request one recovery rebuild attempt:
    ```bash

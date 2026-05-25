@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # φ(1020) → K⁺K⁻ Analysis Cuts
 
 nSigmaKaon: 2.0            # TPC nSigma cut for K
@@ -20,3 +21,15 @@ maxEtaEp: 1.0               # |eta| < maxEtaEp
 # Event-level: skip event if nTracks > maxNTr (0 = no limit)
 maxNTr: 500
 
+=======
+# Lambda V0 (p + pi-) analysis cuts
+
+nSigmaProton: 2.0
+nSigmaPion: 2.0
+minDCAProton: 0.5
+minDCAPion: 0.8
+maxDaughterDCA: 1.0
+maxDCAV0: 1.0
+minCosPointing: 0.995
+maxPathLength: 100.0
+>>>>>>> temp_work

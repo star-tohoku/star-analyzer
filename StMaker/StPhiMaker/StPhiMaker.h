@@ -15,6 +15,7 @@ class StPicoTrack;
 class StPicoBTofPidTraits;
 class TString;
 class HistManager;
+class CentralityHelper;
 class TVector3;
 
 class StPhiMaker;
@@ -43,6 +44,12 @@ class StPhiMaker : public StMaker {
   TString mOutName;
   Int_t mEventCounter;
   HistManager* m_histManager;
+  CentralityHelper* m_centrality;
+  Int_t m_cent9;
+  Int_t m_cent16;
+  Double_t m_refMultCorr;
+  Double_t m_centWeight;
+  Double_t m_centralityPercent;
 
   // Track structure for KK pair reconstruction
   struct Track_t {
@@ -72,6 +79,8 @@ class StPhiMaker : public StMaker {
   Int_t GetMixingVzBin(Float_t vz) const;
   void FillMixedEventPairs(const std::vector<Track_t>& kaonsPlus, const std::vector<Track_t>& kaonsMinus, Float_t vz);
   void StoreEventForMixing(const std::vector<Track_t>& kaonsPlus, const std::vector<Track_t>& kaonsMinus, Float_t vz);
+  void FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t refMultCorr, Int_t nTracks, Int_t nBTOFMatch,
+                             Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiPairs);
   void FillPhiPairHistograms(Double_t invMass, const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity,
                              Int_t nKaonPlus, Int_t nKaonMinus, Bool_t applySignalCuts);
   void FinalizeBackgroundSubtractedHistogram();

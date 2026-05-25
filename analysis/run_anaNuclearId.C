@@ -21,6 +21,13 @@ void run_anaNuclearId(const Char_t* inputFile,
     std::cerr << "ERROR: failed to load libStarAnaConfig.so" << std::endl;
     return;
   }
+<<<<<<< HEAD
+=======
+  if (gSystem->Load(TString(pwd) + "/lib/libStRefMultCorr.so") < 0) {
+    std::cerr << "ERROR: failed to load libStRefMultCorr.so" << std::endl;
+    return;
+  }
+>>>>>>> temp_work
   if (gSystem->Load(TString(pwd) + "/lib/libStNuclearIdMaker.so") < 0) {
     std::cerr << "ERROR: failed to load libStNuclearIdMaker.so" << std::endl;
     return;
@@ -29,7 +36,11 @@ void run_anaNuclearId(const Char_t* inputFile,
   gInterpreter->AddIncludePath(pwd);
   gInterpreter->AddIncludePath(TString::Format("%s/include", pwd));
   gInterpreter->AddIncludePath("$STAR/StRoot");
+<<<<<<< HEAD
   gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStNuclearIdMaker -Wl,-rpath,%s/lib", pwd, pwd));
+=======
+  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStNuclearIdMaker -Wl,-rpath,%s/lib", pwd, pwd));
+>>>>>>> temp_work
 
   gROOT->ProcessLine(TString::Format(".L %s/analysis/anaNuclearId.C+", pwd));
   anaNuclearId(inputFile, outputFile, jobid, nEventsMax, configPath);

@@ -14,6 +14,7 @@ public:
   Double_t maxMass2Kaon;
   Double_t maxDCAKaon;
   Double_t maxDCAKK;
+  Bool_t useInvMassCut;
   Double_t minInvMass;
   Double_t maxInvMass;
   Double_t minOpeningAngle;

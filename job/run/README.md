@@ -4,15 +4,20 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
 
 ## Steps
 
-1. **Build at the project root**
+1. **Build at the project root** (batch-matched STAR toolchain — **either** path is valid)
+   ```bash
+   cd /path/to/star-analysis
+   ./script/singularity_make.sh config/mainconf/main_auau19_anaLambda.yaml
+   ```
+   **Or** interactive SL7:
    ```bash
    cd /path/to/star-analysis
    sl7
    source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
    make
    ```
-   For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead.
-   For debug/repro jobs (especially heap/exit issues), always build in SL7 before submit.
+   `singularity_make.sh` runs `make` inside `star-bnl/star-sw:latest` with the same `sl73_*` / `sl74_*` toolchain as farm jobs; use it when you do not want to enter `sl7` manually (for example on AL9 login nodes). For `csh` / `tcsh`, use `source ./script/setup.csh ...` instead when building inside `sl7`.
+   For debug/repro jobs (especially heap/exit issues), always use one of these batch-like builds before submit — not host-only `make` on a mismatched OS.
 
 2. **Move to this directory and submit**
    ```bash
@@ -24,11 +29,13 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   `submit.sh` replaces `__PROJECT_ROOT__` in the template with the actual project path, so the same template works for any user.
   Before submit it runs a preflight check: it infers **`anaName`** from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`), then extracts the embedded **`config/mainconf/...yaml`** path from the joblist and uses that as the single source of truth for `libraryTag` resolution, rebuilds, ELF class consistency of `lib/*.so` vs `root4star`, and runtime linker sanity in the singularity context. This fails fast on mismatch and avoids secondary errors like missing `fromScratch` output after an early crash.
 
+  After preflight succeeds, **`submit.sh` creates `log/`, `err/`, and `rootfile/<scratchSubdir>/` under the joblist’s `workDir`** (parsed from `<stdout>`, `<stderr>`, and `<output toURL>` URLs) if they are missing, and verifies each directory is writable. This prevents SUMS from scheduling a job that later fails when copying ROOT output.
+
    If preflight fails and you want the script to try recovery once, use:
    ```bash
    ./submit.sh --rebuild-if-needed ../joblist/joblist_auau19_anaLambda_test.xml
    ```
-   This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight with the same embedded mainconf.
+   This runs `source ./script/setup.sh <embedded-mainconf> && make`, then retries preflight with the same embedded mainconf. If host `make` is not batch-matched (for example AL9), run **`./script/singularity_make.sh <embedded-mainconf>`** at the project root first, then re-run `submit.sh` without relying on this recovery path.
 
   On successful submit, reproducibility artifacts are saved per `jobid`:
   - **joblistlog/joblist_<anaName>_<jobid>.xml** — submitted XML after `__PROJECT_ROOT__` replacement
@@ -37,7 +44,7 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   - **runmeta/gitstatus_<anaName>_<jobid>.txt** — `git status --porcelain=v2 --branch` at submit time
   - **runmeta/gitdiff_<anaName>_<jobid>.patch** — `git diff --binary HEAD` at submit time
   - **runmeta/gitsubmodules_<anaName>_<jobid>.txt** — `git submodule status --recursive` at submit time
-  - **runmeta/runtime_bundle_<anaName>_<jobid>.tar.gz** — submit-time code/runtime bundle for replay (`analysis/`, `config/`, `include/`, `StMaker/`, `lib/`, and build/source metadata when present)
+  - **runmeta/runtime_bundle_<anaName>_<jobid>.tar.gz** — submit-time code/runtime bundle for replay (`analysis/`, `config/`, `include/`, `StMaker/`, `StRoot/`, `lib/`, and build/source metadata when present)
   - **runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `anaName+jobid+*` files such as `.list`, `.csh`, `.condor`, `.report`, and `.session.xml`
   - **runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` console output
 
@@ -65,7 +72,7 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 - To use a different joblist template, run e.g. `./submit.sh ../joblist/YourJoblist.xml`.
 - Submit-time reproducibility artifacts now live in `job/run/runmeta/`; `script/archive_all_job_logs.sh` archives that directory alongside `configlog` and `joblistlog`.
 - Batch command now clears `analysis/<baseAnaMacro>_C.*` before `root4star` so stale ACLiC outputs (`.so/.d/.pcm` etc.) do not mix across environments.
-- Batch runtime now copies `analysis/`, `config/`, `lib/`, `include/`, `StMaker/`, and optional build artifacts into a scratch-local runtime bundle before `singularity exec`, so moved or symlinked repositories do not break macro lookup inside the container.
+- Batch runtime now copies `analysis/`, `config/`, `lib/`, `include/`, `StMaker/`, `StRoot/`, and optional build artifacts into a scratch-local runtime bundle before `singularity exec`, so moved or symlinked repositories do not break macro lookup inside the container.
 - Current `auau19_anaLambda` joblists run `root4star` via `singularity exec ... star-bnl/star-sw:latest` with `-B /star/nfs4/AFS`, `-B /home/starlib:/home/starlib`, and inherited `LD_LIBRARY_PATH` to satisfy `libgfortran.so.3`.
 - The same container strategy is available for local Phi QA via `script/singularity_checkHistAnaPhi.sh` when host `root4star` cannot start due to missing runtime libraries.
 - Spack `root-config` / batch `root4star` builds here omit `Netx`/`RFIO` plugins, so `root://` and `rfio://` URLs in the SUMS `.list` cannot be opened. The test joblist rewrites the list to POSIX paths (`sed` strips `root://host:port//` and `rfio://`) before `root4star`, then reads `/home/starlib/...` as local files inside the container.

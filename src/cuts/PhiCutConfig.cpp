@@ -22,6 +22,7 @@ void PhiCutConfig::SetDefaults() {
   maxMass2Kaon = 0.35;
   maxDCAKaon = 2.0;
   maxDCAKK = 999.0;
+  useInvMassCut = kFALSE;
   minInvMass = 0.99;
   maxInvMass = 1.05;
   minOpeningAngle = 0.0;
@@ -60,6 +61,9 @@ Bool_t PhiCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("maxDCAKK") != values.end()) {
     maxDCAKK = YamlParser::ToDouble(values["maxDCAKK"], maxDCAKK);
+  }
+  if (values.find("useInvMassCut") != values.end()) {
+    useInvMassCut = YamlParser::ToBool(values["useInvMassCut"], useInvMassCut);
   }
   if (values.find("minInvMass") != values.end()) {
     minInvMass = YamlParser::ToDouble(values["minInvMass"], minInvMass);

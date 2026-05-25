@@ -6,7 +6,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-for d in analysis config lib include StMaker; do
+for d in analysis config lib include StMaker StRoot; do
   if [[ ! -e "$SCRIPT_DIR/$d" ]]; then
     ln -sf "../../$d" "$SCRIPT_DIR/$d"
   fi

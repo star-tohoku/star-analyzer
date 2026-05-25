@@ -9,6 +9,7 @@
 #include "cuts/Sigma1385CutConfig.h"
 #include "cuts/NuclearIdCutConfig.h"
 #include "cuts/MixingConfig.h"
+#include "cuts/CentralityCutConfig.h"
 #include "YamlParser.h"
 #include <map>
 #include <string>
@@ -35,7 +36,11 @@ ConfigManager& ConfigManager::GetInstance() {
 ConfigManager::ConfigManager() 
   : eventCuts(0), trackCuts(0), pidCuts(0), v0Cuts(0),
     phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), nuclearIdCuts(0), mixingConfig(0),
+<<<<<<< HEAD
     isLoaded(kFALSE) {
+=======
+    centralityCuts(0), isLoaded(kFALSE) {
+>>>>>>> temp_work
   // Initialize all cut config instances
   eventCuts = &EventCutConfig::GetInstance();
   trackCuts = &TrackCutConfig::GetInstance();
@@ -47,6 +52,7 @@ ConfigManager::ConfigManager()
   sigma1385Cuts = &Sigma1385CutConfig::GetInstance();
   nuclearIdCuts = &NuclearIdCutConfig::GetInstance();
   mixingConfig = &MixingConfig::GetInstance();
+  centralityCuts = &CentralityCutConfig::GetInstance();
 }
 
 ConfigManager::~ConfigManager() {
@@ -180,6 +186,14 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
     std::cerr << "WARNING: 'mixing' key not found in main config" << std::endl;
   }
 
+  if (values.find("centrality") != values.end()) {
+    if (!LoadConfigFile(basePath.c_str(), values["centrality"].c_str(), "centrality")) {
+      success = kFALSE;
+    }
+  } else {
+    std::cerr << "WARNING: 'centrality' key not found in main config" << std::endl;
+  }
+
   if (values.find("analysis") != values.end()) {
     std::string analysisRel = trimWhitespace(values["analysis"]);
     if (!analysisRel.empty()) {
@@ -311,6 +325,8 @@ Bool_t ConfigManager::LoadConfigFile(const Char_t* basePath, const Char_t* relat
     return nuclearIdCuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "mixing") == 0) {
     return mixingConfig->LoadFromFile(fullPath.c_str());
+  } else if (strcmp(configType, "centrality") == 0) {
+    return centralityCuts->LoadFromFile(fullPath.c_str());
   } else {
     std::cerr << "ERROR: Unknown config type: " << configType << std::endl;
     return kFALSE;
@@ -355,5 +371,9 @@ NuclearIdCutConfig& ConfigManager::GetNuclearIdCuts() {
 
 MixingConfig& ConfigManager::GetMixingConfig() {
   return *mixingConfig;
+}
+
+CentralityCutConfig& ConfigManager::GetCentralityCuts() {
+  return *centralityCuts;
 }
 

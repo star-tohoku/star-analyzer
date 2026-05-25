@@ -33,7 +33,7 @@ analysis:
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName
-  nFiles: 10
+  nFiles: 1000
 
 analyst:
   name: "User Name"

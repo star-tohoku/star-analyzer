@@ -2,6 +2,8 @@
 
 This repository is a **PicoDst analysis framework** for STAR. It follows the **StChain / StMaker** pattern: a ROOT macro builds a chain and drives `Init` → `Make(i)` → `Finish`, while physics, histograms, and cut-driven logic live in **compiled Makers** (`lib/libStXXXMaker.so`). **YAML mainconf** files (`config/mainconf/main_<anaName>.yaml`) are the single entry point for configuration; `script/setup.sh` reads `analysis_info` through that mainconf, and batch joblists embed the same mainconf path that you pass to `script/generate_joblist.sh`. For new analyses, `script/setup_config_from_analysisinfo.py` bootstraps `main_<anaName>.yaml` from `config/mainconf/mainconf.yaml` using the `__ANANAME__` placeholder. You can run locally with `root4star` or submit **star-submit** jobs using generated XML under `job/joblist/`.
 
+**Farm-matched build:** `./script/singularity_make.sh config/mainconf/main_<anaName>.yaml` runs `make` inside the same **`star-bnl/star-sw:latest`** Singularity image as batch (SL7-class `sl73_*` toolchain). Use it when you are not in interactive `sl7` or when host `make` does not match STAR. Details: [INSTALL.md](INSTALL.md) Step 6 and [docs/REFERENCE.md](docs/REFERENCE.md) (Local with Singularity).
+
 ## At a glance
 
 ```mermaid
@@ -62,7 +64,7 @@ Successful `job/run/submit.sh` submissions now save per-`jobid` reproducibility 
 | **analysis/** | `run_anaXxx.C` (runner) + `anaXxx.C` (chain; ACLiC). One pair per analysis. |
 | **config/** | `mainconf/`, `cuts/`, `maker/`, `hist/`, `analysis/` (analysis_info), `picoDstList/`. |
 | **StMaker/** | Maker sources → `lib/libStXXXMaker.so`. |
-| **script/** | `setup.sh`, `run_ana*.sh`, `singularity_make.sh`, `singularity_run_ana*.sh`, `generate_joblist.sh`, `checkHistAnaPhi.sh`, `singularity_checkHistAnaPhi.sh`, helpers. |
+| **script/** | `setup.sh`, `run_ana*.sh`, `singularity_make.sh`, `singularity_run_ana*.sh`, `generate_joblist.sh`, `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh`, `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, helpers. |
 | **job/** | `joblist/` templates; `job/run/` for submit and logs. |
 | **include/** / **src/** | Framework (`ConfigManager`, cuts, yaml-cpp build). |
 

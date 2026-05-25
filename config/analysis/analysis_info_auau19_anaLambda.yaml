@@ -1,6 +1,5 @@
-# Analysis Information
+# Analysis Information — 19 GeV Au+Au Lambda (p + pi-)
 
-# from picoDst Summary from FileCatalog
 starTag:
   triggerSets: "production_19GeV_2019"
   stream: "st_physics"
@@ -13,7 +12,6 @@ starTag:
   filenameNotFilter: "adc"
   storage: "local"
 
-# Dataset Information
 dataset:
   collisionSystem: "Au+Au"
   allPicoDstList: "picoDstList/auau19GeV.list"
@@ -23,17 +21,14 @@ dataset:
   goodRunList: ""
   dataQuality: "production"
   dataFormat: "picoDst"
-  
-# Analysis Information
-# anaName = {system}_{anaId}[_condition]; use YAML alias *anaName for name, jobName, scratchSubdir, outputFileStem.
-# baseRunMacro / baseAnaMacro = macro base names (no .C); runMacro is deprecated.
+
 analysis:
   anaName: &anaName "auau19_anaLambda"
   name: *anaName
   type: ""
   targetParticle: "Lambda"
   decayChannel: "p+pi-"
-  workDir: "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer"
+  workDir: "/star/u/oura/work/star-analysis"
   baseRunMacro: "run_anaLambda"
   baseAnaMacro: "anaLambda"
   jobName: *anaName
@@ -42,6 +37,6 @@ analysis:
   nFiles: 20
 
 analyst:
-  name: "Yudai Ichikawa"
+  name: "User Name"
   institute: "Tohoku University"
-  email: "yudai.ichikawa.d3@tohoku.ac.jp"
+  email: "user.email@institute.jp"

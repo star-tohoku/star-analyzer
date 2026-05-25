@@ -7,6 +7,8 @@
 #include "cuts/PIDCutConfig.h"
 #include "cuts/PhiCutConfig.h"
 #include "cuts/MixingConfig.h"
+#include "cuts/CentralityCutConfig.h"
+#include "CentralityHelper.h"
 #include "StPicoDstMaker/StPicoDstMaker.h"
 #include "StPicoEvent/StPicoDst.h"
 #include "StPicoEvent/StPicoTrack.h"
@@ -17,6 +19,8 @@
 #include "StarClassLibrary/SystemOfUnits.h"
 
 #include "TFile.h"
+#include "TH1.h"
+#include "TString.h"
 #include "TMath.h"
 #include "TSystem.h"
 #include "TVector3.h"
@@ -29,7 +33,7 @@
 namespace {
   const Double_t kKaonMass = 0.493677;
   /** Set to 1 to print which cut rejects each event (first kDebugPhiMakerMaxEvents failures only). */
-  const Int_t kDebugPhiMaker = 1;
+  const Int_t kDebugPhiMaker = 0;
   const Int_t kDebugPhiMakerMaxEvents = 200;
 }
 
@@ -40,10 +44,20 @@ StPhiMaker::StPhiMaker(const char* name, StPicoDstMaker* picoMaker, const char* 
       mPicoDst(0),
       mOutName(outName),
       mEventCounter(0),
-      m_histManager(0) {}
+      m_histManager(0),
+      m_centrality(0),
+      m_cent9(-1),
+      m_cent16(-1),
+      m_refMultCorr(-1.0),
+      m_centWeight(1.0),
+      m_centralityPercent(-1.0) {}
 
 //-----------------------------------------------------------------------------
 StPhiMaker::~StPhiMaker() {
+  if (m_centrality) {
+    delete m_centrality;
+    m_centrality = 0;
+  }
   if (m_histManager) {
     delete m_histManager;
     m_histManager = 0;
@@ -74,6 +88,11 @@ Int_t StPhiMaker::Init() {
     m_histManager = 0;
     return kStOK;
   }
+
+  m_centrality = new CentralityHelper();
+  if (!m_centrality->Init(ConfigManager::GetInstance().GetCentralityCuts())) {
+    std::cerr << "[StPhiMaker] CentralityHelper init failed" << std::endl;
+  }
   return kStOK;
 }
 
@@ -101,10 +120,46 @@ Int_t StPhiMaker::Make() {
   Float_t vzVpd = event->vzVpd();
   Int_t refMult = event->refMult();
   Float_t vr = TMath::Sqrt(pVtx.X() * pVtx.X() + pVtx.Y() * pVtx.Y());
+  const Double_t vz = pVtx.Z();
+  const Int_t runId = event->runId();
+  const Int_t nBTOFMatch = event->nBTOFMatch();
+
+  CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
+  Int_t rawMult = refMult;
+  if (centCfg.enabled) {
+    TString mode(centCfg.mode.c_str());
+    mode.ToLower();
+    if (mode == "fxtmult") {
+      rawMult = event->fxtMult();
+    }
+  }
+
+  m_cent9 = -1;
+  m_cent16 = -1;
+  m_refMultCorr = -1.0;
+  m_centWeight = 1.0;
+  m_centralityPercent = -1.0;
+
+  if (m_histManager) {
+    m_histManager->Fill("hRefMultVsNTOFMatch", (Double_t)nBTOFMatch, (Double_t)rawMult);
+  }
+
+  CentralityRejectReason centReason = kCentralityOk;
+  static Int_t s_centDebugCount = 0;
+
+  if (m_centrality && m_centrality->IsEnabled()) {
+    if (!m_centrality->CheckBadRun(runId, centReason)) {
+      if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
+        std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
+      }
+      return kStOK;
+    }
+  }
 
   // Event-level fills
   if (m_histManager) {
     m_histManager->Fill("hVz", pVtx.Z());
+    m_histManager->Fill("hVr", vr);
     m_histManager->Fill("hVxVy", pVtx.X(), pVtx.Y());
     m_histManager->Fill("hRefMult", refMult);
     m_histManager->Fill("hVzVsRun", (Double_t)event->runId(), pVtx.Z());
@@ -123,6 +178,50 @@ Int_t StPhiMaker::Make() {
     return kStOK;
   }
 
+  if (m_histManager && centCfg.fillCentralityQA) {
+    m_histManager->Fill("hRawMult", (Double_t)rawMult);
+  }
+
+  if (m_centrality && m_centrality->IsEnabled()) {
+    if (!m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) {
+      if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
+        std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
+      }
+      return kStOK;
+    }
+
+    if (!m_centrality->ComputeBins(event, rawMult, vz, m_cent9, m_cent16, m_refMultCorr, m_centWeight, centReason)) {
+      if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
+        std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
+      }
+      return kStOK;
+    }
+
+    if (m_histManager) {
+      m_histManager->Fill("hCentralityRaw", (Double_t)m_cent9);
+      m_histManager->Fill("hRefMultCorr", m_refMultCorr);
+      m_histManager->Fill("hCentralityVsVz", vz, (Double_t)m_cent9);
+      m_histManager->Fill("hRefMultWeight", m_centWeight);
+      m_histManager->Fill("hRefMultVsNTOFMatchAfter", (Double_t)nBTOFMatch, (Double_t)rawMult);
+    }
+
+    if (!m_centrality->AcceptCentBin(m_cent9, centReason)) {
+      if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
+        std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason)
+                  << " cent9=" << m_cent9 << std::endl;
+      }
+      return kStOK;
+    }
+
+    m_centralityPercent = CentralityHelper::Cent9ToPercentile(m_cent9);
+    if (m_histManager) {
+      const Double_t w = centCfg.useWeight ? m_centWeight : 1.0;
+      TH1* hCent = m_histManager->Get("hCentrality");
+      if (hCent) hCent->Fill((Double_t)m_cent9, w);
+      TH1* hCent16 = m_histManager->Get("hCentrality16");
+      if (hCent16) hCent16->Fill((Double_t)m_cent16, w);
+    }
+  }
 
   const Int_t kMaxKaons = 2000;
   std::vector<Track_t> kaonsPlus;
@@ -141,7 +240,6 @@ Int_t StPhiMaker::Make() {
   }
 
   Double_t Qx = 0.0, Qy = 0.0;
-  Int_t nTofMatch = 0;
 
   for (Int_t itrk = 0; itrk < nTracks; itrk++) {
     StPicoTrack* trk = mPicoDst->track(itrk);
@@ -190,6 +288,9 @@ Int_t StPhiMaker::Make() {
             if (beta > 1e-4) {
               Double_t mass2 = pMom.Mag2() * (1.0 / (beta * beta) - 1.0);
               m_histManager->Fill("hM2q2VsPq", pOverQ, mass2);
+              Double_t pMag = pMom.Mag();
+              m_histManager->Fill("hBetaVsP", pMag, 1.0 / beta);
+              m_histManager->Fill("hMass2VsP", pMag, mass2);
               Double_t deltaInvBeta = DeltaOneOverBeta(beta, kKaonMass, pMom.Mag());
               if (TMath::Abs(deltaInvBeta) < 10.0) {
                 m_histManager->Fill("hDeltaOneOverBetaKaon", deltaInvBeta);
@@ -206,15 +307,25 @@ Int_t StPhiMaker::Make() {
       Qy += TMath::Sin(2.0 * phi);
     }
 
-    if (btofIndex >= 0) nTofMatch++;
-
     if (!PassKaonCuts(trk, pVtx)) continue;
 
     Track_t track;
     BuildTrack(track, trk, event, pVtx);
     FillTofInfo(track, trk, pMom, btofIndex);
 
+    if (m_histManager && track.tofMatch) {
+      m_histManager->Fill("hMass2VsP_TpcKaon", pMom.Mag(), track.mass2);
+    }
+
     if (IsKaon(track)) {
+      if (m_histManager) {
+        m_histManager->Fill("hK_Pt", track.pT);
+        m_histManager->Fill("hK_Eta", track.eta);
+        m_histManager->Fill("hK_NSigma", track.nSigmaKaon);
+        if (track.tofMatch) {
+          m_histManager->Fill("hMass2VsP_IsKaon", pMom.Mag(), track.mass2);
+        }
+      }
       if (track.charge > 0 && (Int_t)kaonsPlus.size() < kMaxKaons) {
         kaonsPlus.push_back(track);
       } else if (track.charge < 0 && (Int_t)kaonsMinus.size() < kMaxKaons) {
@@ -223,7 +334,7 @@ Int_t StPhiMaker::Make() {
     }
   }
 
-  if (m_histManager) m_histManager->Fill("hTofMatchMult", nTofMatch);
+  if (m_histManager) m_histManager->Fill("hTofMatchMult", (Double_t)nBTOFMatch);
 
   Int_t nKaonPlus = (Int_t)kaonsPlus.size();
   Int_t nKaonMinus = (Int_t)kaonsMinus.size();
@@ -234,16 +345,32 @@ Int_t StPhiMaker::Make() {
   }
 
   // Phi reconstruction: ReconstructPhi pairs
+  Int_t nPhiPairs = 0;
   for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
     for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
+      TVector3 dcaMeasPlus, dcaMeasMinus;
+      Double_t dcaKK = CalculateDCA(kaonsPlus[iPlus], kaonsMinus[iMinus], dcaMeasPlus, dcaMeasMinus);
+      if (m_histManager) {
+        m_histManager->Fill("hDCAKK_All", dcaKK);
+      }
+
       Double_t invMass;
       TVector3 phiMom, dcaPosPlus, dcaPosMinus;
       if (!ReconstructPhi(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom, dcaPosPlus, dcaPosMinus)) continue;
+
+      nPhiPairs++;
+      if (m_histManager) {
+        m_histManager->Fill("hDCAKK_Pass", dcaKK);
+      }
 
       Double_t openingAngle = CalculateOpeningAngle(kaonsPlus[iPlus], kaonsMinus[iMinus]);
       Double_t pairRapidity = CalculatePairRapidity(invMass, phiMom);
       FillPhiPairHistograms(invMass, phiMom, openingAngle, pairRapidity, nKaonPlus, nKaonMinus, kTRUE);
     }
+  }
+
+  if (m_histManager && centCfg.fillCentralityQA && m_cent9 >= 0) {
+    FillCentralityEventQA(m_cent9, rawMult, m_refMultCorr, nTracks, nBTOFMatch, nKaonPlus, nKaonMinus, nPhiPairs);
   }
 
   FillMixedEventPairs(kaonsPlus, kaonsMinus, pVtx.Z());
@@ -285,6 +412,14 @@ Int_t StPhiMaker::Finish() {
     delete fout;
   }
   std::cout << "StPhiMaker::Finish() processed " << mEventCounter << " events" << std::endl;
+  if (m_centrality && m_centrality->IsEnabled()) {
+    std::cout << "[StPhiMaker] centrality summary: ok=" << m_centrality->CountOk()
+              << " badRun=" << m_centrality->CountBadRun()
+              << " pileup=" << m_centrality->CountPileup()
+              << " invalidCent=" << m_centrality->CountInvalidCent()
+              << " binRejected=" << m_centrality->CountBinRejected() << std::endl;
+    m_centrality->Finish();
+  }
   return kStOK;
 }
 
@@ -578,12 +713,34 @@ void StPhiMaker::StoreEventForMixing(const std::vector<Track_t>& kaonsPlus, cons
 }
 
 //-----------------------------------------------------------------------------
+void StPhiMaker::FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t refMultCorr, Int_t nTracks, Int_t nBTOFMatch,
+                                       Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiPairs) {
+  if (!m_histManager || cent9 < 0) return;
+
+  const Double_t centX = (Double_t)cent9;
+  m_histManager->Fill("hRawMult_vs_Cent9", centX, (Double_t)rawMult);
+  if (refMultCorr >= 0.0) {
+    m_histManager->Fill("hRefMultCorr_vs_Cent9", centX, refMultCorr);
+    m_histManager->Fill("hRawMult_vs_RefMultCorr", refMultCorr, (Double_t)rawMult);
+  }
+  m_histManager->Fill("hNTracks_vs_Cent9", centX, (Double_t)nTracks);
+  m_histManager->Fill("hTofMatchMult_vs_Cent9", centX, (Double_t)nBTOFMatch);
+  m_histManager->Fill("hNKaonPlus_vs_Cent9", centX, (Double_t)nKaonPlus);
+  m_histManager->Fill("hNKaonMinus_vs_Cent9", centX, (Double_t)nKaonMinus);
+  m_histManager->Fill("hNPhiPairs_vs_Cent9", centX, (Double_t)nPhiPairs);
+}
+
+//-----------------------------------------------------------------------------
 void StPhiMaker::FillPhiPairHistograms(Double_t invMass, const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity,
                                       Int_t nKaonPlus, Int_t nKaonMinus, Bool_t applySignalCuts) {
   if (!m_histManager) return;
 
+  CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
   PhiCutConfig& phiCut = ConfigManager::GetInstance().GetPhiCuts();
-  Bool_t passInvMass = (invMass >= phiCut.minInvMass && invMass <= phiCut.maxInvMass);
+  Bool_t passInvMass = kTRUE;
+  if (phiCut.useInvMassCut) {
+    passInvMass = (invMass >= phiCut.minInvMass && invMass <= phiCut.maxInvMass);
+  }
   Bool_t passAngle = (openingAngle >= phiCut.minOpeningAngle && openingAngle <= phiCut.maxOpeningAngle);
   Bool_t passRapidity = (pairRapidity >= phiCut.minPairRapidity && pairRapidity <= phiCut.maxPairRapidity);
   Bool_t passRapidity_0p4 = (pairRapidity >= -0.4 && pairRapidity <= 0.4);
@@ -610,6 +767,13 @@ void StPhiMaker::FillPhiPairHistograms(Double_t invMass, const TVector3& phiMom,
   if (!passInvMass) return;
   m_histManager->Fill("hMKK_SameEvent", invMass);
 
+  if (centCfg.fillCentralityQA && m_cent9 >= 0 && m_cent9 <= 8) {
+    m_histManager->Fill("hMKK_vs_Cent9", (Double_t)m_cent9, invMass);
+    if (m_refMultCorr >= 0.0) {
+      m_histManager->Fill("hMKK_vs_RefMultCorr", m_refMultCorr, invMass);
+    }
+  }
+
   if (passAngle) {
     m_histManager->Fill("hMKK_OpeningAngleCut", invMass);
     if (passRapidity) m_histManager->Fill("hMKK_RapidityCut", invMass);
@@ -623,6 +787,12 @@ void StPhiMaker::FillPhiPairHistograms(Double_t invMass, const TVector3& phiMom,
     m_histManager->Fill("hOpeningAngle_AfterCuts", openingAngle);
     m_histManager->Fill("hPairRapidity_AfterCuts", pairRapidity);
     m_histManager->Fill("hPairPt_AfterCuts", phiMom.Pt());
+    if (centCfg.fillCentralityQA && m_cent9 >= 0 && m_cent9 <= 8) {
+      static const char* kMKKCentBin[] = {
+          "hMKK_CentBin0", "hMKK_CentBin1", "hMKK_CentBin2", "hMKK_CentBin3", "hMKK_CentBin4",
+          "hMKK_CentBin5", "hMKK_CentBin6", "hMKK_CentBin7", "hMKK_CentBin8"};
+      m_histManager->Fill(kMKKCentBin[m_cent9], invMass);
+    }
     if (nKaonPlus < 5) m_histManager->Fill("hMKK_Mult0to5_KPlus", invMass);
     else if (nKaonPlus < 10) m_histManager->Fill("hMKK_Mult5to10_KPlus", invMass);
     else if (nKaonPlus < 20) m_histManager->Fill("hMKK_Mult10to20_KPlus", invMass);

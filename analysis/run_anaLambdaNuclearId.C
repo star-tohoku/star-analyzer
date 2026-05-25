@@ -21,6 +21,13 @@ void run_anaLambdaNuclearId(const Char_t* inputFile,
     std::cerr << "ERROR: failed to load libStarAnaConfig.so" << std::endl;
     return;
   }
+<<<<<<< HEAD
+=======
+  if (gSystem->Load(TString(pwd) + "/lib/libStRefMultCorr.so") < 0) {
+    std::cerr << "ERROR: failed to load libStRefMultCorr.so" << std::endl;
+    return;
+  }
+>>>>>>> temp_work
   if (gSystem->Load(TString(pwd) + "/lib/libStLambdaMaker.so") < 0) {
     std::cerr << "ERROR: failed to load libStLambdaMaker.so" << std::endl;
     return;
@@ -33,7 +40,11 @@ void run_anaLambdaNuclearId(const Char_t* inputFile,
   gInterpreter->AddIncludePath(pwd);
   gInterpreter->AddIncludePath(TString::Format("%s/include", pwd));
   gInterpreter->AddIncludePath("$STAR/StRoot");
+<<<<<<< HEAD
   gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStLambdaMaker -lStNuclearIdMaker -Wl,-rpath,%s/lib", pwd, pwd));
+=======
+  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStLambdaMaker -lStNuclearIdMaker -Wl,-rpath,%s/lib", pwd, pwd));
+>>>>>>> temp_work
 
   gROOT->ProcessLine(TString::Format(".L %s/analysis/anaLambdaNuclearId.C+", pwd));
   anaLambdaNuclearId(inputFile, outputFile, jobid, nEventsMax, configPath);

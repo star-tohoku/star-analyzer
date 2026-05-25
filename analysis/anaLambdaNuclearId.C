@@ -126,7 +126,11 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
       delete fout;
       std::cout << "Successfully saved all histograms to " << outputFile << std::endl;
     } else {
+<<<<<<< HEAD
       std::cerr << "ERROR: Failed to open output ROOT file: " << outputFile << std::endl;
+=======
+      std::cerr << "ERROR: Failed to open ROOT file: " << outputFile << std::endl;
+>>>>>>> temp_work
     }
   }
 
