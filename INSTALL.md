@@ -130,17 +130,17 @@ make
 Example (Lambda, first 100 events):
 
 ```bash
-./script/run_anaLambda.sh config/picoDstList/auau19GeV.list rootfile/auau19_anaLambda_temp/out.root 0 100
+./script/run_anaLambda.sh config/picoDstList/auau19GeV.list rootfile/auau19_anaLambda_temp/out.root 0 100 config/mainconf/main_auau19_anaLambda.yaml
 ```
 
-Pass a fifth argument to override mainconf (see [docs/REFERENCE.md](docs/REFERENCE.md) — How to run). For Phi, use `./script/run_anaPhi.sh` and the matching list/mainconf.
+Specify the mainconf configuration file as the fifth argument (which is required to load the correct analysis cuts and parameters, especially for systems other than the default Au+Au 19 GeV Lambda; see [docs/REFERENCE.md](docs/REFERENCE.md) — How to run). For Phi, use `./script/run_anaPhi.sh` with its matching list and mainconf.
 
 STAR login nodes are moving from **SL7 to AL9**. On **SL7** (or when host `root4star` works as on legacy nodes), use the plain `run_ana*` and `checkHistAna*` scripts. On **AL9**, prefer the **`singularity_*` wrappers** (same **`star-bnl/star-sw:latest`** image as batch jobs) for build, run, and QA PDFs: **`singularity_make.sh`**, **`singularity_run_anaLambda.sh`** / **`singularity_run_anaPhi.sh`**, and **`singularity_checkHistAnaLambda.sh`** / **`singularity_checkHistAnaPhi.sh`**. See [docs/REFERENCE.md](docs/REFERENCE.md) — Local with Singularity.
 
 Example (Lambda via Singularity, first 100 events; same arguments as above):
 
 ```bash
-./script/singularity_run_anaLambda.sh config/picoDstList/auau19GeV.list rootfile/auau19_anaLambda_temp/out.root 0 100
+./script/singularity_run_anaLambda.sh config/picoDstList/auau19GeV.list rootfile/auau19_anaLambda_temp/out.root 0 100 config/mainconf/main_auau19_anaLambda.yaml
 ```
 
 The run scripts set **`LD_LIBRARY_PATH`** (and related env) before `root4star`. If you invoke `root4star` by hand, you must reproduce that environment or linking may fail.
