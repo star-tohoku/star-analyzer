@@ -64,6 +64,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MAINCONF="${1:?Usage: source ./script/setup.sh MAINCONF_PATH (e.g. config/mainconf/main_auau19_anaLambda.yaml)}"
+export STAR_ANA_MAINCONF="$MAINCONF"
+echo "$MAINCONF" > "$PROJECT_ROOT/.current_mainconf"
 
 LIBRARY_TAG=$(cd "$PROJECT_ROOT" && python script/analysis_info_helper.py --library-tag --mainconf "$MAINCONF") || _setup_return 1
 LIBRARY_TAG=$(echo "$LIBRARY_TAG" | xargs)

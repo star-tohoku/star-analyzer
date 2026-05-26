@@ -232,10 +232,7 @@ def main():
             content = content.replace('anaPhi', base_ana_macro)
             content = content.replace('StPhiMaker', maker_class)
             content = content.replace('phiMaker', maker_var)
-<<<<<<< HEAD
-=======
             content = content.replace('"phi"', '"{}"'.format(maker_name.lower()))
->>>>>>> temp_work
             content = content.replace('auau19_anaPhi', ana_name)
             content = content.replace('run_anaPhi', base_run_macro)
             with open(ana_dst, 'w') as f:

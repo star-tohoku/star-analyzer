@@ -12,7 +12,10 @@ INPUT_FILE="${1:-config/picoDstList/auau19GeV.list}"
 OUTPUT_FILE="${2:-rootfile/auau19_anaNuclearId_temp/auau19_anaNuclearId_temp.root}"
 JOBID="${3:-0}"
 NEVENTS="${4:--1}"
-CONFIG_PATH="${5:-}"
+if [ -z "${STAR_ANA_MAINCONF:-}" ] && [ -f "$PROJECT_ROOT/.current_mainconf" ]; then
+  export STAR_ANA_MAINCONF=$(cat "$PROJECT_ROOT/.current_mainconf")
+fi
+CONFIG_PATH="${5:-$STAR_ANA_MAINCONF}"
 SETUP_MAINCONF="${CONFIG_PATH:-config/mainconf/main_auau19_anaNuclearId.yaml}"
 
 source ./script/setup.sh "$SETUP_MAINCONF"

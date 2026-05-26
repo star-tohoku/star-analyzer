@@ -99,3 +99,6 @@ script/run_ana_Phi.sh
 script/run_analyzePhi.sh
 script/job_template.xml
 script/getfile/
+
+# Current mainconf persistence
+.current_mainconf

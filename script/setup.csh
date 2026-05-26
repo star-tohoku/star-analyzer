@@ -14,6 +14,8 @@ if ( ! -f "$PROJECT_ROOT/script/analysis_info_helper.py" ) then
 endif
 
 set MAINCONF="$1"
+setenv STAR_ANA_MAINCONF "$MAINCONF"
+echo "$MAINCONF" > "$PROJECT_ROOT/.current_mainconf"
 set LIBRARY_TAG=`cd "$PROJECT_ROOT" && python script/analysis_info_helper.py --library-tag --mainconf "$MAINCONF"`
 if ( $status != 0 ) then
   return 1

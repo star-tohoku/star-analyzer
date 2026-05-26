@@ -8,7 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT" || exit 1
 
-MAINCONF="${1:?Usage: ./script/run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]}"
+if [ -z "${STAR_ANA_MAINCONF:-}" ] && [ -f "$PROJECT_ROOT/.current_mainconf" ]; then
+  export STAR_ANA_MAINCONF=$(cat "$PROJECT_ROOT/.current_mainconf")
+fi
+MAINCONF="${1:-$STAR_ANA_MAINCONF}"
+MAINCONF="${MAINCONF:?Usage: ./script/run_anaPhi.sh [MAINCONF] [inputFile] [outputFile] [jobid] [nEvents]}"
 
 DEFAULT_LIST=$(python "$SCRIPT_DIR/analysis_info_helper.py" --pico-dst-list --mainconf "$MAINCONF" | xargs) || exit 1
 DEFAULT_OUTPUT=$(python "$SCRIPT_DIR/analysis_info_helper.py" --output-rootfile --mainconf "$MAINCONF" | xargs) || exit 1

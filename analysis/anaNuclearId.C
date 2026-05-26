@@ -15,6 +15,7 @@
 #include "StMaker/StNuclearIdMaker/StNuclearIdMaker.h"
 #include "ConfigManager.h"
 #include <iostream>
+#include <fstream>
 
 StChain* chain = 0;
 StNuclearIdMaker* nuclearidMaker = 0;
@@ -42,7 +43,21 @@ void anaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
     mainConfigPath = configPath;
     if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
   } else {
-    mainConfigPath = TString(pwd) + "/config/mainconf/main_auau19_anaNuclearId.yaml";
+    const char* env_conf = gSystem->Getenv("STAR_ANA_MAINCONF");
+    if (env_conf && strlen(env_conf) > 0) {
+      mainConfigPath = env_conf;
+      if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+    } else {
+      TString fallbackPath = TString(pwd) + "/.current_mainconf";
+      std::ifstream infile(fallbackPath.Data());
+      std::string line;
+      if (infile.is_open() && std::getline(infile, line)) {
+        mainConfigPath = line.c_str();
+        if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+      } else {
+        mainConfigPath = TString(pwd) + "/config/mainconf/main_auau19_anaNuclearId.yaml";
+      }
+    }
   }
   if (!ConfigManager::GetInstance().LoadConfig(mainConfigPath.Data())) {
     std::cerr << "ERROR: Failed to load config: " << mainConfigPath.Data() << std::endl;
@@ -62,11 +77,7 @@ void anaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
   picoMaker->SetStatus("BTowHit", 1);
   picoMaker->SetStatus("ETofPidTraits", 1);
 
-<<<<<<< HEAD
-  nuclearidMaker = new StNuclearIdMaker("phi", picoMaker, outputFile);
-=======
   nuclearidMaker = new StNuclearIdMaker("nuclearid", picoMaker, outputFile);
->>>>>>> temp_work
   chain->AddMaker(picoMaker);
   chain->AddMaker(nuclearidMaker);
 

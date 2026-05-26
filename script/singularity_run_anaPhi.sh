@@ -10,7 +10,10 @@ PROJECT_ROOT_REAL="$(cd "$PROJECT_ROOT" && pwd -P)"
 PYTHON="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
 SINGULARITY_IMAGE="/cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest"
 
-MAINCONF="${1:-}"
+if [ -z "${STAR_ANA_MAINCONF:-}" ] && [ -f "$PROJECT_ROOT/.current_mainconf" ]; then
+  export STAR_ANA_MAINCONF=$(cat "$PROJECT_ROOT/.current_mainconf")
+fi
+MAINCONF="${1:-$STAR_ANA_MAINCONF}"
 INPUT_FILE="${2:-}"
 OUTPUT_FILE="${3:-}"
 JOBID="${4:-0}"
