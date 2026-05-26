@@ -25,6 +25,7 @@ dataset:
 analysis:
   anaName: &anaName "auau19_anaLambda"
   name: *anaName
+  mode: "refmult"
   type: ""
   targetParticle: "Lambda"
   decayChannel: "p+pi-"

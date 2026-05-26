@@ -8,6 +8,7 @@ pid:           cuts/pid/pid.yaml
 v0:            cuts/v0reco/v0.yaml
 mixing:        cuts/mixing/mixing.yaml
 centrality:    cuts/centrality/centrality.yaml
+nuclearid:     cuts/nuclearid/nuclearid.yaml
 
 # Maker config (key name should match your analysis macro expectation)
 lambda:        maker/maker___ANANAME__.yaml

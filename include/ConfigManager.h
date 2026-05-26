@@ -24,7 +24,7 @@ public:
   static ConfigManager& GetInstance();
   Bool_t LoadConfig(const Char_t* mainConfigPath = "config/main.yaml");
 
-  /** Return full path for hist config from main.yaml key "hist".
+  /** Return full path for hist config from main.yaml key "hist" or "{makerName}Hist".
    *  Returns empty string if key missing or value empty. */
   std::string GetHistConfigPath(const std::string& makerName = "");
 

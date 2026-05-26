@@ -24,6 +24,7 @@ dataset:
 analysis:
   anaName: &anaName "auau19_anaPhi"
   name: *anaName
+  mode: "refmult"
   type: "resonance"
   targetParticle: "phi"
   decayChannel: "K+K-"
