@@ -5,6 +5,7 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 
 ## Editing and implementation rules
 
+- **File Modification Approval**: The agent MUST NOT modify, create, or delete any source, configuration, or documentation files in the repository without explicit prior approval from the user.
 - **Macros**: Do not implement custom event loops. Build `StChain`, run `Init()`, `Make(i)`, and `Finish()`. The Maker-using macro must be ACLiC-compiled and linked through `AddLinkedLibs`.
 - **Makers**: Implement `Init()`, `Make()`, `Clear()`, and `Finish()`. Keep histogram lifecycle in `DeclareHistograms()` and `WriteHistograms()` / `Finish()`.
 - **Config**: Prefer YAML updates over recompilation when changing cuts and histogram values. Main entry is `config/mainconf/main_<anaName>.yaml`.

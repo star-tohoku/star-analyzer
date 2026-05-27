@@ -247,3 +247,19 @@ cd job/run && ./submit.sh ../joblist/joblist_auau19_anaLambda_temp.xml
 - [PHILOSOPHY.md](PHILOSOPHY.md) — Design principles and two-macro rationale.
 - [docs/REFERENCE.md](docs/REFERENCE.md) — Full reference (analysis_info, batch detail, adding analyses, config, joblists, QA).
 - [job/run/README.md](job/run/README.md) — Submit directory and cleanup.
+- [docs/ai/INSTALL.md](docs/ai/INSTALL.md) — Setup details for AI custom skills.
+
+---
+
+## AI Assistant Custom Skills (Optional)
+
+If you are using an AI assistant like **Cursor** or **Antigravity (Gemini IDE)**, you can load repository-specific custom skills (e.g. daily logs generation, analysis scaffolding, histogram instructions).
+
+* **Cursor**: Automatically active. Custom skills are located in `.cursor/skills/`.
+* **Antigravity (Gemini)**: Requires a one-time registration of the project plugin:
+  ```tcsh
+  tcsh script/setup_antigravity_skills.csh
+  ```
+  For more details, see [docs/ai/PrepareAntigravity.md](docs/ai/PrepareAntigravity.md).
+
+

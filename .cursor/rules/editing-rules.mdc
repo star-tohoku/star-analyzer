@@ -7,6 +7,7 @@ This file is a Cursor wrapper. Canonical editing and workflow rules live in:
 
 Operational highlights:
 
+- **Approval Requirement**: Do not modify, create, or delete any files without explicit prior user approval.
 - Do not write custom macro event loops.
 - Keep Maker lifecycle and histogram management in `StMaker` code.
 - Prefer YAML edits over recompilation when changing thresholds and cuts.
