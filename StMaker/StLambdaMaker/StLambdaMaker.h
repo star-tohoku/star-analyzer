@@ -3,6 +3,8 @@
 
 #include "StMaker.h"
 #include "StarClassLibrary/StPhysicalHelixD.hh"
+#include "TVector3.h"
+#include <vector>
 
 class StPicoDst;
 class StPicoDstMaker;
@@ -29,6 +31,10 @@ public:
   virtual Int_t Finish();
 
   void WriteHistograms();
+  const std::vector<TVector3>& GetLambdaMomList() const { return mLambdaMom; }
+  const std::vector<Double_t>& GetLambdaInvMassList() const { return mLambdaInvMass; }
+  const std::vector<Int_t>& GetLambdaProtonIdList() const { return mLambdaProtonId; }
+  const std::vector<Int_t>& GetLambdaPionIdList() const { return mLambdaPionId; }
 
 private:
   StPicoDstMaker* mPicoDstMaker;
@@ -42,6 +48,10 @@ private:
   Double_t m_refMultCorr;
   Double_t m_centWeight;
   Double_t m_centralityPercent;
+  std::vector<TVector3> mLambdaMom;
+  std::vector<Double_t> mLambdaInvMass;
+  std::vector<Int_t> mLambdaProtonId;
+  std::vector<Int_t> mLambdaPionId;
 
   Bool_t PassEventCuts(Int_t nTracks);
   Bool_t PassProtonCuts(StPicoTrack* trk, const TVector3& pVtx);

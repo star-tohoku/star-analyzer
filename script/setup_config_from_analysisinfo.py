@@ -353,6 +353,26 @@ def main():
             shutil.copy2(maker_src, maker_dst)
             print("Created: {}".format(os.path.relpath(maker_dst, config_base)))
 
+    # hist: template based on analysis name -> hist/hist_{anaName}.yaml
+    if 'lambdanucle' in ana_name.lower():
+        system_match = re.match(r'^([a-zA-Z0-9\.]+)_ana', ana_name)
+        system = system_match.group(1) if system_match else 'auau19'
+        
+        hist_files = [
+            ('hist_anaLambda.yaml', 'hist_{}_anaLambda.yaml'.format(system)),
+            ('hist_anaNuclearId.yaml', 'hist_{}_anaNuclearId.yaml'.format(system)),
+            ('hist_anaLambdaNuclearId.yaml', 'hist_{}_anaLambdaNuclearId.yaml'.format(system))
+        ]
+        
+        for src_name, dst_name in hist_files:
+            hist_src = os.path.join(config_base, 'hist', src_name)
+            hist_dst = os.path.join(config_base, 'hist', dst_name)
+            if not os.path.isfile(hist_src):
+                print("WARNING: hist template not found, skip: {}".format(src_name))
+            else:
+                shutil.copy2(hist_src, hist_dst)
+                print("Created: {}".format(os.path.relpath(hist_dst, config_base)))
+
     write_mainconf(config_base, ana_name, analysis_rel)
 
     # generate macros if base macros are defined

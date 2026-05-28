@@ -87,7 +87,13 @@ Int_t StLambdaMaker::Init() {
 }
 
 //-----------------------------------------------------------------------------
-void StLambdaMaker::Clear(Option_t* opt) {}
+void StLambdaMaker::Clear(Option_t* opt) {
+  StMaker::Clear(opt);
+  mLambdaMom.clear();
+  mLambdaInvMass.clear();
+  mLambdaProtonId.clear();
+  mLambdaPionId.clear();
+}
 
 //-----------------------------------------------------------------------------
 Bool_t StLambdaMaker::PassEventCuts(Int_t nTracks) {
@@ -331,6 +337,11 @@ Int_t StLambdaMaker::Make() {
       lp.SetVectM(momP,  kProtonMass);
       lpi.SetVectM(momPi, kPionMass);
       Double_t invMass = (lp + lpi).M();
+
+      mLambdaMom.push_back(pLam);
+      mLambdaInvMass.push_back(invMass);
+      mLambdaProtonId.push_back(p->id());
+      mLambdaPionId.push_back(pi->id());
 
       if (m_histManager) {
         m_histManager->Fill("hLambda_InvMass", invMass);

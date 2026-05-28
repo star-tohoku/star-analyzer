@@ -3,6 +3,8 @@
 
 #include "StMaker.h"
 #include "TString.h"
+#include "TVector3.h"
+#include <vector>
 
 class StPicoDst;
 class StPicoDstMaker;
@@ -22,12 +24,20 @@ class StNuclearIdMaker : public StMaker {
   virtual Int_t Finish();
 
   void WriteHistograms();
+  const std::vector<TVector3>& GetNuclearMomList() const { return mNuclearMom; }
+  const std::vector<Int_t>& GetNuclearIdList() const { return mNuclearId; }
+  const std::vector<Int_t>& GetNuclearTypeList() const { return mNuclearType; }
+
+  void FillKstar(Double_t k_star, Double_t q_lab, Int_t type);
 
  private:
   StPicoDstMaker* mPicoDstMaker;
   StPicoDst* mPicoDst;
   TString mOutName;
   HistManager* m_histManager;
+  std::vector<TVector3> mNuclearMom;
+  std::vector<Int_t> mNuclearId;
+  std::vector<Int_t> mNuclearType;
 };
 
 // Factory for CINT

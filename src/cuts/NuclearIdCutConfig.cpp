@@ -21,9 +21,15 @@ void NuclearIdCutConfig::SetDefaults() {
   nSigmaExclude = 2.0;
   maxNSigmaNuclear = 2.0;
   m2SigmaCut = 1.5;
+  m2_selection = kFALSE;
   minP_M2cut = 0.2;
   minM2_M2cut = 0.01;
   maxM2_M2cut = 10.0;
+
+  // Lambda selection defaults
+  MeanLambda = 1.11596;
+  sigmaLambda = 2.96e-03;
+  nsigmaLambda = 2.0;
 }
 
 Bool_t NuclearIdCutConfig::LoadFromFile(const Char_t* filename) {
@@ -50,6 +56,9 @@ Bool_t NuclearIdCutConfig::ParseYamlFile(const Char_t* filename) {
   if (values.find("m2SigmaCut") != values.end()) {
     m2SigmaCut = YamlParser::ToDouble(values["m2SigmaCut"], m2SigmaCut);
   }
+  if (values.find("m2_selection") != values.end()) {
+    m2_selection = YamlParser::ToBool(values["m2_selection"], m2_selection);
+  }
   if (values.find("minP_M2cut") != values.end()) {
     minP_M2cut = YamlParser::ToDouble(values["minP_M2cut"], minP_M2cut);
   }
@@ -58,6 +67,15 @@ Bool_t NuclearIdCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("maxM2_M2cut") != values.end()) {
     maxM2_M2cut = YamlParser::ToDouble(values["maxM2_M2cut"], maxM2_M2cut);
+  }
+  if (values.find("MeanLambda") != values.end()) {
+    MeanLambda = YamlParser::ToDouble(values["MeanLambda"], MeanLambda);
+  }
+  if (values.find("sigmaLambda") != values.end()) {
+    sigmaLambda = YamlParser::ToDouble(values["sigmaLambda"], sigmaLambda);
+  }
+  if (values.find("nsigmaLambda") != values.end()) {
+    nsigmaLambda = YamlParser::ToDouble(values["nsigmaLambda"], nsigmaLambda);
   }
 
   return kTRUE;

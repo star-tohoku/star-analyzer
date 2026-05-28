@@ -6,6 +6,7 @@
 #include "StPicoEvent/StPicoBTofPidTraits.h"
 #include "ConfigManager.h"
 #include "cuts/NuclearIdCutConfig.h"
+#include "cuts/EventCutConfig.h"
 #include "HistManager.h"
 #include "TH2D.h"
 #include "TFile.h"
@@ -114,6 +115,9 @@ Int_t StNuclearIdMaker::Init() {
 
 void StNuclearIdMaker::Clear(Option_t* opt) {
   StMaker::Clear(opt);
+  mNuclearMom.clear();
+  mNuclearId.clear();
+  mNuclearType.clear();
 }
 
 Int_t StNuclearIdMaker::Make() {
@@ -225,6 +229,60 @@ Int_t StNuclearIdMaker::Make() {
       }
     }
 
+    // Populate mNuclearList
+    bool is_d   = (fabs(nSigma_d) < cuts.maxNSigmaNuclear);
+    bool is_t   = (fabs(nSigma_t) < cuts.maxNSigmaNuclear);
+    bool is_3He = (fabs(nSigma_3He) < cuts.maxNSigmaNuclear);
+    bool is_4He = (fabs(nSigma_4He) < cuts.maxNSigmaNuclear);
+
+    if (cuts.m2_selection) {
+      bool hasTof = false;
+      double beta_val = -1.0;
+      double m2_val = -1.0;
+      if (trk->isTofTrack()) {
+        int idx = trk->bTofPidTraitsIndex();
+        if (idx >= 0) {
+          StPicoBTofPidTraits* btof = mPicoDst->btofPidTraits(idx);
+          if (btof) {
+            beta_val = btof->btofBeta();
+            if (beta_val > 0) {
+              hasTof = true;
+              m2_val = p*p*(1.0/(beta_val*beta_val) - 1.0);
+            }
+          }
+        }
+      }
+
+      if (!hasTof) {
+        is_d = is_t = is_3He = is_4He = false;
+      } else {
+        // Apply m2 mass window cuts
+        is_d = is_d && (m2_val > d_mean   - cuts.m2SigmaCut * d_sigma   && m2_val < d_mean   + cuts.m2SigmaCut * d_sigma);
+        is_t = is_t && (m2_val > t_mean   - cuts.m2SigmaCut * t_sigma   && m2_val < t_mean   + cuts.m2SigmaCut * t_sigma);
+        is_3He = is_3He && (m2_val > He3_mean - cuts.m2SigmaCut * He3_sigma && m2_val < He3_mean + cuts.m2SigmaCut * He3_sigma);
+        is_4He = is_4He && (m2_val > cuts.minM2_M2cut && m2_val < cuts.maxM2_M2cut);
+      }
+    }
+
+    if (is_d || is_t || is_3He || is_4He) {
+      int best_type = -1;
+      double min_nSigma = 999.0;
+      if (is_d && fabs(nSigma_d) < min_nSigma) { min_nSigma = fabs(nSigma_d); best_type = 0; }
+      if (is_t && fabs(nSigma_t) < min_nSigma) { min_nSigma = fabs(nSigma_t); best_type = 1; }
+      if (is_3He && fabs(nSigma_3He) < min_nSigma) { min_nSigma = fabs(nSigma_3He); best_type = 2; }
+      if (is_4He && fabs(nSigma_4He) < min_nSigma) { min_nSigma = fabs(nSigma_4He); best_type = 3; }
+
+      if (best_type >= 0) {
+        TVector3 act_pMom = pMom;
+        if (best_type == 2 || best_type == 3) {
+          act_pMom = 2.0 * pMom;
+        }
+        mNuclearMom.push_back(act_pMom);
+        mNuclearId.push_back(trk->id());
+        mNuclearType.push_back(best_type);
+      }
+    }
+
     if (!trk->isTofTrack()) {
       if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
       continue;
@@ -277,4 +335,21 @@ Int_t StNuclearIdMaker::Finish() {
 
 void StNuclearIdMaker::WriteHistograms() {
   if (m_histManager) m_histManager->Write();
+}
+
+void StNuclearIdMaker::FillKstar(Double_t k_star, Double_t q_lab, Int_t type) {
+  if (!m_histManager) return;
+  if (type == 0) {
+    m_histManager->Fill("hKstar_d", k_star);
+    m_histManager->Fill("hQlab_d", q_lab);
+  } else if (type == 1) {
+    m_histManager->Fill("hKstar_t", k_star);
+    m_histManager->Fill("hQlab_t", q_lab);
+  } else if (type == 2) {
+    m_histManager->Fill("hKstar_3He", k_star);
+    m_histManager->Fill("hQlab_3He", q_lab);
+  } else if (type == 3) {
+    m_histManager->Fill("hKstar_4He", k_star);
+    m_histManager->Fill("hQlab_4He", q_lab);
+  }
 }

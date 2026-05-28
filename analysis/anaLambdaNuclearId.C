@@ -17,6 +17,26 @@
 #include "ConfigManager.h"
 #include <iostream>
 #include <fstream>
+#include <vector>
+#include "TLorentzVector.h"
+#include "TMath.h"
+#include "StPicoEvent/StPicoDst.h"
+#include "StPicoEvent/StPicoEvent.h"
+#include "StPicoEvent/StPicoTrack.h"
+#include "StMaker/common/CentralityHelper.h"
+#include "cuts/EventCutConfig.h"
+#include "cuts/NuclearIdCutConfig.h"
+#include "cuts/CentralityCutConfig.h"
+
+namespace {
+  const Double_t kProtonMass = 0.938272;
+  const Double_t kPionMass   = 0.139570;
+
+  const Double_t M_d   = 1.87561;
+  const Double_t M_t   = 2.80892;
+  const Double_t M_3He = 2.80839;
+  const Double_t M_4He = 3.72742;
+}
 
 StChain* chain = 0;
 StLambdaMaker* lambdaMaker = 0;
@@ -107,6 +127,11 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
 
   if (nEvents > totalEntries) nEvents = totalEntries;
 
+  // Initialize CentralityHelper for event-level QA and cuts
+  CentralityHelper centrality;
+  if (!centrality.Init(ConfigManager::GetInstance().GetCentralityCuts())) {
+    std::cerr << "WARNING: CentralityHelper initialization failed in macro" << std::endl;
+  }
   for (Long64_t i = 0; i < nEvents; i++) {
     if (i % 1000 == 0) std::cout << "Working on event " << i << std::endl;
     chain->Clear();
@@ -114,6 +139,128 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
     if (iret) {
       std::cerr << "Bad return code: " << iret << " at event " << i << std::endl;
       break;
+    }
+    StPicoDst* picoDst = picoMaker->picoDst();
+    if (!picoDst) continue;
+    StPicoEvent* event = picoDst->event();
+    if (!event) continue;
+
+    TVector3 pVtx = event->primaryVertex();
+    Int_t refMult = event->refMult();
+    const Int_t runId = event->runId();
+    const Int_t nBTOFMatch = event->nBTOFMatch();
+    const Double_t vz = pVtx.Z();
+
+    CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
+    Int_t rawMult = refMult;
+    if (centCfg.enabled) {
+      TString mode(centCfg.mode.c_str());
+      mode.ToLower();
+      if (mode == "fxtmult") {
+        rawMult = event->fxtMult();
+      }
+    }
+
+    Int_t cent9 = -1;
+    Int_t cent16 = -1;
+    Double_t refMultCorr = -1.0;
+    Double_t centWeight = 1.0;
+
+    CentralityRejectReason centReason = kCentralityOk;
+    if (centrality.IsEnabled()) {
+      if (!centrality.CheckBadRun(runId, centReason)) continue;
+      if (!centrality.CheckPileup(rawMult, nBTOFMatch, vz, centReason)) continue;
+      if (!centrality.ComputeBins(event, rawMult, vz, cent9, cent16, refMultCorr, centWeight, centReason)) continue;
+      if (!centrality.AcceptCentBin(cent9, centReason)) continue;
+    }
+
+    // Pass event cuts from EventCutConfig
+    // EventCutConfig& evCuts = ConfigManager::GetInstance().GetEventCuts();
+    // Int_t nTr = picoDst->numberOfTracks();
+    // if (evCuts.maxNTr > 0 && nTr > evCuts.maxNTr) continue;
+
+    // double vr = pVtx.Perp();
+    // if (vz < evCuts.minVz || vz > evCuts.maxVz) continue;
+    // if (vr >= evCuts.maxVr) continue;
+    // if (evCuts.maxVzDiff > 0) {
+    //   double vzVpd = event->vzVpd();
+    //   if (fabs(vzVpd) < evCuts.maxAbsVzVpd) {
+    //     if (fabs(vz - vzVpd) >= evCuts.maxVzDiff) continue;
+    //   }
+    // }
+
+    // 1. Retrieve reconstructed Lambda and Nuclear candidates from the makers
+    const std::vector<TVector3>& lamMoms = lambdaMaker->GetLambdaMomList();
+    const std::vector<Double_t>& lamMasses = lambdaMaker->GetLambdaInvMassList();
+    const std::vector<Int_t>& lamProtonIds = lambdaMaker->GetLambdaProtonIdList();
+    const std::vector<Int_t>& lamPionIds = lambdaMaker->GetLambdaPionIdList();
+
+    const std::vector<TVector3>& nucMoms = nuclearidMaker->GetNuclearMomList();
+    const std::vector<Int_t>& nucIds = nuclearidMaker->GetNuclearIdList();
+    const std::vector<Int_t>& nucTypes = nuclearidMaker->GetNuclearTypeList();
+
+    NuclearIdCutConfig& nucCuts = ConfigManager::GetInstance().GetNuclearIdCuts();
+
+    if (lamMoms.size() > 0 || nucMoms.size() > 0) {
+    //  std::cout << "DEBUG Event " << i << ": lamMoms=" << lamMoms.size() << ", nucMoms=" << nucMoms.size() << std::endl;
+    }
+
+    const Double_t kLambdaMass = 1.115683; // Lambda PDG mass
+
+    // 2. Correlate Lambdas and Nuclei
+    for (size_t il = 0; il < lamMoms.size(); il++) {
+      double invMass = lamMasses[il];
+
+      // Enforce the mass selection window (from NuclearIdCutConfig)
+      if (TMath::Abs(invMass - nucCuts.MeanLambda) > nucCuts.nsigmaLambda * nucCuts.sigmaLambda) continue;
+
+      // Construct Lambda TLorentzVector using PDG mass
+      TLorentzVector lambdaMom;
+      lambdaMom.SetVectM(lamMoms[il], kLambdaMass);
+
+      for (size_t in = 0; in < nucMoms.size(); in++) {
+        // Self-correlation cut: nucleus track cannot be one of the Lambda daughter tracks
+        if (nucIds[in] == lamProtonIds[il] || nucIds[in] == lamPionIds[il]) continue;
+
+        // Construct Nucleus TLorentzVector using PDG mass
+        double mass = 0;
+        int nucType = nucTypes[in];
+        if (nucType == 0) {
+          mass = M_d;
+        } else if (nucType == 1) {
+          mass = M_t;
+        } else if (nucType == 2) {
+          mass = M_3He;
+        } else if (nucType == 3) {
+          mass = M_4He;
+        }
+
+        TLorentzVector nMom;
+        nMom.SetVectM(nucMoms[in], mass);
+
+        // Lab frame relative momentum q_lab = |p_lambda - p_nucleus|
+        TVector3 p3_lam = lambdaMom.Vect();
+        TVector3 p3_nuc = nMom.Vect();
+        double q_lab = (p3_lam - p3_nuc).Mag();
+
+        // Rest frame relative momentum k* (momentum of either particle in rest frame of the pair)
+        TLorentzVector pair = lambdaMom + nMom;
+        TVector3 boostVec = -pair.BoostVector();
+        TLorentzVector lamRest = lambdaMom;
+        lamRest.Boost(boostVec);
+        double k_star = lamRest.P();
+
+        // Fill histograms based on nucleus type
+        if (nuclearidMaker) {
+          nuclearidMaker->FillKstar(k_star, q_lab, nucType);
+          
+          static int pairCount = 0;
+          if (pairCount < 50) {
+            std::cout << "DEBUG Pair " << pairCount << ": k_star=" << k_star << ", q_lab=" << q_lab << " (type=" << nucType << ")" << std::endl;
+            pairCount++;
+          }
+        }
+      }
     }
   }
 
@@ -137,6 +284,7 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
         std::cout << "Writing NuclearId histograms..." << std::endl;
         nuclearidMaker->WriteHistograms();
       }
+
       fout->Close();
       delete fout;
       std::cout << "Successfully saved all histograms to " << outputFile << std::endl;
@@ -144,6 +292,8 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
       std::cerr << "ERROR: Failed to open output ROOT file: " << outputFile << std::endl;
     }
   }
+
+
 
   timer.Stop();
   std::cout << "Processed events: " << nEvents << std::endl;
