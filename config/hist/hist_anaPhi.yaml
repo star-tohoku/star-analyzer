@@ -209,7 +209,7 @@ histograms:
 
   hVr:
     axis: *Vr
-    title: "Primary vertex transverse radius;V_{r} [cm];Counts"
+    title: "Primary vertex V_{r} from beam spot center;V_{r} [cm];Counts"
 
   hVz_After:
     axis: *Vz
@@ -217,7 +217,7 @@ histograms:
 
   hVr_After:
     axis: *Vr
-    title: "Primary vertex transverse radius (after event cuts);V_{r} [cm];Counts"
+    title: "Primary vertex V_{r} from beam spot center (after event cuts);V_{r} [cm];Counts"
 
   hVxVy_After:
     xAxis: *VxVy
@@ -483,6 +483,46 @@ histograms:
     xAxis: *Momentum
     yAxis: *Mass2Y
     title: "m^{2} vs p (final IsKaon, TOF hit);p [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
+
+  hDedxVsPt:
+    xAxis: *PairPt
+    yAxis: *DedxY
+    title: "dE/dx vs p_{T};p_{T} [GeV/c];dE/dx [GeV/cm]"
+
+  hNSigmaPionVsPt:
+    xAxis: *PairPt
+    yAxis: *NSigmaY
+    title: "n#sigma_{#pi} vs p_{T};p_{T} [GeV/c];n#sigma_{#pi}"
+
+  hNSigmaKaonVsPt:
+    xAxis: *PairPt
+    yAxis: *NSigmaY
+    title: "n#sigma_{K} vs p_{T};p_{T} [GeV/c];n#sigma_{K}"
+
+  hNSigmaProtonVsPt:
+    xAxis: *PairPt
+    yAxis: *NSigmaY
+    title: "n#sigma_{p} vs p_{T};p_{T} [GeV/c];n#sigma_{p}"
+
+  hBetaVsPt:
+    xAxis: *PairPt
+    yAxis: *BetaY
+    title: "1/#beta vs p_{T};p_{T} [GeV/c];1/#beta"
+
+  hMass2VsPt:
+    xAxis: *PairPt
+    yAxis: *Mass2Y
+    title: "m^{2} vs p_{T} (TOF-matched tracks);p_{T} [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
+
+  hMass2VsPt_TpcKaon:
+    xAxis: *PairPt
+    yAxis: *Mass2Y
+    title: "m^{2} vs p_{T} (TPC K candidates, TOF hit);p_{T} [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
+
+  hMass2VsPt_IsKaon:
+    xAxis: *PairPt
+    yAxis: *Mass2Y
+    title: "m^{2} vs p_{T} (final IsKaon, TOF hit);p_{T} [GeV/c];m^{2} [(GeV/c^{2})^{2}]"
 
   # Event plane
   hPsi2:

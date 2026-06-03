@@ -1,5 +1,6 @@
 #include "cuts/EventCutConfig.h"
 #include "YamlParser.h"
+#include "TMath.h"
 #include <map>
 #include <string>
 #include <iostream>
@@ -20,6 +21,8 @@ void EventCutConfig::SetDefaults() {
   minVz = -100.0;
   maxVz = 100.0;
   maxVr = 2.0;
+  vtxCenterX = 0.0;
+  vtxCenterY = 0.0;
   minRefMult = 0.0;
   maxRefMult = 1000.0;
   maxVzDiff = 3.0;
@@ -52,6 +55,12 @@ Bool_t EventCutConfig::ParseYamlFile(const Char_t* filename) {
   if (values.find("maxVr") != values.end()) {
     maxVr = YamlParser::ToDouble(values["maxVr"], maxVr);
   }
+  if (values.find("vtxCenterX") != values.end()) {
+    vtxCenterX = YamlParser::ToDouble(values["vtxCenterX"], vtxCenterX);
+  }
+  if (values.find("vtxCenterY") != values.end()) {
+    vtxCenterY = YamlParser::ToDouble(values["vtxCenterY"], vtxCenterY);
+  }
   if (values.find("minRefMult") != values.end()) {
     minRefMult = YamlParser::ToDouble(values["minRefMult"], minRefMult);
   }
@@ -69,5 +78,11 @@ Bool_t EventCutConfig::ParseYamlFile(const Char_t* filename) {
   }
 
   return kTRUE;
+}
+
+Double_t EventCutConfig::ComputeVr(Double_t vx, Double_t vy) const {
+  Double_t dx = vx - vtxCenterX;
+  Double_t dy = vy - vtxCenterY;
+  return TMath::Sqrt(dx * dx + dy * dy);
 }
 

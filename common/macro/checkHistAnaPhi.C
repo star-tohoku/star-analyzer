@@ -16,6 +16,7 @@
 #include <TString.h>
 #include <TStyle.h>
 #include <TLatex.h>
+#include <TEllipse.h>
 #include <iostream>
 #include <vector>
 #include <limits.h>
@@ -81,6 +82,16 @@ static void drawCutLine2DH(TH2* h, Double_t yVal, Int_t color = kRed, Int_t styl
   l->SetLineColor(color);
   l->SetLineStyle(style);
   l->Draw("same");
+}
+
+static void drawVtxCutCircle(Double_t centerX, Double_t centerY, Double_t radius,
+                             Int_t color = kRed, Int_t style = 2) {
+  if (!gPad || radius <= 0.0) return;
+  TEllipse* circle = new TEllipse(centerX, centerY, radius, radius);
+  circle->SetFillStyle(0);
+  circle->SetLineColor(color);
+  circle->SetLineStyle(style);
+  circle->Draw("same");
 }
 
 static void drawCent9ConventionNote() {
@@ -215,7 +226,7 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
     note += "\n";
   }
   note += "QA: Page 1 (Event pre-cut), Page 1e (Event post-cut), Page 2 (Track post-cut), Page 2b (Track pre-cut), Page 8b-8c (Pair QA stage0 / strict TOF), Page 9 (Kaon PID before/after).\n";
-  note += "TOF QA: Page 3 (global TOF-matched m2 vs p), Page 3b (TPC K vs final K m2, DCA_KK), Page 3c (m2/q2 vs p/q, delta(1/beta)).\n";
+  note += "TOF QA: Page 3 (global TOF-matched m2 vs p), Page 3b (TPC K vs final K m2, DCA_KK), Page 3c (m2/q2 vs p/q, delta(1/beta)), Page 3d/3bp (PID vs pT).\n";
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
   PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaPhi.C", inputs, note.Data(), true, anaName);
@@ -229,7 +240,13 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->Divide(3, 3);
   c1->cd(1); h1 = (TH1*)fin->Get("hVz"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minVz, ev.maxVz); } }
   c1->cd(2); h1 = (TH1*)fin->Get("hVzDiff"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, -ev.maxVzDiff, ev.maxVzDiff); } }
-  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
+      drawVtxCutCircle(ev.vtxCenterX, ev.vtxCenterY, ev.maxVr);
+    }
+  }
   c1->cd(4); h1 = (TH1*)fin->Get("hRefMult"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minRefMult, ev.maxRefMult); } }
   c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVzVsRun"); if (h2) h2->Draw("colz");
   c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultVsVz"); if (h2) h2->Draw("colz");
@@ -287,7 +304,13 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->Divide(3, 3);
   c1->cd(1); h1 = (TH1*)fin->Get("hVz_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minVz, ev.maxVz); } }
   c1->cd(2); h1 = (TH1*)fin->Get("hVzDiff_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, -ev.maxVzDiff, ev.maxVzDiff); } }
-  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy_After"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy_After"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
+      drawVtxCutCircle(ev.vtxCenterX, ev.vtxCenterY, ev.maxVr);
+    }
+  }
   c1->cd(4); h1 = (TH1*)fin->Get("hRefMult_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minRefMult, ev.maxRefMult); } }
   c1->cd(5); /* spare */;
   c1->cd(6); /* spare */;
@@ -356,6 +379,49 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaPionVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
   c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaKaonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLine2DH(h2, phi.nSigmaKaon); drawCutLine2DH(h2, -phi.nSigmaKaon); } }
   c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
+  c1->Print(pdfName);
+
+  // Page 3d: PID vs pT (mirror of Page 3)
+  c1->Clear();
+  c1->Divide(3, 2);
+  double ptmax = 5.0;
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hDedxVsPt"); if (h2) { h2->GetXaxis()->SetRangeUser(0, ptmax); h2->GetYaxis()->SetRangeUser(0, dedxmax); h2->Draw("colz"); }
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hBetaVsPt"); if (h2) { h2->GetXaxis()->SetRangeUser(0, ptmax); h2->Draw("colz"); }
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsPt"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, ptmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.minMass2Kaon);
+      drawCutLine2DH(h2, pid.maxMass2Kaon);
+    }
+  }
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaPionVsPt"); if (h2) { h2->GetXaxis()->SetRangeUser(0, ptmax); h2->Draw("colz"); }
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaKaonVsPt"); if (h2) { h2->GetXaxis()->SetRangeUser(0, ptmax); h2->Draw("colz"); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLine2DH(h2, phi.nSigmaKaon); drawCutLine2DH(h2, -phi.nSigmaKaon); } }
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsPt"); if (h2) { h2->GetXaxis()->SetRangeUser(0, ptmax); h2->Draw("colz"); }
+  c1->Print(pdfName);
+
+  // Page 3bp: TOF m2 vs pT (TPC K vs final K)
+  c1->Clear();
+  c1->Divide(2, 1);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsPt_TpcKaon"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, ptmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.minMass2Kaon);
+      drawCutLine2DH(h2, pid.maxMass2Kaon);
+    }
+  }
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMass2VsPt_IsKaon"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, ptmax);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+      drawCutLine2DH(h2, pid.minMass2Kaon);
+      drawCutLine2DH(h2, pid.maxMass2Kaon);
+    }
+  }
   c1->Print(pdfName);
 
   // Page 3b: TOF m2 (TPC K vs final K) + pair DCA_KK
@@ -628,8 +694,16 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
                            "hNSigmaKaon_Raw",
                            "hBetaVsP",
                            "hMass2VsP",
+                           "hBetaVsPt",
+                           "hMass2VsPt",
+                           "hDedxVsPt",
+                           "hNSigmaPionVsPt",
+                           "hNSigmaKaonVsPt",
+                           "hNSigmaProtonVsPt",
                            "hMass2VsP_TpcKaon",
                            "hMass2VsP_IsKaon",
+                           "hMass2VsPt_TpcKaon",
+                           "hMass2VsPt_IsKaon",
                            "hK_Pt",
                            "hK_Eta",
                            "hK_NSigma",

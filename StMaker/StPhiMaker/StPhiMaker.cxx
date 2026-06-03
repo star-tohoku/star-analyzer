@@ -126,7 +126,8 @@ Int_t StPhiMaker::Make() {
   TVector3 pVtx = event->primaryVertex();
   Float_t vzVpd = event->vzVpd();
   Int_t refMult = event->refMult();
-  Float_t vr = TMath::Sqrt(pVtx.X() * pVtx.X() + pVtx.Y() * pVtx.Y());
+  EventCutConfig& evCuts = ConfigManager::GetInstance().GetEventCuts();
+  Float_t vr = evCuts.ComputeVr(pVtx.X(), pVtx.Y());
   const Double_t vz = pVtx.Z();
   const Int_t runId = event->runId();
   const Int_t nBTOFMatch = event->nBTOFMatch();
@@ -295,10 +296,14 @@ Int_t StPhiMaker::Make() {
       m_histManager->Fill("hCharge", trk->charge());
       m_histManager->Fill("hChi2", trk->chi2());
       m_histManager->Fill("hDedxVsP", pMom.Mag(), trk->dEdx());
+      m_histManager->Fill("hDedxVsPt", pt, trk->dEdx());
       m_histManager->Fill("hNSigmaPionVsP", pMom.Mag(), trk->nSigmaPion());
+      m_histManager->Fill("hNSigmaPionVsPt", pt, trk->nSigmaPion());
       m_histManager->Fill("hNSigmaKaon_Raw", trk->nSigmaKaon());
       m_histManager->Fill("hNSigmaKaonVsP", pMom.Mag(), trk->nSigmaKaon());
+      m_histManager->Fill("hNSigmaKaonVsPt", pt, trk->nSigmaKaon());
       m_histManager->Fill("hNSigmaProtonVsP", pMom.Mag(), trk->nSigmaProton());
+      m_histManager->Fill("hNSigmaProtonVsPt", pt, trk->nSigmaProton());
       if (trk->charge() != 0) {
         Double_t pOverQ = pMom.Mag() / (Double_t)trk->charge();
         m_histManager->Fill("hDedxVsPq", pOverQ, trk->dEdx());
@@ -311,7 +316,9 @@ Int_t StPhiMaker::Make() {
               m_histManager->Fill("hM2q2VsPq", pOverQ, mass2);
               Double_t pMag = pMom.Mag();
               m_histManager->Fill("hBetaVsP", pMag, 1.0 / beta);
+              m_histManager->Fill("hBetaVsPt", pt, 1.0 / beta);
               m_histManager->Fill("hMass2VsP", pMag, mass2);
+              m_histManager->Fill("hMass2VsPt", pt, mass2);
               Double_t deltaInvBeta = DeltaOneOverBeta(beta, kKaonMass, pMom.Mag());
               if (TMath::Abs(deltaInvBeta) < 10.0) {
                 m_histManager->Fill("hDeltaOneOverBetaKaon", deltaInvBeta);
@@ -336,6 +343,7 @@ Int_t StPhiMaker::Make() {
 
     if (m_histManager && track.tofMatch) {
       m_histManager->Fill("hMass2VsP_TpcKaon", pMom.Mag(), track.mass2);
+      m_histManager->Fill("hMass2VsPt_TpcKaon", pt, track.mass2);
     }
 
     if (IsKaon(track)) {
@@ -345,6 +353,7 @@ Int_t StPhiMaker::Make() {
         m_histManager->Fill("hK_NSigma", track.nSigmaKaon);
         if (track.tofMatch) {
           m_histManager->Fill("hMass2VsP_IsKaon", pMom.Mag(), track.mass2);
+          m_histManager->Fill("hMass2VsPt_IsKaon", pt, track.mass2);
         }
       }
       if (track.charge > 0 && (Int_t)kaonsPlus.size() < kMaxKaons) {

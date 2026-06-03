@@ -12,6 +12,8 @@ public:
   Double_t minVz;  // cm; event accepted when minVz <= vz <= maxVz
   Double_t maxVz;
   Double_t maxVr;
+  Double_t vtxCenterX;  // cm; beam spot center for Vr cut
+  Double_t vtxCenterY;  // cm
   Double_t minRefMult;
   Double_t maxRefMult;
   Double_t maxVzDiff;
@@ -20,6 +22,8 @@ public:
 
   // Set default values
   void SetDefaults();
+
+  Double_t ComputeVr(Double_t vx, Double_t vy) const;
   
 private:
   EventCutConfig();
