@@ -2,6 +2,7 @@
 #define PID_CUT_CONFIG_H
 
 #include "Rtypes.h"
+#include <string>
 
 class PIDCutConfig {
 public:
@@ -21,9 +22,11 @@ public:
   Double_t maxMass2Proton;
   Bool_t requireTOF;
   Double_t pTofFallbackMax;
+  Double_t pMomKaonPID;
   Double_t maxAbsDeltaOneOverBetaKaon;
   Bool_t tofUseMass2Cut;
   Bool_t tofUseDeltaInvBetaCut;
+  std::string tofFallbackMode;
 
   // Set default values
   void SetDefaults();

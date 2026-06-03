@@ -211,6 +211,27 @@ histograms:
     axis: *Vr
     title: "Primary vertex transverse radius;V_{r} [cm];Counts"
 
+  hVz_After:
+    axis: *Vz
+    title: "Primary Vertex Z (after event cuts);V_{z} [cm];Counts"
+
+  hVr_After:
+    axis: *Vr
+    title: "Primary vertex transverse radius (after event cuts);V_{r} [cm];Counts"
+
+  hVxVy_After:
+    xAxis: *VxVy
+    yAxis: *VxVy
+    title: "Primary Vertex X vs Y (after event cuts);V_{x} [cm];V_{y} [cm]"
+
+  hVzDiff_After:
+    axis: *VzDiff
+    title: "V_{z}^{TPC} - V_{z}^{VPD} (after event cuts);#Delta V_{z} [cm];Counts"
+
+  hRefMult_After:
+    axis: *RefMult
+    title: "RefMult Distribution (after event cuts);RefMult;Counts"
+
   hTriggerIds:
     axis: *TriggerIds
     title: "Trigger IDs;Trigger ID;Counts"
@@ -369,6 +390,10 @@ histograms:
     axis: *Chi2
     title: "Track #chi^{2};#chi^{2};Counts"
 
+  hNHitsDedx:
+    axis: *NHitsDedx
+    title: "nHitsDedx (after track cuts);nHitsDedx;Counts"
+
   # Track (pre-cut, before PassTrackCuts)
   hPt_Raw:
     axis: *Pt
@@ -376,13 +401,16 @@ histograms:
   hEta_Raw:
     axis: *Eta
     title: "#eta (before track cuts);#eta;Counts"
+  hPhi_Raw:
+    axis: *Phi
+    title: "Azimuthal Angle #phi (before track cuts);#phi [rad];Counts"
   hNHitsFit_Raw:
     axis: *NHitsFit
     title: "nHitsFit (before track cuts);nHitsFit;Counts"
   hNHitsRatio_Raw:
     axis: *NHitsRatio
     title: "nHitsFit/nHitsMax (before track cuts);Ratio;Counts"
-  hNHitsDedx:
+  hNHitsDedx_Raw:
     axis: *NHitsDedx
     title: "nHitsDedx (before track cuts);nHitsDedx;Counts"
   hChi2_Raw:
@@ -391,6 +419,10 @@ histograms:
   hDCA_Raw:
     axis: *DCA
     title: "DCA to PV (before track cuts);DCA [cm];Counts"
+
+  hNSigmaKaon_Raw:
+    axis: *KNSigma
+    title: "Kaon n#sigma_{K} (before PID cut);n#sigma_{K};Counts"
 
   # PID
   hDedxVsP:
@@ -470,7 +502,7 @@ histograms:
   # Phi reconstruction
   hMKK_SameEvent:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (ReconstructPhi pass);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (ReconstructPhi + strict TOF pair);M_{KK} [GeV/c^{2}];Counts"
 
   hDCAKK_All:
     axis: *DCAKK
@@ -482,15 +514,15 @@ histograms:
 
   hOpeningAngle_Raw:
     axis: *OpeningAngle
-    title: "KK opening angle (before cut);Opening angle [rad];Counts"
+    title: "KK opening angle (strict TOF pair, before angle cut);Opening angle [rad];Counts"
 
   hPairRapidity_Raw:
     axis: *PairRapidity
-    title: "KK pair rapidity (before cut);y;Counts"
+    title: "KK pair rapidity (strict TOF pair, before cut);y (analysis frame);Counts"
 
   hPairPt_Raw:
     axis: *PairPt
-    title: "KK pair p_{T} (before cut);p_{T} [GeV/c];Counts"
+    title: "KK pair p_{T} (strict TOF pair, before cut);p_{T} [GeV/c];Counts"
 
   hOpeningAngle_vs_MKK:
     xAxis: *OpeningAngle
@@ -500,7 +532,7 @@ histograms:
   hPairRapidity_vs_MKK:
     xAxis: *PairRapidity
     yAxis: *MKK
-    title: "Pair rapidity vs M_{KK};y;M_{KK} [GeV/c^{2}]"
+    title: "Pair rapidity vs M_{KK};y (analysis frame);M_{KK} [GeV/c^{2}]"
 
   hOpeningAngle_vs_Pt:
     xAxis: *OpeningAngle
@@ -510,12 +542,12 @@ histograms:
   hOpeningAngle_vs_Rapidity:
     xAxis: *OpeningAngle
     yAxis: *PairRapidity
-    title: "KK opening angle vs pair rapidity;Opening angle [rad];y"
+    title: "KK opening angle vs pair rapidity;Opening angle [rad];y (analysis frame)"
 
   hPairRapidity_vs_Pt:
     xAxis: *PairRapidity
     yAxis: *PairPt
-    title: "KK pair rapidity vs p_{T};y;p_{T} [GeV/c]"
+    title: "KK pair rapidity vs p_{T};y (analysis frame);p_{T} [GeV/c]"
 
   hOpeningAngle_AfterCuts:
     axis: *OpeningAngle
@@ -523,7 +555,7 @@ histograms:
 
   hPairRapidity_AfterCuts:
     axis: *PairRapidity
-    title: "KK pair rapidity (angle+rapidity cut passed);y;Counts"
+    title: "KK pair rapidity (angle+rapidity cut passed);y (analysis frame);Counts"
 
   hPairPt_AfterCuts:
     axis: *PairPt
@@ -531,27 +563,27 @@ histograms:
 
   hMKK_OpeningAngleCut:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (opening angle cut);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (strict TOF pair + opening angle cut);M_{KK} [GeV/c^{2}];Counts"
 
   hMKK_RapidityCut:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (pair rapidity cut);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (strict TOF pair + pair rapidity cut);M_{KK} [GeV/c^{2}];Counts"
 
   hMKK_BothCuts:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (opening angle + rapidity cut);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (strict TOF pair + opening angle + rapidity cut);M_{KK} [GeV/c^{2}];Counts"
 
   hMKK_MixedEvent:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (Mixed Event);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (Mixed Event, strict TOF pair);M_{KK} [GeV/c^{2}];Counts"
 
   hMKK_BackgroundSubtracted:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (Background Subtracted);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (Background Subtracted, strict TOF pair);M_{KK} [GeV/c^{2}];Counts"
 
   hMKK_AllCombinations:
     axis: *MKK
-    title: "K^{+}K^{-} Invariant Mass (All Combinations);M_{KK} [GeV/c^{2}];Counts"
+    title: "K^{+}K^{-} Invariant Mass (All Combinations, strict TOF pair);M_{KK} [GeV/c^{2}];Counts"
 
   hK_Pt:
     axis: *KPt
@@ -569,6 +601,58 @@ histograms:
     xAxis: *PairPt
     yAxis: *MKK
     title: "M_{KK} vs p_{T};p_{T} [GeV/c];M_{KK} [GeV/c^{2}]"
+
+  # Staged pair QA (stage0 vs strict TOF pair)
+  hPhiPair_Mass_stage0:
+    axis: *MKK
+    title: "Pair QA stage0 M_{KK};M_{KK} [GeV/c^{2}];Counts"
+  hPhiPair_Mass_tofStrict:
+    axis: *MKK
+    title: "Pair QA strict TOF M_{KK};M_{KK} [GeV/c^{2}];Counts"
+  hPhiPair_Pt_stage0:
+    axis: *PairPt
+    title: "Pair QA stage0 pair p_{T};p_{T} [GeV/c];Counts"
+  hPhiPair_Pt_tofStrict:
+    axis: *PairPt
+    title: "Pair QA strict TOF pair p_{T};p_{T} [GeV/c];Counts"
+  hPhiPair_Rapidity_stage0:
+    axis: *PairRapidity
+    title: "Pair QA stage0 pair rapidity;y (analysis frame);Counts"
+  hPhiPair_Rapidity_tofStrict:
+    axis: *PairRapidity
+    title: "Pair QA strict TOF pair rapidity;y (analysis frame);Counts"
+  hPhiPair_Eta_stage0:
+    axis: *Eta
+    title: "Pair QA stage0 pair #eta;#eta;Counts"
+  hPhiPair_Eta_tofStrict:
+    axis: *Eta
+    title: "Pair QA strict TOF pair #eta;#eta;Counts"
+  hPhiPair_P_stage0:
+    axis: *Momentum
+    title: "Pair QA stage0 pair |p|;|p| [GeV/c];Counts"
+  hPhiPair_P_tofStrict:
+    axis: *Momentum
+    title: "Pair QA strict TOF pair |p|;|p| [GeV/c];Counts"
+  hPhiPair_OpeningAngle_stage0:
+    axis: *OpeningAngle
+    title: "Pair QA stage0 opening angle;Opening angle [rad];Counts"
+  hPhiPair_OpeningAngle_tofStrict:
+    axis: *OpeningAngle
+    title: "Pair QA strict TOF opening angle;Opening angle [rad];Counts"
+  hPhiPair_MassVsPt_tofStrict:
+    xAxis: *PairPt
+    yAxis: *MKK
+    title: "Pair QA strict TOF M_{KK} vs p_{T};p_{T} [GeV/c];M_{KK} [GeV/c^{2}]"
+  hPhiPair_MassVsCent_tofStrict:
+    xAxis: *Cent9
+    yAxis: *MKK
+    title: "Pair QA strict TOF M_{KK} vs centrality;Centrality (9-bin);M_{KK} [GeV/c^{2}]"
+  hPhiPair_NPairs_stage0:
+    axis: *NPhiPairs
+    title: "Pair QA stage0 pair multiplicity/event;N_{pairs};Counts"
+  hPhiPair_NPairs_tofStrict:
+    axis: *NPhiPairs
+    title: "Pair QA strict TOF pair multiplicity/event;N_{pairs};Counts"
 
   # Rapidity window variations (opening angle cut applied)
   hMKK_RapidityCut_0p4:

@@ -29,9 +29,11 @@ void PIDCutConfig::SetDefaults() {
   maxMass2Proton = 1.1;
   requireTOF = kFALSE;
   pTofFallbackMax = 0.5;
+  pMomKaonPID = 0.5;
   maxAbsDeltaOneOverBetaKaon = 0.03;
   tofUseMass2Cut = kTRUE;
   tofUseDeltaInvBetaCut = kFALSE;
+  tofFallbackMode = "acceptLowPt";
 }
 
 Bool_t PIDCutConfig::LoadFromFile(const Char_t* filename) {
@@ -82,6 +84,9 @@ Bool_t PIDCutConfig::ParseYamlFile(const Char_t* filename) {
   if (values.find("pTofFallbackMax") != values.end()) {
     pTofFallbackMax = YamlParser::ToDouble(values["pTofFallbackMax"], pTofFallbackMax);
   }
+  if (values.find("pMomKaonPID") != values.end()) {
+    pMomKaonPID = YamlParser::ToDouble(values["pMomKaonPID"], pMomKaonPID);
+  }
   if (values.find("maxAbsDeltaOneOverBetaKaon") != values.end()) {
     maxAbsDeltaOneOverBetaKaon = YamlParser::ToDouble(values["maxAbsDeltaOneOverBetaKaon"], maxAbsDeltaOneOverBetaKaon);
   }
@@ -90,6 +95,9 @@ Bool_t PIDCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("tofUseDeltaInvBetaCut") != values.end()) {
     tofUseDeltaInvBetaCut = YamlParser::ToBool(values["tofUseDeltaInvBetaCut"], tofUseDeltaInvBetaCut);
+  }
+  if (values.find("tofFallbackMode") != values.end()) {
+    tofFallbackMode = values["tofFallbackMode"];
   }
   
   return kTRUE;

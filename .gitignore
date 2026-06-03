@@ -17,6 +17,7 @@ bin/
 *.root
 rootfile
 
+others/
 # log,text
 *.log
 *.out

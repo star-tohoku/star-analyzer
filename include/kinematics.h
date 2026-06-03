@@ -15,4 +15,12 @@ double OneOverBetaExpected(double mass, double p);
  */
 double DeltaOneOverBeta(double betaMeasured, double mass, double p);
 
+/**
+ * CM rapidity of the NN system in the lab frame for fixed-target kinematics.
+ * sqrtSNNGeV is sqrt(s_NN) [GeV]; nucleonMassGeV is the nucleon mass [GeV/c^2].
+ * On success writes y_shift and returns true; y_shift is undefined if false.
+ * y_shift = atanh(beta_cm) with beta_cm = p_beam / (E_beam + m_target), target at rest.
+ */
+bool BeamRapidityShiftFromSqrtSNN(double sqrtSNNGeV, double nucleonMassGeV, double* yShiftOut);
+
 #endif

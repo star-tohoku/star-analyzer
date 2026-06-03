@@ -369,6 +369,27 @@ Each analysis has:
   - **Hist**: `hist: hist/hist_lambda.yaml`.
   - **Analysis info**: `analysis: analysis/analysis_info_temp.yaml` (or your own file). This file is used by `setup.sh` and by `script/analysis_info_helper.py --generate-joblist`.
 - **Maker config**: Add e.g. `config/maker/maker_my.yaml` and reference it in the main config under the key your Maker expects. Makers read cuts via `ConfigManager::GetInstance().GetXXXCuts()` and the hist path via `GetHistConfigPath()`.
+
+### Phi pair rapidity frame (lab / CM)
+
+`StPhiMaker` fills pair-rapidity histograms and applies `minPairRapidity` / `maxPairRapidity` in the **analysis frame** configured in the phi maker YAML:
+
+| Key | Values | Meaning |
+|-----|--------|---------|
+| `rapidityFrame` | `auto`, `lab`, `cm` | `auto`: CM if `centrality.mode` is `fxtmult`, else lab |
+| `sqrtSNNGeV` | GeV | \(\sqrt{s_{NN}}\) for automatic CM shift (fixed target) |
+| `rapidityShift` | float | Manual \(y_{\mathrm{shift}}\); if set, skips auto calculation |
+| `nucleonMassGeV` | GeV/c² | Nucleon mass for auto shift (default `0.938272`) |
+
+**Auto shift (FXT):** for a target nucleon at rest, \(E_{\mathrm{beam}}=(s-2m^2)/(2m)\), \(\beta_{\mathrm{cm}}=p_{\mathrm{beam}}/(E_{\mathrm{beam}}+m)\), \(y_{\mathrm{shift}}=\mathrm{atanh}(\beta_{\mathrm{cm}})\), and **\(y_{\mathrm{ana}} = y_{\mathrm{lab}} - y_{\mathrm{shift}}\)**.
+
+**Examples:**
+
+- Collider (`centrality.mode: refmult`): `rapidityFrame: auto` → lab, no shift.
+- FXT (`centrality.mode: fxtmult`): `rapidityFrame: auto`, `sqrtSNNGeV: 3.85` → CM shift computed at `StPhiMaker::Init()`.
+
+`checkHistAnaPhi` PDF header notes the resolved frame when config loads. Pair-rapidity **cuts** in YAML are in the same frame as the histograms; after enabling CM for FXT, retune lab-window cuts (e.g. `[-1.5,-1.0]`) to a CM-centered window if needed.
+
 - **Hist config**: Add e.g. `config/hist/hist_my.yaml` with the same structure as existing hist YAMLs (`axes`, `histograms`). Set the `hist` key in the main config to this file.
 - **New cut type**: If you need a new cut category, add a new key in the main YAML, a new `XxxCutConfig` in `include/cuts/` and `src/cuts/`, and register it in `ConfigManager`. For a new analysis that only uses existing event/track/pid/v0/mixing and maker keys, copying and editing the existing YAMLs under `config/cuts/`, `config/maker/`, and `config/hist/` is enough.
 

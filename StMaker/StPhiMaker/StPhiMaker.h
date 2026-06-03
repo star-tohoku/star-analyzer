@@ -75,6 +75,10 @@ class StPhiMaker : public StMaker {
   std::map<Int_t, std::deque<PhiMixingEvent> > m_phiMixingPool;
 
   Bool_t PassTofKaonPid(const Track_t& trk) const;
+  Bool_t InKaonMass2Window(Float_t mass2) const;
+  Bool_t PassKplusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const;
+  Bool_t PassKminusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const;
+  Bool_t PassPairTofCut(const Track_t& kPlus, const Track_t& kMinus) const;
   void FillTofInfo(Track_t& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex);
   Int_t GetMixingVzBin(Float_t vz) const;
   void FillMixedEventPairs(const std::vector<Track_t>& kaonsPlus, const std::vector<Track_t>& kaonsMinus, Float_t vz);
@@ -91,6 +95,7 @@ class StPhiMaker : public StMaker {
   Bool_t PassKaonCuts(StPicoTrack* trk, TVector3& pVtx);
   Bool_t PassTrackCuts(const Track_t& trk);
   Bool_t IsKaon(const Track_t& trk);
+  TVector3 TrackMomentum(const Track_t& trk) const;
   void BuildTrack(Track_t& track, StPicoTrack* pico, StPicoEvent* event, TVector3& pVtx);
   StPhysicalHelixD BuildHelix(const Track_t& trk);
   Double_t CalculateDCA(const Track_t& trk1, const Track_t& trk2, TVector3& dcaPos1, TVector3& dcaPos2);
@@ -98,6 +103,7 @@ class StPhiMaker : public StMaker {
   Double_t CalculateInvariantMass(const Track_t& trk1, const Track_t& trk2, Double_t mass1, Double_t mass2);
   Double_t CalculateOpeningAngle(const Track_t& trk1, const Track_t& trk2);
   Double_t CalculatePairRapidity(Double_t invMass, const TVector3& phiMom);
+  Double_t ApplyRapidityFrame(Double_t yLab) const;
 };
 
 #endif

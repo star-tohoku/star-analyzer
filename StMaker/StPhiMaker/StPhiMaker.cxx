@@ -93,6 +93,13 @@ Int_t StPhiMaker::Init() {
   if (!m_centrality->Init(ConfigManager::GetInstance().GetCentralityCuts())) {
     std::cerr << "[StPhiMaker] CentralityHelper init failed" << std::endl;
   }
+
+  if (!ConfigManager::GetInstance().GetPhiCuts().FinalizeRapidityFrame(
+          ConfigManager::GetInstance().GetCentralityCuts())) {
+    std::cerr << "[StPhiMaker] FinalizeRapidityFrame failed; fix maker/centrality YAML." << std::endl;
+    return kStErr;
+  }
+
   return kStOK;
 }
 
@@ -178,6 +185,17 @@ Int_t StPhiMaker::Make() {
     return kStOK;
   }
 
+  if (m_histManager) {
+    m_histManager->Fill("hVz_After", pVtx.Z());
+    m_histManager->Fill("hVr_After", vr);
+    m_histManager->Fill("hVxVy_After", pVtx.X(), pVtx.Y());
+    m_histManager->Fill("hRefMult_After", refMult);
+    EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
+    if (TMath::Abs(vzVpd) < ev.maxAbsVzVpd) {
+      m_histManager->Fill("hVzDiff_After", pVtx.Z() - vzVpd);
+    }
+  }
+
   if (m_histManager && centCfg.fillCentralityQA) {
     m_histManager->Fill("hRawMult", (Double_t)rawMult);
   }
@@ -250,11 +268,12 @@ Int_t StPhiMaker::Make() {
       Float_t etaRaw = pMom.PseudoRapidity();
       m_histManager->Fill("hPt_Raw", ptRaw);
       m_histManager->Fill("hEta_Raw", etaRaw);
+      m_histManager->Fill("hPhi_Raw", pMom.Phi());
       m_histManager->Fill("hNHitsFit_Raw", trk->nHitsFit());
       if (trk->nHitsMax() > 0) {
         m_histManager->Fill("hNHitsRatio_Raw", (Float_t)trk->nHitsFit() / (Float_t)trk->nHitsMax());
       }
-      m_histManager->Fill("hNHitsDedx", trk->nHitsDedx());
+      m_histManager->Fill("hNHitsDedx_Raw", trk->nHitsDedx());
       m_histManager->Fill("hChi2_Raw", trk->chi2());
       m_histManager->Fill("hDCA_Raw", trk->gDCA(pVtx).Mag());
     }
@@ -271,11 +290,13 @@ Int_t StPhiMaker::Make() {
       m_histManager->Fill("hPhi", phi);
       m_histManager->Fill("hNHitsFit", trk->nHitsFit());
       m_histManager->Fill("hNHitsRatio", (Float_t)trk->nHitsFit() / (Float_t)trk->nHitsMax());
+      m_histManager->Fill("hNHitsDedx", trk->nHitsDedx());
       m_histManager->Fill("hDCA", trk->gDCA(pVtx).Mag());
       m_histManager->Fill("hCharge", trk->charge());
       m_histManager->Fill("hChi2", trk->chi2());
       m_histManager->Fill("hDedxVsP", pMom.Mag(), trk->dEdx());
       m_histManager->Fill("hNSigmaPionVsP", pMom.Mag(), trk->nSigmaPion());
+      m_histManager->Fill("hNSigmaKaon_Raw", trk->nSigmaKaon());
       m_histManager->Fill("hNSigmaKaonVsP", pMom.Mag(), trk->nSigmaKaon());
       m_histManager->Fill("hNSigmaProtonVsP", pMom.Mag(), trk->nSigmaProton());
       if (trk->charge() != 0) {
@@ -346,6 +367,10 @@ Int_t StPhiMaker::Make() {
 
   // Phi reconstruction: ReconstructPhi pairs
   Int_t nPhiPairs = 0;
+  Int_t nPhiPairStage0 = 0;
+  Int_t nPhiPairTofStrict = 0;
+  const TrackCutConfig& trkCfg = ConfigManager::GetInstance().GetTrackCuts();
+  const PhiCutConfig& phiCfgRef = ConfigManager::GetInstance().GetPhiCuts();
   for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
     for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
       TVector3 dcaMeasPlus, dcaMeasMinus;
@@ -364,9 +389,53 @@ Int_t StPhiMaker::Make() {
       }
 
       Double_t openingAngle = CalculateOpeningAngle(kaonsPlus[iPlus], kaonsMinus[iMinus]);
-      Double_t pairRapidity = CalculatePairRapidity(invMass, phiMom);
+      Double_t yLab = CalculatePairRapidity(invMass, phiMom);
+      Double_t pairRapidity = ApplyRapidityFrame(yLab);
+
+      const Bool_t passStage0 =
+          (TMath::Abs(kaonsPlus[iPlus].DCA) <= phiCfgRef.maxDCAKaon) &&
+          (TMath::Abs(kaonsMinus[iMinus].DCA) <= phiCfgRef.maxDCAKaon) &&
+          (kaonsPlus[iPlus].pT >= trkCfg.minPt && kaonsPlus[iPlus].pT <= trkCfg.maxPt) &&
+          (kaonsMinus[iMinus].pT >= trkCfg.minPt && kaonsMinus[iMinus].pT <= trkCfg.maxPt) &&
+          (kaonsPlus[iPlus].eta >= trkCfg.minEta && kaonsPlus[iPlus].eta <= trkCfg.maxEta) &&
+          (kaonsMinus[iMinus].eta >= trkCfg.minEta && kaonsMinus[iMinus].eta <= trkCfg.maxEta) &&
+          (TMath::Abs(kaonsPlus[iPlus].nSigmaKaon) <= phiCfgRef.nSigmaKaon) &&
+          (TMath::Abs(kaonsMinus[iMinus].nSigmaKaon) <= phiCfgRef.nSigmaKaon) &&
+          (kaonsPlus[iPlus].nHitsFit >= trkCfg.minNHitsFit) &&
+          (kaonsMinus[iMinus].nHitsFit >= trkCfg.minNHitsFit) &&
+          (pairRapidity >= phiCfgRef.minPairRapidity && pairRapidity <= phiCfgRef.maxPairRapidity);
+      if (passStage0 && m_histManager) {
+        nPhiPairStage0++;
+        m_histManager->Fill("hPhiPair_Mass_stage0", invMass);
+        m_histManager->Fill("hPhiPair_Pt_stage0", phiMom.Pt());
+        m_histManager->Fill("hPhiPair_Rapidity_stage0", pairRapidity);
+        m_histManager->Fill("hPhiPair_Eta_stage0", phiMom.Eta());
+        m_histManager->Fill("hPhiPair_P_stage0", phiMom.Mag());
+        m_histManager->Fill("hPhiPair_OpeningAngle_stage0", openingAngle);
+      }
+
+      if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
+
+      if (passStage0 && m_histManager) {
+        nPhiPairTofStrict++;
+        m_histManager->Fill("hPhiPair_Mass_tofStrict", invMass);
+        m_histManager->Fill("hPhiPair_Pt_tofStrict", phiMom.Pt());
+        m_histManager->Fill("hPhiPair_Rapidity_tofStrict", pairRapidity);
+        m_histManager->Fill("hPhiPair_Eta_tofStrict", phiMom.Eta());
+        m_histManager->Fill("hPhiPair_P_tofStrict", phiMom.Mag());
+        m_histManager->Fill("hPhiPair_OpeningAngle_tofStrict", openingAngle);
+        m_histManager->Fill("hPhiPair_MassVsPt_tofStrict", phiMom.Pt(), invMass);
+        if (m_cent9 >= 0 && m_cent9 <= 8) {
+          m_histManager->Fill("hPhiPair_MassVsCent_tofStrict", (Double_t)m_cent9, invMass);
+        }
+      }
+
       FillPhiPairHistograms(invMass, phiMom, openingAngle, pairRapidity, nKaonPlus, nKaonMinus, kTRUE);
     }
+  }
+  if (m_histManager) {
+    m_histManager->Fill("hPhiPair_NPairs_stage0", (Double_t)nPhiPairStage0);
+    m_histManager->Fill("hPhiPair_NPairs_tofStrict", (Double_t)nPhiPairTofStrict);
   }
 
   if (m_histManager && centCfg.fillCentralityQA && m_cent9 >= 0) {
@@ -376,10 +445,11 @@ Int_t StPhiMaker::Make() {
   FillMixedEventPairs(kaonsPlus, kaonsMinus, pVtx.Z());
   StoreEventForMixing(kaonsPlus, kaonsMinus, pVtx.Z());
 
-  // All combinations (simple invariant mass)
+  // All combinations (simple invariant mass, strict TOF pair cut applied)
   if (m_histManager) {
     for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
       for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
+        if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
         Double_t invMass = CalculateInvariantMass(kaonsPlus[iPlus], kaonsMinus[iMinus], kKaonMass, kKaonMass);
         m_histManager->Fill("hMKK_AllCombinations", invMass);
       }
@@ -513,18 +583,19 @@ Bool_t StPhiMaker::IsKaon(const Track_t& trk) {
 
 //-----------------------------------------------------------------------------
 void StPhiMaker::BuildTrack(Track_t& track, StPicoTrack* pico, StPicoEvent* event, TVector3& pVtx) {
-  TVector3 gmom = pico->gMom();
+  // Use primary momentum consistently for prompt phi -> K+K- kinematics.
+  TVector3 pmom = pico->pMom();
   TVector3 org = pico->origin();
   track.originX = org.X();
   track.originY = org.Y();
   track.originZ = org.Z();
-  track.momentumX = gmom.X();
-  track.momentumY = gmom.Y();
-  track.momentumZ = gmom.Z();
+  track.momentumX = pmom.X();
+  track.momentumY = pmom.Y();
+  track.momentumZ = pmom.Z();
   track.BField = event->bField();
-  track.pT = gmom.Perp();
-  track.eta = gmom.PseudoRapidity();
-  track.phi = gmom.Phi();
+  track.pT = pmom.Perp();
+  track.eta = pmom.PseudoRapidity();
+  track.phi = pmom.Phi();
   track.charge = pico->charge();
   track.nHitsFit = pico->nHitsFit();
   track.nHitsMax = pico->nHitsMax();
@@ -532,6 +603,11 @@ void StPhiMaker::BuildTrack(Track_t& track, StPicoTrack* pico, StPicoEvent* even
   track.DCA = pico->gDCA(pVtx).Mag();
   track.chi2 = pico->chi2();
   track.nSigmaKaon = pico->nSigmaKaon();
+}
+
+//-----------------------------------------------------------------------------
+TVector3 StPhiMaker::TrackMomentum(const Track_t& trk) const {
+  return TVector3(trk.momentumX, trk.momentumY, trk.momentumZ);
 }
 
 //-----------------------------------------------------------------------------
@@ -558,18 +634,14 @@ Double_t StPhiMaker::CalculateDCA(const Track_t& trk1, const Track_t& trk2, TVec
 //-----------------------------------------------------------------------------
 Bool_t StPhiMaker::ReconstructPhi(const Track_t& kPlus, const Track_t& kMinus, Double_t& invMass, TVector3& phiMom, TVector3& dcaPosPlus, TVector3& dcaPosMinus) {
   PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
-  StPhysicalHelixD helixPlus = BuildHelix(kPlus);
-  StPhysicalHelixD helixMinus = BuildHelix(kMinus);
   Double_t dca = CalculateDCA(kPlus, kMinus, dcaPosPlus, dcaPosMinus);
   if (dca > phi.maxDCAKK) return kFALSE;
 
-  std::pair<Double_t, Double_t> pathLengths = helixPlus.pathLengths(helixMinus);
-  StThreeVectorF pPlus = helixPlus.momentumAt(pathLengths.first, kPlus.BField * units::kilogauss);
-  StThreeVectorF pMinus = helixMinus.momentumAt(pathLengths.second, kMinus.BField * units::kilogauss);
-
-  Double_t EPlus = TMath::Sqrt(kKaonMass * kKaonMass + pPlus.mag() * pPlus.mag());
-  Double_t EMinus = TMath::Sqrt(kKaonMass * kKaonMass + pMinus.mag() * pMinus.mag());
-  phiMom = TVector3(pPlus.x() + pMinus.x(), pPlus.y() + pMinus.y(), pPlus.z() + pMinus.z());
+  const TVector3 pPlus = TrackMomentum(kPlus);
+  const TVector3 pMinus = TrackMomentum(kMinus);
+  Double_t EPlus = TMath::Sqrt(kKaonMass * kKaonMass + pPlus.Mag2());
+  Double_t EMinus = TMath::Sqrt(kKaonMass * kKaonMass + pMinus.Mag2());
+  phiMom = pPlus + pMinus;
   Double_t E = EPlus + EMinus;
   invMass = TMath::Sqrt(E * E - phiMom.Mag2());
   return kTRUE;
@@ -612,11 +684,23 @@ Double_t StPhiMaker::CalculatePairRapidity(Double_t invMass, const TVector3& phi
 }
 
 //-----------------------------------------------------------------------------
+Double_t StPhiMaker::ApplyRapidityFrame(Double_t yLab) const {
+  return ConfigManager::GetInstance().GetPhiCuts().ApplyAnalysisRapidity(yLab);
+}
+
+//-----------------------------------------------------------------------------
 Bool_t StPhiMaker::PassTofKaonPid(const Track_t& trk) const {
   const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
   if (!pid.requireTOF) return kTRUE;
-  if (trk.pT <= pid.pTofFallbackMax) return kTRUE;
-  if (!trk.tofMatch) return kFALSE;
+  TString fallbackMode(pid.tofFallbackMode.c_str());
+  fallbackMode.ToLower();
+  if (fallbackMode.IsNull()) fallbackMode = "acceptlowpt";
+
+  if (fallbackMode == "acceptlowpt" && trk.pT <= pid.pTofFallbackMax) return kTRUE;
+  if (!trk.tofMatch) {
+    if (fallbackMode == "tpconly") return kTRUE;
+    return kFALSE;
+  }
 
   Bool_t pass = kTRUE;
   if (pid.tofUseMass2Cut) {
@@ -626,6 +710,40 @@ Bool_t StPhiMaker::PassTofKaonPid(const Track_t& trk) const {
     pass = pass && (TMath::Abs(trk.deltaOneOverBeta) <= pid.maxAbsDeltaOneOverBetaKaon);
   }
   return pass;
+}
+
+//-----------------------------------------------------------------------------
+Bool_t StPhiMaker::InKaonMass2Window(Float_t mass2) const {
+  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+  return (mass2 > pid.minMass2Kaon && mass2 < pid.maxMass2Kaon);
+}
+
+//-----------------------------------------------------------------------------
+Bool_t StPhiMaker::PassKplusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const {
+  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+  const Float_t pLow = pid.pMomKaonPID;
+  if (pMag <= pLow) {
+    return !tofMatch || (tofMatch && InKaonMass2Window(mass2));
+  }
+  return tofMatch && InKaonMass2Window(mass2);
+}
+
+//-----------------------------------------------------------------------------
+Bool_t StPhiMaker::PassKminusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const {
+  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+  const Float_t pLow = pid.pMomKaonPID;
+  if (pMag <= pLow) {
+    return tofMatch && InKaonMass2Window(mass2);
+  }
+  return InKaonMass2Window(mass2);
+}
+
+//-----------------------------------------------------------------------------
+Bool_t StPhiMaker::PassPairTofCut(const Track_t& kPlus, const Track_t& kMinus) const {
+  const Float_t pKplus = TrackMomentum(kPlus).Mag();
+  const Float_t pKminus = TrackMomentum(kMinus).Mag();
+  return PassKplusTofMass2(pKplus, kPlus.tofMatch, kPlus.mass2) &&
+         PassKminusTofMass2(pKminus, kMinus.tofMatch, kMinus.mass2);
 }
 
 //-----------------------------------------------------------------------------
@@ -685,9 +803,11 @@ void StPhiMaker::FillMixedEventPairs(const std::vector<Track_t>& kaonsPlus, cons
     Double_t invMass;
     TVector3 phiMom, dcaPosPlus, dcaPosMinus;
     if (!ReconstructPhi(kPlus, kMinus, invMass, phiMom, dcaPosPlus, dcaPosMinus)) continue;
+    if (!PassPairTofCut(kPlus, kMinus)) continue;
 
     Double_t openingAngle = CalculateOpeningAngle(kPlus, kMinus);
-    Double_t pairRapidity = CalculatePairRapidity(invMass, phiMom);
+    Double_t yLab = CalculatePairRapidity(invMass, phiMom);
+    Double_t pairRapidity = ApplyRapidityFrame(yLab);
     FillPhiPairHistograms(invMass, phiMom, openingAngle, pairRapidity, 0, 0, kFALSE);
   }
 

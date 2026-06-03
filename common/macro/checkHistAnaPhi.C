@@ -26,6 +26,7 @@
 #include "cuts/EventCutConfig.h"
 #include "cuts/TrackCutConfig.h"
 #include "cuts/PhiCutConfig.h"
+#include "cuts/CentralityCutConfig.h"
 #include "cuts/PIDCutConfig.h"
 
 static Bool_t gConfigLoaded = kFALSE;
@@ -101,6 +102,13 @@ static Bool_t isHex32(const TString& s) {
   return kTRUE;
 }
 
+static Double_t getHistEntries(TFile* fin, const char* key) {
+  if (!fin || !key || key[0] == '\0') return -1.0;
+  TObject* obj = fin->Get(key);
+  if (!obj || !obj->InheritsFrom("TH1")) return -1.0;
+  return ((TH1*)obj)->GetEntries();
+}
+
 void checkHistAnaPhi(const Char_t* inputRootFile,
                      const Char_t* anaNameArg = "auau19_anaPhi",
                      const Char_t* mainconfPath = 0)
@@ -157,6 +165,11 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
     }
     if (ConfigManager::GetInstance().LoadConfig(mainconf.Data())) {
       gConfigLoaded = kTRUE;
+      if (!ConfigManager::GetInstance().GetPhiCuts().FinalizeRapidityFrame(
+              ConfigManager::GetInstance().GetCentralityCuts())) {
+        std::cerr << "[checkHistAnaPhi] WARNING: FinalizeRapidityFrame failed; PDF note may be incomplete."
+                  << std::endl;
+      }
     } else if (mainconfPath && strlen(mainconfPath) > 0) {
       std::cerr << "[checkHistAnaPhi] WARNING: Failed to load config " << mainconf.Data() << "; cut lines skipped." << std::endl;
     }
@@ -180,7 +193,28 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   inputs.push_back((const char*)inputRootFile);
 
   TString note = "Check histograms from run_anaPhi.C (StPhiMaker output).\n";
-  note += "Phi KK reconstruction, opening angle / pair rapidity cuts.\n";
+  note += "Phi KK reconstruction: all hMKK_* pair histograms require strict TOF pair cut at fill time.\n";
+  note += "Opening angle / pair rapidity cuts apply on top of strict TOF pair selection.\n";
+  const Double_t nEvtAll = getHistEntries(fin, "hVz");
+  const Double_t nEvtAfter = getHistEntries(fin, "hVz_After");
+  const Double_t nPairsBothCuts = getHistEntries(fin, "hMKK_BothCuts");
+  if (nEvtAll >= 0.0) {
+    note += Form("Total statistics (input ROOT): events(all) = %.0f", nEvtAll);
+    if (nEvtAfter >= 0.0) {
+      note += Form(", events(after event cuts) = %.0f", nEvtAfter);
+    }
+    if (nPairsBothCuts >= 0.0) {
+      note += Form(", KK pairs(both cuts) = %.0f", nPairsBothCuts);
+    }
+    note += "\n";
+  } else {
+    note += "Total statistics (input ROOT): hVz not found.\n";
+  }
+  if (gConfigLoaded) {
+    note += ConfigManager::GetInstance().GetPhiCuts().GetRapidityFrameSummary().c_str();
+    note += "\n";
+  }
+  note += "QA: Page 1 (Event pre-cut), Page 1e (Event post-cut), Page 2 (Track post-cut), Page 2b (Track pre-cut), Page 8b-8c (Pair QA stage0 / strict TOF), Page 9 (Kaon PID before/after).\n";
   note += "TOF QA: Page 3 (global TOF-matched m2 vs p), Page 3b (TPC K vs final K m2, DCA_KK), Page 3c (m2/q2 vs p/q, delta(1/beta)).\n";
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
@@ -195,10 +229,10 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->Divide(3, 3);
   c1->cd(1); h1 = (TH1*)fin->Get("hVz"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minVz, ev.maxVz); } }
   c1->cd(2); h1 = (TH1*)fin->Get("hVzDiff"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, -ev.maxVzDiff, ev.maxVzDiff); } }
-  c1->cd(3); h2 = (TH2*)fin->Get("hVxVy"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy"); if (h2) h2->Draw("colz");
   c1->cd(4); h1 = (TH1*)fin->Get("hRefMult"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minRefMult, ev.maxRefMult); } }
-  c1->cd(5); h2 = (TH2*)fin->Get("hVzVsRun"); if (h2) h2->Draw("colz");
-  c1->cd(6); h2 = (TH2*)fin->Get("hRefMultVsVz"); if (h2) h2->Draw("colz");
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVzVsRun"); if (h2) h2->Draw("colz");
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultVsVz"); if (h2) h2->Draw("colz");
   c1->cd(7); h1 = (TH1*)fin->Get("hNTracks"); if (h1) { h1->Draw(); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); if (phi.maxNTr > 0) drawCutLine1D(h1, (Double_t)phi.maxNTr); } }
   c1->cd(8); h1 = (TH1*)fin->Get("hVr"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLine1D(h1, ev.maxVr); } }
   c1->cd(9); /* spare */;
@@ -212,24 +246,24 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(3); h1 = (TH1*)fin->Get("hCentrality16"); if (h1) h1->Draw();
   c1->cd(4); h1 = (TH1*)fin->Get("hRefMultCorr"); if (h1) h1->Draw();
   c1->cd(5); h1 = (TH1*)fin->Get("hRefMultWeight"); if (h1) h1->Draw();
-  c1->cd(6); h2 = (TH2*)fin->Get("hRefMultVsNTOFMatch"); if (h2) h2->Draw("colz");
-  c1->cd(7); h2 = (TH2*)fin->Get("hRefMultVsNTOFMatchAfter"); if (h2) h2->Draw("colz");
-  c1->cd(8); h2 = (TH2*)fin->Get("hCentralityVsVz"); if (h2) h2->Draw("colz");
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultVsNTOFMatch"); if (h2) h2->Draw("colz");
+  c1->cd(7); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultVsNTOFMatchAfter"); if (h2) h2->Draw("colz");
+  c1->cd(8); gPad->SetLogz(); h2 = (TH2*)fin->Get("hCentralityVsVz"); if (h2) h2->Draw("colz");
   c1->cd(9); h1 = (TH1*)fin->Get("hRawMult"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
   // Page 1c: Centrality correlations (event observables vs cent9)
   c1->Clear();
   c1->Divide(3, 3);
-  c1->cd(1); h2 = (TH2*)fin->Get("hRawMult_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(2); h2 = (TH2*)fin->Get("hRefMultCorr_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(3); h2 = (TH2*)fin->Get("hNTracks_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(4); h2 = (TH2*)fin->Get("hTofMatchMult_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(5); h2 = (TH2*)fin->Get("hNKaonPlus_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(6); h2 = (TH2*)fin->Get("hNKaonMinus_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(7); h2 = (TH2*)fin->Get("hNPhiPairs_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(8); h2 = (TH2*)fin->Get("hMKK_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(9); h2 = (TH2*)fin->Get("hMKK_vs_RefMultCorr"); if (h2) h2->Draw("colz");
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRawMult_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultCorr_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNTracks_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hTofMatchMult_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlus_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonMinus_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(7); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNPhiPairs_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(8); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMKK_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(9); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMKK_vs_RefMultCorr"); if (h2) h2->Draw("colz");
   drawCent9ConventionNote();
   c1->Print(pdfName);
 
@@ -248,41 +282,58 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   drawCent9ConventionNote();
   c1->Print(pdfName);
 
-  // Page 2: Track Kinematics & Quality
+  // Page 1e: Event Level (Post-Cut)
   c1->Clear();
-  c1->Divide(4, 2);
+  c1->Divide(3, 3);
+  c1->cd(1); h1 = (TH1*)fin->Get("hVz_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minVz, ev.maxVz); } }
+  c1->cd(2); h1 = (TH1*)fin->Get("hVzDiff_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, -ev.maxVzDiff, ev.maxVzDiff); } }
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy_After"); if (h2) h2->Draw("colz");
+  c1->cd(4); h1 = (TH1*)fin->Get("hRefMult_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minRefMult, ev.maxRefMult); } }
+  c1->cd(5); /* spare */;
+  c1->cd(6); /* spare */;
+  c1->cd(7); /* spare */;
+  c1->cd(8); h1 = (TH1*)fin->Get("hVr_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLine1D(h1, ev.maxVr); } }
+  c1->cd(9); /* spare */;
+  c1->Print(pdfName);
+
+  // Page 2: Track Kinematics & Quality (Post-Cut)
+  c1->Clear();
+  c1->Divide(3, 3);
   c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hPt"); if (h1) h1->Draw();
   c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta"); if (h1) h1->Draw();
   c1->cd(3); h1 = (TH1*)fin->Get("hPhi"); if (h1) h1->Draw();
   c1->cd(4); h1 = (TH1*)fin->Get("hCharge"); if (h1) h1->Draw("hist");
   c1->cd(5); h1 = (TH1*)fin->Get("hNHitsFit"); if (h1) h1->Draw();
   c1->cd(6); h1 = (TH1*)fin->Get("hNHitsRatio"); if (h1) h1->Draw();
-  c1->cd(7); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA"); if (h1) h1->Draw();
-  c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2"); if (h1) h1->Draw();
+  c1->cd(7); h1 = (TH1*)fin->Get("hNHitsDedx"); if (h1) h1->Draw();
+  c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA"); if (h1) h1->Draw();
+  c1->cd(9); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 2b: Track pre-cut (before PassTrackCuts)
+  // Page 2b: Track Kinematics & Quality (Pre-Cut)
   c1->Clear();
-  c1->Divide(4, 2);
+  c1->Divide(3, 3);
   if (gConfigLoaded) {
     TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
     c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hPt_Raw"); if (h1) { h1->Draw(); drawCutLines1D(h1, tr.minPt, tr.maxPt); }
     c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta_Raw"); if (h1) { h1->Draw(); drawCutLines1D(h1, tr.minEta, tr.maxEta); }
-    c1->cd(3); h1 = (TH1*)fin->Get("hNHitsFit_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, (Double_t)tr.minNHitsFit); }
-    c1->cd(4); h1 = (TH1*)fin->Get("hNHitsRatio_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.minNHitsRatio); }
-    c1->cd(5); h1 = (TH1*)fin->Get("hNHitsDedx"); if (h1) { h1->Draw(); drawCutLine1D(h1, (Double_t)tr.minNHitsDedx); }
-    c1->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.maxChi2); }
-    c1->cd(7); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.maxDCA); }
-    c1->cd(8); /* spare */;
+    c1->cd(3); h1 = (TH1*)fin->Get("hPhi_Raw"); if (h1) h1->Draw();
+    c1->cd(4); h1 = (TH1*)fin->Get("hCharge"); if (h1) h1->Draw("hist");
+    c1->cd(5); h1 = (TH1*)fin->Get("hNHitsFit_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, (Double_t)tr.minNHitsFit); }
+    c1->cd(6); h1 = (TH1*)fin->Get("hNHitsRatio_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.minNHitsRatio); }
+    c1->cd(7); h1 = (TH1*)fin->Get("hNHitsDedx_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, (Double_t)tr.minNHitsDedx); }
+    c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.maxDCA); }
+    c1->cd(9); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2_Raw"); if (h1) { h1->Draw(); drawCutLine1D(h1, tr.maxChi2); }
   } else {
     c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hPt_Raw"); if (h1) h1->Draw();
     c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta_Raw"); if (h1) h1->Draw();
-    c1->cd(3); h1 = (TH1*)fin->Get("hNHitsFit_Raw"); if (h1) h1->Draw();
-    c1->cd(4); h1 = (TH1*)fin->Get("hNHitsRatio_Raw"); if (h1) h1->Draw();
-    c1->cd(5); h1 = (TH1*)fin->Get("hNHitsDedx"); if (h1) h1->Draw();
-    c1->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2_Raw"); if (h1) h1->Draw();
-    c1->cd(7); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA_Raw"); if (h1) h1->Draw();
-    c1->cd(8); /* spare */;
+    c1->cd(3); h1 = (TH1*)fin->Get("hPhi_Raw"); if (h1) h1->Draw();
+    c1->cd(4); h1 = (TH1*)fin->Get("hCharge"); if (h1) h1->Draw("hist");
+    c1->cd(5); h1 = (TH1*)fin->Get("hNHitsFit_Raw"); if (h1) h1->Draw();
+    c1->cd(6); h1 = (TH1*)fin->Get("hNHitsRatio_Raw"); if (h1) h1->Draw();
+    c1->cd(7); h1 = (TH1*)fin->Get("hNHitsDedx_Raw"); if (h1) h1->Draw();
+    c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA_Raw"); if (h1) h1->Draw();
+    c1->cd(9); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2_Raw"); if (h1) h1->Draw();
   }
   c1->Print(pdfName);
 
@@ -302,9 +353,9 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
       drawCutLine2DH(h2, pid.maxMass2Kaon);
     }
   }
-  c1->cd(4); gPad->SetLogz(0); h2 = (TH2*)fin->Get("hNSigmaPionVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
-  c1->cd(5); h2 = (TH2*)fin->Get("hNSigmaKaonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLine2DH(h2, phi.nSigmaKaon); drawCutLine2DH(h2, -phi.nSigmaKaon); } }
-  c1->cd(6); h2 = (TH2*)fin->Get("hNSigmaProtonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaPionVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaKaonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLine2DH(h2, phi.nSigmaKaon); drawCutLine2DH(h2, -phi.nSigmaKaon); } }
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsP"); if (h2) { h2->GetXaxis()->SetRangeUser(0, pmax); h2->Draw("colz"); }
   c1->Print(pdfName);
 
   // Page 3b: TOF m2 (TPC K vs final K) + pair DCA_KK
@@ -375,7 +426,7 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->Divide(2, 2);
   c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hTriggerIds"); if (h1) { h1->SetFillColor(17); h1->Draw(); }
   c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hTofMatchMult"); if (h1) h1->Draw();
-  c1->cd(3); h2 = (TH2*)fin->Get("hQxQy"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hQxQy"); if (h2) h2->Draw("colz");
   c1->cd(4); h1 = (TH1*)fin->Get("hPsi2"); if (h1) { h1->SetMinimum(0); h1->Draw(); }
   c1->Print(pdfName);
 
@@ -394,7 +445,7 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->cd(1); h1 = (TH1*)fin->Get("hMKK_BothCuts"); if (h1) h1->Draw();
   c1->cd(2); h1 = (TH1*)fin->Get("hMKK_MixedEvent"); if (h1) h1->Draw();
   c1->cd(3); h1 = (TH1*)fin->Get("hMKK_BackgroundSubtracted"); if (h1) h1->Draw();
-  c1->cd(4); h2 = (TH2*)fin->Get("hMKK_vs_Pt"); if (h2) h2->Draw("colz");
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMKK_vs_Pt"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
   // Page 7: Opening angle & pair rapidity (raw and 2D)
@@ -402,41 +453,123 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   c1->Divide(3, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hOpeningAngle_Raw"); if (h1) { h1->Draw(); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLines1D(h1, phi.minOpeningAngle, phi.maxOpeningAngle); } }
   c1->cd(2); h1 = (TH1*)fin->Get("hPairRapidity_Raw"); if (h1) { h1->Draw(); if (gConfigLoaded) { PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts(); drawCutLines1D(h1, phi.minPairRapidity, phi.maxPairRapidity); } }
-  c1->cd(3); h2 = (TH2*)fin->Get("hOpeningAngle_vs_MKK"); if (h2) h2->Draw("colz");
-  c1->cd(4); h2 = (TH2*)fin->Get("hPairRapidity_vs_MKK"); if (h2) h2->Draw("colz");
-  c1->cd(5); h2 = (TH2*)fin->Get("hOpeningAngle_vs_Pt"); if (h2) h2->Draw("colz");
-  c1->cd(6); h2 = (TH2*)fin->Get("hOpeningAngle_vs_Rapidity"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hOpeningAngle_vs_MKK"); if (h2) h2->Draw("colz");
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPairRapidity_vs_MKK"); if (h2) h2->Draw("colz");
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hOpeningAngle_vs_Pt"); if (h2) h2->Draw("colz");
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hOpeningAngle_vs_Rapidity"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
   // Page 8: KK pair pT (raw), rapidity vs pT, and after-cuts 1D
   c1->Clear();
   c1->Divide(3, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hPairPt_Raw"); if (h1) h1->Draw();
-  c1->cd(2); h2 = (TH2*)fin->Get("hPairRapidity_vs_Pt"); if (h2) h2->Draw("colz");
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPairRapidity_vs_Pt"); if (h2) h2->Draw("colz");
   c1->cd(3); h1 = (TH1*)fin->Get("hOpeningAngle_AfterCuts"); if (h1) h1->Draw();
   c1->cd(4); h1 = (TH1*)fin->Get("hPairRapidity_AfterCuts"); if (h1) h1->Draw();
   c1->cd(5); h1 = (TH1*)fin->Get("hPairPt_AfterCuts"); if (h1) h1->Draw();
   c1->cd(6); h1 = (TH1*)fin->Get("hMKK_BothCuts"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 9: Kaon QA (K from phi candidates)
+  // Page 8b: staged pair QA mass and overlay
   c1->Clear();
-  c1->Divide(3, 1);
-  c1->cd(1); h1 = (TH1*)fin->Get("hK_Pt"); if (h1) {
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hPhiPair_Mass_stage0"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hPhiPair_Mass_tofStrict"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hPhiPair_NPairs_stage0"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hPhiPair_NPairs_tofStrict"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  c1->Clear();
+  c1->Divide(1, 1);
+  c1->cd(1);
+  TH1* hStage0 = (TH1*)fin->Get("hPhiPair_Mass_stage0");
+  TH1* hTofStrict = (TH1*)fin->Get("hPhiPair_Mass_tofStrict");
+  if (hStage0) {
+    hStage0->SetLineColor(kBlue + 1);
+    hStage0->SetTitle("Pair QA stage0 / strict TOF overlay;M_{KK} [GeV/c^{2}];Counts");
+    hStage0->Draw("hist");
+    if (hTofStrict) {
+      hTofStrict->SetLineColor(kRed + 1);
+      hTofStrict->Draw("hist same");
+    }
+    TLatex* tag = new TLatex();
+    tag->SetNDC(kTRUE);
+    tag->SetTextSize(0.035);
+    tag->DrawLatex(0.15, 0.86, "Blue: stage0");
+    if (hTofStrict) tag->DrawLatex(0.15, 0.80, "Red: strict TOF pair");
+  }
+  c1->Print(pdfName);
+
+  // Page 8c: strict TOF pair QA mass projections
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPhiPair_MassVsPt_tofStrict"); if (h2) h2->Draw("colz");
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPhiPair_MassVsCent_tofStrict"); if (h2) { h2->Draw("colz"); drawCent9ConventionNote(); }
+  c1->cd(3);
+  h2 = (TH2*)fin->Get("hPhiPair_MassVsPt_tofStrict");
+  if (h2) {
+    Int_t b1 = h2->GetXaxis()->FindBin(0.2 + 1e-6);
+    Int_t b2 = h2->GetXaxis()->FindBin(1.6 - 1e-6);
+    TH1D* hProjPt = h2->ProjectionY("hPhiPair_Mass_tofStrict_pt0p2to1p6", b1, b2);
+    if (hProjPt) {
+      hProjPt->SetTitle("Strict TOF M_{KK} (0.2<p_{T}<1.6 GeV/c);M_{KK} [GeV/c^{2}];Counts");
+      hProjPt->Draw();
+    }
+  }
+  c1->cd(4);
+  h2 = (TH2*)fin->Get("hPhiPair_MassVsCent_tofStrict");
+  if (h2) {
+    Int_t b1 = h2->GetXaxis()->FindBin(6.0 + 1e-6);
+    Int_t b2 = h2->GetXaxis()->FindBin(8.0 - 1e-6);
+    TH1D* hProjCent = h2->ProjectionY("hPhiPair_Mass_tofStrict_cent6to8", b1, b2);
+    if (hProjCent) {
+      hProjCent->SetTitle("Strict TOF M_{KK} (cent9: 6-8);M_{KK} [GeV/c^{2}];Counts");
+      hProjCent->Draw();
+    }
+  }
+  c1->Print(pdfName);
+
+  // Page 9: Kaon QA (before vs after PID cut)
+  c1->Clear();
+  c1->Divide(3, 2);
+  // Row 1: Before PID cut (all accepted tracks)
+  c1->cd(1); h1 = (TH1*)fin->Get("hPt"); if (h1) {
     h1->Draw();
     if (gConfigLoaded) {
       TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
       drawCutLines1D(h1, tr.minPt, tr.maxPt);
     }
   }
-  c1->cd(2); h1 = (TH1*)fin->Get("hK_Eta"); if (h1) {
+  c1->cd(2); h1 = (TH1*)fin->Get("hEta"); if (h1) {
     h1->Draw();
     if (gConfigLoaded) {
       TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
       drawCutLines1D(h1, tr.minEta, tr.maxEta);
     }
   }
-  c1->cd(3); h1 = (TH1*)fin->Get("hK_NSigma"); if (h1) {
+  c1->cd(3); h1 = (TH1*)fin->Get("hNSigmaKaon_Raw"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLines1D(h1, -phi.nSigmaKaon, phi.nSigmaKaon);
+    }
+  }
+  // Row 2: After PID cut (final Kaons)
+  c1->cd(4); h1 = (TH1*)fin->Get("hK_Pt"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
+      drawCutLines1D(h1, tr.minPt, tr.maxPt);
+    }
+  }
+  c1->cd(5); h1 = (TH1*)fin->Get("hK_Eta"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      TrackCutConfig& tr = ConfigManager::GetInstance().GetTrackCuts();
+      drawCutLines1D(h1, tr.minEta, tr.maxEta);
+    }
+  }
+  c1->cd(6); h1 = (TH1*)fin->Get("hK_NSigma"); if (h1) {
     h1->Draw();
     if (gConfigLoaded) {
       PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
@@ -475,7 +608,7 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   // Page 13: K+ and K- multiplicity (per event) and correlation
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h2 = (TH2*)fin->Get("hNKaonPlusVsNKaonMinus"); if (h2) h2->Draw("colz");
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlusVsNKaonMinus"); if (h2) h2->Draw("colz");
   c1->cd(2); h1 = (TH1*)fin->Get("hNKaonPlus"); if (h1) h1->Draw();
   c1->cd(3); h1 = (TH1*)fin->Get("hNKaonMinus"); if (h1) h1->Draw();
   c1->cd(4); /* spare */;
@@ -485,6 +618,14 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   {
     std::cout << "\n=== checkHistAnaPhi: TOF / K / DCA QA histogram entries ===\n";
     const char* keys[] = {"hVr",
+                           "hVr_After",
+                           "hVz_After",
+                           "hVzDiff_After",
+                           "hRefMult_After",
+                           "hPhi_Raw",
+                           "hNHitsDedx_Raw",
+                           "hNHitsDedx",
+                           "hNSigmaKaon_Raw",
                            "hBetaVsP",
                            "hMass2VsP",
                            "hMass2VsP_TpcKaon",
@@ -497,6 +638,12 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
                            "hM2q2VsPq",
                            "hDeltaOneOverBetaVsP",
                            "hDeltaOneOverBetaKaon",
+                           "hPhiPair_Mass_stage0",
+                           "hPhiPair_Mass_tofStrict",
+                           "hPhiPair_MassVsPt_tofStrict",
+                           "hPhiPair_MassVsCent_tofStrict",
+                           "hPhiPair_NPairs_stage0",
+                           "hPhiPair_NPairs_tofStrict",
                            0};
     for (Int_t i = 0; keys[i]; ++i) {
       TObject* o = fin->Get(keys[i]);

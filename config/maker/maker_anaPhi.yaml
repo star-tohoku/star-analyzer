@@ -1,5 +1,9 @@
 # φ(1020) → K⁺K⁻ Analysis Cuts
 
+# Pair rapidity frame: auto | lab | cm (auto: CM if centrality.mode=fxtmult, else lab)
+rapidityFrame: auto
+# sqrtSNNGeV: 3.85         # required for FXT auto CM shift unless rapidityShift is set
+
 nSigmaKaon: 2.0            # TPC nSigma cut for K
 minMass2Kaon: 0.15         # TOF mass2 cut for K
 maxMass2Kaon: 0.35
