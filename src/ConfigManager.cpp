@@ -10,6 +10,7 @@
 #include "cuts/NuclearIdCutConfig.h"
 #include "cuts/MixingConfig.h"
 #include "cuts/CentralityCutConfig.h"
+#include "cuts/FemtoConfig.h"
 #include "YamlParser.h"
 #include <map>
 #include <string>
@@ -36,7 +37,7 @@ ConfigManager& ConfigManager::GetInstance() {
 ConfigManager::ConfigManager() 
   : eventCuts(0), trackCuts(0), pidCuts(0), v0Cuts(0),
     phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), nuclearIdCuts(0), mixingConfig(0),
-    centralityCuts(0), isLoaded(kFALSE) {
+    centralityCuts(0), femtoConfig(0), isLoaded(kFALSE) {
   // Initialize all cut config instances
   eventCuts = &EventCutConfig::GetInstance();
   trackCuts = &TrackCutConfig::GetInstance();
@@ -49,6 +50,7 @@ ConfigManager::ConfigManager()
   nuclearIdCuts = &NuclearIdCutConfig::GetInstance();
   mixingConfig = &MixingConfig::GetInstance();
   centralityCuts = &CentralityCutConfig::GetInstance();
+  femtoConfig = &FemtoConfig::GetInstance();
 }
 
 ConfigManager::~ConfigManager() {
@@ -190,6 +192,12 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
     std::cerr << "WARNING: 'centrality' key not found in main config" << std::endl;
   }
 
+  if (values.find("femto") != values.end()) {
+    if (!LoadConfigFile(basePath.c_str(), values["femto"].c_str(), "femto")) {
+      success = kFALSE;
+    }
+  }
+
   if (values.find("analysis") != values.end()) {
     std::string analysisRel = trimWhitespace(values["analysis"]);
     if (!analysisRel.empty()) {
@@ -323,6 +331,8 @@ Bool_t ConfigManager::LoadConfigFile(const Char_t* basePath, const Char_t* relat
     return mixingConfig->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "centrality") == 0) {
     return centralityCuts->LoadFromFile(fullPath.c_str());
+  } else if (strcmp(configType, "femto") == 0) {
+    return femtoConfig->LoadFromFile(fullPath.c_str());
   } else {
     std::cerr << "ERROR: Unknown config type: " << configType << std::endl;
     return kFALSE;
@@ -371,5 +381,9 @@ MixingConfig& ConfigManager::GetMixingConfig() {
 
 CentralityCutConfig& ConfigManager::GetCentralityCuts() {
   return *centralityCuts;
+}
+
+FemtoConfig& ConfigManager::GetFemtoConfig() {
+  return *femtoConfig;
 }
 

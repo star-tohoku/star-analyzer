@@ -18,6 +18,7 @@ class Sigma1385CutConfig;
 class NuclearIdCutConfig;
 class MixingConfig;
 class CentralityCutConfig;
+class FemtoConfig;
 
 class ConfigManager {
 public:
@@ -43,6 +44,7 @@ public:
   NuclearIdCutConfig& GetNuclearIdCuts();
   MixingConfig& GetMixingConfig();
   CentralityCutConfig& GetCentralityCuts();
+  FemtoConfig& GetFemtoConfig();
 
 private:
   ConfigManager();
@@ -66,6 +68,7 @@ private:
   NuclearIdCutConfig* nuclearIdCuts;
   MixingConfig* mixingConfig;
   CentralityCutConfig* centralityCuts;
+  FemtoConfig* femtoConfig;
 
   Bool_t isLoaded;
   std::map<std::string, std::string> m_mainConfigValues;  ///< Parsed key-value from main.yaml

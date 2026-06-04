@@ -1,6 +1,6 @@
 ---
 name: daily-analysis-log
-description: Generates end-of-day analysis logs for reproducibility. Creates analysisnote/YYYYMMDD/summaryYYYYMMDD.md and auto-fills development (git) and analyses run (configlog). Use when the user asks for a daily summary, end-of-day log, analysis note, or "今日の作業をまとめ".
+description: Generates end-of-day analysis logs for reproducibility. Creates or appends to analysisnote/YYYYMMDD/summaryYYYYMMDD.md (append if the same day's file already exists) and auto-fills development (git) and analyses run (configlog). Use when the user asks for a daily summary, end-of-day log, analysis note, or "今日の作業をまとめ".
 ---
 
 # Skill wrapper: daily-analysis-log

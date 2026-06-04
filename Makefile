@@ -104,7 +104,7 @@ STAR_ANA_CONFIG_SRCS := src/ConfigManager.cpp src/YamlParser.cpp src/HistManager
   src/cuts/EventCutConfig.cpp src/cuts/TrackCutConfig.cpp src/cuts/PIDCutConfig.cpp \
   src/cuts/V0CutConfig.cpp src/cuts/PhiCutConfig.cpp src/cuts/LambdaCutConfig.cpp \
   src/cuts/Lambda1520CutConfig.cpp src/cuts/Sigma1385CutConfig.cpp src/cuts/NuclearIdCutConfig.cpp src/cuts/MixingConfig.cpp \
-  src/cuts/CentralityCutConfig.cpp
+  src/cuts/CentralityCutConfig.cpp src/cuts/FemtoConfig.cpp
 STAR_ANA_CONFIG_OBJS := $(addprefix $(LIB_DIR)/,$(notdir $(STAR_ANA_CONFIG_SRCS:.cpp=.o)))
 CXXFLAGS_CONFIG := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -Iinclude -I$(YAML_CPP_DIR)/include
 LDFLAGS_CONFIG := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(YAML_CPP_BUILD) -lyaml-cpp -Wl,--no-whole-archive
@@ -142,9 +142,15 @@ LIB_NUCLEARID_NAME := libStNuclearIdMaker.so
 SRC_NUCLEARID := $(STNUCLEARID_DIR)/StNuclearIdMaker.cxx
 OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
 
+# --- libStFemtoMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
+STFEMTO_DIR := StMaker/StFemtoMaker
+LIB_FEMTO_NAME := libStFemtoMaker.so
+SRC_FEMTO := $(STFEMTO_DIR)/StFemtoMaker.cxx
+OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o
+
 .PHONY: all clean
 
-all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME)
+all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -184,6 +190,8 @@ $(LIB_DIR)/MixingConfig.o: src/cuts/MixingConfig.cpp include/cuts/MixingConfig.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/MixingConfig.cpp -o $@
 $(LIB_DIR)/CentralityCutConfig.o: src/cuts/CentralityCutConfig.cpp include/cuts/CentralityCutConfig.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/CentralityCutConfig.cpp -o $@
+$(LIB_DIR)/FemtoConfig.o: src/cuts/FemtoConfig.cpp include/cuts/FemtoConfig.h
+	$(CXX) $(CXXFLAGS_CONFIG) -c src/cuts/FemtoConfig.cpp -o $@
 
 # libStRefMultCorr.so (no rootcint dict; used from compiled Makers only)
 $(LIB_DIR)/$(LIB_RMC_NAME): $(LIB_DIR) $(RMC_OBJS)
@@ -216,6 +224,13 @@ $(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_R
 $(LIB_DIR)/StLambdaMaker.o: $(SRC_LAMBDA) $(STLAMBDA_DIR)/StLambdaMaker.h include/HistManager.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_LAMBDA) -o $@
 
+# libStFemtoMaker.so (links against libStarAnaConfig + libStRefMultCorr)
+$(LIB_DIR)/$(LIB_FEMTO_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_FEMTO)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+
+$(LIB_DIR)/StFemtoMaker.o: $(SRC_FEMTO) $(STFEMTO_DIR)/StFemtoMaker.h include/HistManager.h include/FemtoCandidate.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_FEMTO) -o $@
+
 # libStNuclearIdMaker.so
 $(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ_NUCLEARID)
 	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_NUCLEARID) -L$(LIB_DIR) -lStarAnaConfig -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
@@ -224,5 +239,5 @@ $(OBJ_NUCLEARID): $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
 
 clean:
-	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
+	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
 	rm -rf $(YAML_CPP_BUILD)
