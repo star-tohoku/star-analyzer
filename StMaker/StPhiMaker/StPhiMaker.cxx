@@ -9,6 +9,7 @@
 #include "cuts/MixingConfig.h"
 #include "cuts/CentralityCutConfig.h"
 #include "CentralityHelper.h"
+#include "StPhiKKReconstruction.h"
 #include "StPicoDstMaker/StPicoDstMaker.h"
 #include "StPicoEvent/StPicoDst.h"
 #include "StPicoEvent/StPicoTrack.h"
@@ -31,7 +32,6 @@
 #include <utility>
 
 namespace {
-  const Double_t kKaonMass = 0.493677;
   /** Set to 1 to print which cut rejects each event (first kDebugPhiMakerMaxEvents failures only). */
   const Int_t kDebugPhiMaker = 0;
   const Int_t kDebugPhiMakerMaxEvents = 200;
@@ -319,7 +319,8 @@ Int_t StPhiMaker::Make() {
               m_histManager->Fill("hBetaVsPt", pt, 1.0 / beta);
               m_histManager->Fill("hMass2VsP", pMag, mass2);
               m_histManager->Fill("hMass2VsPt", pt, mass2);
-              Double_t deltaInvBeta = DeltaOneOverBeta(beta, kKaonMass, pMom.Mag());
+              Double_t deltaInvBeta =
+                  DeltaOneOverBeta(beta, StPhiKKReconstruction::KaonMass(), pMom.Mag());
               if (TMath::Abs(deltaInvBeta) < 10.0) {
                 m_histManager->Fill("hDeltaOneOverBetaKaon", deltaInvBeta);
                 m_histManager->Fill("hDeltaOneOverBetaVsP", pMom.Mag(), deltaInvBeta);
@@ -459,7 +460,9 @@ Int_t StPhiMaker::Make() {
     for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
       for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
         if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
-        Double_t invMass = CalculateInvariantMass(kaonsPlus[iPlus], kaonsMinus[iMinus], kKaonMass, kKaonMass);
+        Double_t invMass = CalculateInvariantMass(kaonsPlus[iPlus], kaonsMinus[iMinus],
+                                                  StPhiKKReconstruction::KaonMass(),
+                                                  StPhiKKReconstruction::KaonMass());
         m_histManager->Fill("hMKK_AllCombinations", invMass);
       }
     }
@@ -615,163 +618,83 @@ void StPhiMaker::BuildTrack(Track_t& track, StPicoTrack* pico, StPicoEvent* even
 }
 
 //-----------------------------------------------------------------------------
+PhiKkTrackState StPhiMaker::ToPhiKkTrack(const Track_t& trk) {
+  PhiKkTrackState s;
+  s.pT = trk.pT;
+  s.eta = trk.eta;
+  s.phi = trk.phi;
+  s.charge = trk.charge;
+  s.originX = trk.originX;
+  s.originY = trk.originY;
+  s.originZ = trk.originZ;
+  s.momentumX = trk.momentumX;
+  s.momentumY = trk.momentumY;
+  s.momentumZ = trk.momentumZ;
+  s.BField = trk.BField;
+  s.tofMatch = trk.tofMatch;
+  s.mass2 = trk.mass2;
+  s.deltaOneOverBeta = trk.deltaOneOverBeta;
+  return s;
+}
+
+//-----------------------------------------------------------------------------
 TVector3 StPhiMaker::TrackMomentum(const Track_t& trk) const {
-  return TVector3(trk.momentumX, trk.momentumY, trk.momentumZ);
+  return StPhiKKReconstruction::TrackMomentum(ToPhiKkTrack(trk));
 }
 
 //-----------------------------------------------------------------------------
 StPhysicalHelixD StPhiMaker::BuildHelix(const Track_t& trk) {
-  StThreeVectorF gmomSt(trk.momentumX, trk.momentumY, trk.momentumZ);
-  StThreeVectorF orgSt(trk.originX, trk.originY, trk.originZ);
-  StPhysicalHelixD helix(gmomSt, orgSt, trk.BField * units::kilogauss, static_cast<float>(trk.charge));
-  return helix;
+  return StPhiKKReconstruction::BuildHelix(ToPhiKkTrack(trk));
 }
 
 //-----------------------------------------------------------------------------
 Double_t StPhiMaker::CalculateDCA(const Track_t& trk1, const Track_t& trk2, TVector3& dcaPos1, TVector3& dcaPos2) {
-  StPhysicalHelixD helix1 = BuildHelix(trk1);
-  StPhysicalHelixD helix2 = BuildHelix(trk2);
-  std::pair<Double_t, Double_t> pathLengths = helix1.pathLengths(helix2);
-  StThreeVectorF pos1 = helix1.at(pathLengths.first);
-  StThreeVectorF pos2 = helix2.at(pathLengths.second);
-  dcaPos1 = TVector3(pos1.x(), pos1.y(), pos1.z());
-  dcaPos2 = TVector3(pos2.x(), pos2.y(), pos2.z());
-  TVector3 dcaVec = dcaPos1 - dcaPos2;
-  return dcaVec.Mag();
+  return StPhiKKReconstruction::CalculateDCA(ToPhiKkTrack(trk1), ToPhiKkTrack(trk2), dcaPos1, dcaPos2);
 }
 
 //-----------------------------------------------------------------------------
-Bool_t StPhiMaker::ReconstructPhi(const Track_t& kPlus, const Track_t& kMinus, Double_t& invMass, TVector3& phiMom, TVector3& dcaPosPlus, TVector3& dcaPosMinus) {
-  PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
-  Double_t dca = CalculateDCA(kPlus, kMinus, dcaPosPlus, dcaPosMinus);
-  if (dca > phi.maxDCAKK) return kFALSE;
-
-  const TVector3 pPlus = TrackMomentum(kPlus);
-  const TVector3 pMinus = TrackMomentum(kMinus);
-  Double_t EPlus = TMath::Sqrt(kKaonMass * kKaonMass + pPlus.Mag2());
-  Double_t EMinus = TMath::Sqrt(kKaonMass * kKaonMass + pMinus.Mag2());
-  phiMom = pPlus + pMinus;
-  Double_t E = EPlus + EMinus;
-  invMass = TMath::Sqrt(E * E - phiMom.Mag2());
-  return kTRUE;
+Bool_t StPhiMaker::ReconstructPhi(const Track_t& kPlus, const Track_t& kMinus, Double_t& invMass, TVector3& phiMom,
+                                  TVector3& dcaPosPlus, TVector3& dcaPosMinus) {
+  return StPhiKKReconstruction::ReconstructPhi(ToPhiKkTrack(kPlus), ToPhiKkTrack(kMinus), invMass, phiMom, dcaPosPlus,
+                                               dcaPosMinus);
 }
 
 //-----------------------------------------------------------------------------
 Double_t StPhiMaker::CalculateInvariantMass(const Track_t& trk1, const Track_t& trk2, Double_t mass1, Double_t mass2) {
-  TVector3 p1;
-  p1.SetPtEtaPhi(trk1.pT, trk1.eta, trk1.phi);
-  TVector3 p2;
-  p2.SetPtEtaPhi(trk2.pT, trk2.eta, trk2.phi);
-  Double_t E1 = TMath::Sqrt(mass1 * mass1 + p1.Mag2());
-  Double_t E2 = TMath::Sqrt(mass2 * mass2 + p2.Mag2());
-  TVector3 p = p1 + p2;
-  return TMath::Sqrt((E1 + E2) * (E1 + E2) - p.Mag2());
+  return StPhiKKReconstruction::CalculateInvariantMass(ToPhiKkTrack(trk1), ToPhiKkTrack(trk2), mass1, mass2);
 }
 
 //-----------------------------------------------------------------------------
 Double_t StPhiMaker::CalculateOpeningAngle(const Track_t& trk1, const Track_t& trk2) {
-  TVector3 p1;
-  p1.SetPtEtaPhi(trk1.pT, trk1.eta, trk1.phi);
-  TVector3 p2;
-  p2.SetPtEtaPhi(trk2.pT, trk2.eta, trk2.phi);
-  Double_t mag1 = p1.Mag();
-  Double_t mag2 = p2.Mag();
-  if (mag1 < 1e-10 || mag2 < 1e-10) return TMath::Pi();
-  Double_t cosTheta = p1.Dot(p2) / (mag1 * mag2);
-  if (cosTheta > 1.0) cosTheta = 1.0;
-  if (cosTheta < -1.0) cosTheta = -1.0;
-  return TMath::ACos(cosTheta);
+  return StPhiKKReconstruction::CalculateOpeningAngle(ToPhiKkTrack(trk1), ToPhiKkTrack(trk2));
 }
 
 //-----------------------------------------------------------------------------
 Double_t StPhiMaker::CalculatePairRapidity(Double_t invMass, const TVector3& phiMom) {
-  Double_t P2 = phiMom.Mag2();
-  Double_t E = TMath::Sqrt(invMass * invMass + P2);
-  Double_t pz = phiMom.Z();
-  if (E <= TMath::Abs(pz)) return 0.0;
-  return 0.5 * TMath::Log((E + pz) / (E - pz));
+  return StPhiKKReconstruction::CalculatePairRapidity(invMass, phiMom);
 }
 
 //-----------------------------------------------------------------------------
 Double_t StPhiMaker::ApplyRapidityFrame(Double_t yLab) const {
-  return ConfigManager::GetInstance().GetPhiCuts().ApplyAnalysisRapidity(yLab);
+  return StPhiKKReconstruction::ApplyRapidityFrame(yLab);
 }
 
 //-----------------------------------------------------------------------------
 Bool_t StPhiMaker::PassTofKaonPid(const Track_t& trk) const {
-  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
-  if (!pid.requireTOF) return kTRUE;
-  TString fallbackMode(pid.tofFallbackMode.c_str());
-  fallbackMode.ToLower();
-  if (fallbackMode.IsNull()) fallbackMode = "acceptlowpt";
-
-  if (fallbackMode == "acceptlowpt" && trk.pT <= pid.pTofFallbackMax) return kTRUE;
-  if (!trk.tofMatch) {
-    if (fallbackMode == "tpconly") return kTRUE;
-    return kFALSE;
-  }
-
-  Bool_t pass = kTRUE;
-  if (pid.tofUseMass2Cut) {
-    pass = pass && (trk.mass2 >= pid.minMass2Kaon && trk.mass2 <= pid.maxMass2Kaon);
-  }
-  if (pid.tofUseDeltaInvBetaCut) {
-    pass = pass && (TMath::Abs(trk.deltaOneOverBeta) <= pid.maxAbsDeltaOneOverBetaKaon);
-  }
-  return pass;
-}
-
-//-----------------------------------------------------------------------------
-Bool_t StPhiMaker::InKaonMass2Window(Float_t mass2) const {
-  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
-  return (mass2 > pid.minMass2Kaon && mass2 < pid.maxMass2Kaon);
-}
-
-//-----------------------------------------------------------------------------
-Bool_t StPhiMaker::PassKplusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const {
-  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
-  const Float_t pLow = pid.pMomKaonPID;
-  if (pMag <= pLow) {
-    return !tofMatch || (tofMatch && InKaonMass2Window(mass2));
-  }
-  return tofMatch && InKaonMass2Window(mass2);
-}
-
-//-----------------------------------------------------------------------------
-Bool_t StPhiMaker::PassKminusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const {
-  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
-  const Float_t pLow = pid.pMomKaonPID;
-  if (pMag <= pLow) {
-    return tofMatch && InKaonMass2Window(mass2);
-  }
-  return InKaonMass2Window(mass2);
+  return StPhiKKReconstruction::PassTofKaonPid(ToPhiKkTrack(trk));
 }
 
 //-----------------------------------------------------------------------------
 Bool_t StPhiMaker::PassPairTofCut(const Track_t& kPlus, const Track_t& kMinus) const {
-  const Float_t pKplus = TrackMomentum(kPlus).Mag();
-  const Float_t pKminus = TrackMomentum(kMinus).Mag();
-  return PassKplusTofMass2(pKplus, kPlus.tofMatch, kPlus.mass2) &&
-         PassKminusTofMass2(pKminus, kMinus.tofMatch, kMinus.mass2);
+  return StPhiKKReconstruction::PassPairTofCut(ToPhiKkTrack(kPlus), ToPhiKkTrack(kMinus));
 }
 
 //-----------------------------------------------------------------------------
 void StPhiMaker::FillTofInfo(Track_t& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex) {
-  track.mass2 = -999.0;
-  track.deltaOneOverBeta = 999.0;
-  track.tofMatch = kFALSE;
-  if (btofIndex < 0) return;
-
-  StPicoBTofPidTraits* tof = mPicoDst->btofPidTraits(btofIndex);
-  if (!tof) return;
-
-  Double_t beta = tof->btofBeta();
-  if (beta <= 1e-4) return;
-
-  Double_t pMag = pMom.Mag();
-  track.mass2 = pMom.Mag2() * (1.0 / (beta * beta) - 1.0);
-  track.deltaOneOverBeta = DeltaOneOverBeta(beta, kKaonMass, pMag);
-  track.tofMatch = kTRUE;
+  (void)trk;
+  StPicoBTofPidTraits* tof = 0;
+  if (btofIndex >= 0) tof = mPicoDst->btofPidTraits(btofIndex);
+  StPhiKKReconstruction::FillTofInfo(track.mass2, track.deltaOneOverBeta, track.tofMatch, tof, pMom);
 }
 
 //-----------------------------------------------------------------------------

@@ -121,8 +121,9 @@ LIB_NAME := libStPhiMaker.so
 CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude -IStRoot -I$(COMMON_DIR) -I$(RMC_DIR) $(STAR_INC)
 LDFLAGS_MAKER := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,-rpath,$(STAR_LIB_DIR)
 SRC := $(STMAKER_DIR)/StPhiMaker.cxx
-OBJ := $(LIB_DIR)/StPhiMaker.o $(LIB_DIR)/CentralityHelper.o
+OBJ := $(LIB_DIR)/StPhiMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o
 CENTRALITY_HELPER_SRC := $(COMMON_DIR)/CentralityHelper.cxx
+PHI_KK_RECON_SRC := $(COMMON_DIR)/StPhiKKReconstruction.cxx
 
 # --- libStLambdaMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 STLAMBDA_DIR := StMaker/StLambdaMaker
@@ -146,7 +147,7 @@ OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
 STFEMTO_DIR := StMaker/StFemtoMaker
 LIB_FEMTO_NAME := libStFemtoMaker.so
 SRC_FEMTO := $(STFEMTO_DIR)/StFemtoMaker.cxx
-OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o
+OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o
 
 .PHONY: all clean
 
@@ -217,6 +218,9 @@ $(LIB_DIR)/StPhiMaker.o: $(STMAKER_DIR)/StPhiMaker.cxx $(STMAKER_DIR)/StPhiMaker
 $(LIB_DIR)/CentralityHelper.o: $(CENTRALITY_HELPER_SRC) $(COMMON_DIR)/CentralityHelper.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(CENTRALITY_HELPER_SRC) -o $@
 
+$(LIB_DIR)/StPhiKKReconstruction.o: $(PHI_KK_RECON_SRC) $(COMMON_DIR)/StPhiKKReconstruction.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(PHI_KK_RECON_SRC) -o $@
+
 # libStLambdaMaker.so (links against libStarAnaConfig + libStRefMultCorr)
 $(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_LAMBDA)
 	$(CXX) $(LDFLAGS_MAKER) -o $@ $(LIB_DIR)/StLambdaMaker.o $(LIB_DIR)/CentralityHelper.o -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
@@ -226,7 +230,7 @@ $(LIB_DIR)/StLambdaMaker.o: $(SRC_LAMBDA) $(STLAMBDA_DIR)/StLambdaMaker.h includ
 
 # libStFemtoMaker.so (links against libStarAnaConfig + libStRefMultCorr)
 $(LIB_DIR)/$(LIB_FEMTO_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_FEMTO)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_FEMTO) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
 
 $(LIB_DIR)/StFemtoMaker.o: $(SRC_FEMTO) $(STFEMTO_DIR)/StFemtoMaker.h include/HistManager.h include/FemtoCandidate.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_FEMTO) -o $@

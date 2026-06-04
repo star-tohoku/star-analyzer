@@ -2,6 +2,7 @@
 #define StFemtoMaker_h
 
 #include "StMaker.h"
+#include "StPhiKKReconstruction.h"
 #include "FemtoCandidate.h"
 #include "cuts/FemtoConfig.h"
 #include "StarClassLibrary/StPhysicalHelixD.hh"
@@ -80,6 +81,7 @@ class StFemtoMaker : public StMaker {
   Bool_t PassKaonCuts(StPicoTrack* trk, TVector3& pVtx);
   Bool_t PassProtonCuts(StPicoTrack* trk, TVector3& pVtx);
 
+  static PhiKkTrackState ToPhiKkTrack(const TrackState& trk);
   void BuildTrackState(TrackState& track, StPicoTrack* pico, StPicoEvent* event, TVector3& pVtx, Int_t index);
   void FillTofInfo(TrackState& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex);
   Bool_t PassTofKaonPid(const TrackState& trk) const;

@@ -2,6 +2,7 @@
 #define StPhiMaker_h
 
 #include "StMaker.h"
+#include "StPhiKKReconstruction.h"
 #include "StarClassLibrary/StPhysicalHelixD.hh"
 
 #include <deque>
@@ -74,10 +75,8 @@ class StPhiMaker : public StMaker {
 
   std::map<Int_t, std::deque<PhiMixingEvent> > m_phiMixingPool;
 
+  static PhiKkTrackState ToPhiKkTrack(const Track_t& trk);
   Bool_t PassTofKaonPid(const Track_t& trk) const;
-  Bool_t InKaonMass2Window(Float_t mass2) const;
-  Bool_t PassKplusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const;
-  Bool_t PassKminusTofMass2(Float_t pMag, Bool_t tofMatch, Float_t mass2) const;
   Bool_t PassPairTofCut(const Track_t& kPlus, const Track_t& kMinus) const;
   void FillTofInfo(Track_t& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex);
   Int_t GetMixingVzBin(Float_t vz) const;
