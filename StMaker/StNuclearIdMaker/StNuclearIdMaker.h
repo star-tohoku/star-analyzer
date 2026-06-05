@@ -12,6 +12,7 @@ class StPicoEvent;
 class StPicoTrack;
 class StPicoBTofPidTraits;
 class HistManager;
+class CentralityHelper;
 
 class StNuclearIdMaker : public StMaker {
  public:
@@ -38,6 +39,13 @@ class StNuclearIdMaker : public StMaker {
   std::vector<TVector3> mNuclearMom;
   std::vector<Int_t> mNuclearId;
   std::vector<Int_t> mNuclearType;
+
+  CentralityHelper* m_centrality;
+  Int_t m_cent9;
+  Int_t m_cent16;
+  Double_t m_refMultCorr;
+  Double_t m_centWeight;
+  Double_t m_centralityPercent;
 };
 
 // Factory for CINT

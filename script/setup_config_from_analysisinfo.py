@@ -372,6 +372,23 @@ def main():
             else:
                 shutil.copy2(hist_src, hist_dst)
                 print("Created: {}".format(os.path.relpath(hist_dst, config_base)))
+    else:
+        hist_template_rel = None
+        if is_lambda:
+            hist_template_rel = 'hist_anaLambda.yaml'
+        elif is_phi:
+            hist_template_rel = 'hist_anaPhi.yaml'
+        elif is_nuclearid:
+            hist_template_rel = 'hist_anaNuclearId.yaml'
+
+        if hist_template_rel:
+            hist_src = os.path.join(config_base, 'hist', hist_template_rel)
+            hist_dst = os.path.join(config_base, 'hist', 'hist_{}.yaml'.format(ana_name))
+            if not os.path.isfile(hist_src):
+                print("WARNING: hist template not found, skip: {}".format(hist_template_rel))
+            else:
+                shutil.copy2(hist_src, hist_dst)
+                print("Created: {}".format(os.path.relpath(hist_dst, config_base)))
 
     write_mainconf(config_base, ana_name, analysis_rel)
 

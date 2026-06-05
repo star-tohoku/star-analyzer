@@ -22,4 +22,4 @@ maxPtEp: 2.0
 maxEtaEp: 1.0               # |eta| < maxEtaEp
 
 # Event-level: skip event if nTracks > maxNTr (0 = no limit)
-maxNTr: 0 
+maxNTr: 0

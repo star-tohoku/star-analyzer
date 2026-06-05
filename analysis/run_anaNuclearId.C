@@ -32,6 +32,7 @@ void run_anaNuclearId(const Char_t* inputFile,
 
   gInterpreter->AddIncludePath(pwd);
   gInterpreter->AddIncludePath(TString::Format("%s/include", pwd));
+  gInterpreter->AddIncludePath(TString::Format("%s/StMaker/common", pwd));
   gInterpreter->AddIncludePath("$STAR/StRoot");
   gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStNuclearIdMaker -Wl,-rpath,%s/lib", pwd, pwd));
 

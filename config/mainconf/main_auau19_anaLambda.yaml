@@ -7,10 +7,7 @@ track:         cuts/track/track_auau19_anaLambda.yaml
 pid:           cuts/pid/pid_auau19_anaLambda.yaml
 v0:            cuts/v0reco/v0_auau19_anaLambda.yaml
 mixing:        cuts/mixing/mixing_auau19_anaLambda.yaml
-<<<<<<< HEAD
-=======
 centrality:    cuts/centrality/centrality_auau19_anaLambda.yaml
->>>>>>> temp_work
 
 # Maker config (key name should match your analysis macro expectation)
 lambda:        maker/maker_auau19_anaLambda.yaml

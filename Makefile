@@ -131,17 +131,11 @@ LIB_LAMBDA_NAME := libStLambdaMaker.so
 SRC_LAMBDA := $(STLAMBDA_DIR)/StLambdaMaker.cxx
 OBJ_LAMBDA := $(LIB_DIR)/StLambdaMaker.o $(LIB_DIR)/CentralityHelper.o
 
-# --- libStNuclearIdMaker (depends on libStarAnaConfig or none? needs STAR_INC) ---
+# --- libStNuclearIdMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 STNUCLEARID_DIR := StMaker/StNuclearIdMaker
 LIB_NUCLEARID_NAME := libStNuclearIdMaker.so
 SRC_NUCLEARID := $(STNUCLEARID_DIR)/StNuclearIdMaker.cxx
-OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
-
-# --- libStNuclearIdMaker (depends on libStarAnaConfig or none? needs STAR_INC) ---
-STNUCLEARID_DIR := StMaker/StNuclearIdMaker
-LIB_NUCLEARID_NAME := libStNuclearIdMaker.so
-SRC_NUCLEARID := $(STNUCLEARID_DIR)/StNuclearIdMaker.cxx
-OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o
+OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o $(LIB_DIR)/CentralityHelper.o
 
 # --- libStFemtoMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 STFEMTO_DIR := StMaker/StFemtoMaker
@@ -236,10 +230,10 @@ $(LIB_DIR)/StFemtoMaker.o: $(SRC_FEMTO) $(STFEMTO_DIR)/StFemtoMaker.h include/Hi
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_FEMTO) -o $@
 
 # libStNuclearIdMaker.so
-$(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR) $(OBJ_NUCLEARID)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_NUCLEARID) -L$(LIB_DIR) -lStarAnaConfig -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+$(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_NUCLEARID)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_NUCLEARID) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
 
-$(OBJ_NUCLEARID): $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
+$(LIB_DIR)/StNuclearIdMaker.o: $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
 
 clean:

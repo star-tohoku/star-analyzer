@@ -7,7 +7,9 @@
 #include "ConfigManager.h"
 #include "cuts/NuclearIdCutConfig.h"
 #include "cuts/EventCutConfig.h"
+#include "cuts/CentralityCutConfig.h"
 #include "HistManager.h"
+#include "CentralityHelper.h"
 #include "TH2D.h"
 #include "TFile.h"
 #include "TVector3.h"
@@ -86,12 +88,17 @@ struct NuclearPID {
 };
 
 StNuclearIdMaker::StNuclearIdMaker(const char* name, StPicoDstMaker* picoMaker, const char* outName)
-    : StMaker(name), mPicoDstMaker(picoMaker), mPicoDst(nullptr), mOutName(outName), m_histManager(0) {}
+    : StMaker(name), mPicoDstMaker(picoMaker), mPicoDst(nullptr), mOutName(outName), m_histManager(0),
+      m_centrality(0), m_cent9(-1), m_cent16(-1), m_refMultCorr(-1.0), m_centWeight(1.0), m_centralityPercent(-1.0) {}
 
 StNuclearIdMaker::~StNuclearIdMaker() {
   if (m_histManager) {
     delete m_histManager;
     m_histManager = 0;
+  }
+  if (m_centrality) {
+    delete m_centrality;
+    m_centrality = 0;
   }
 }
 
@@ -108,6 +115,11 @@ Int_t StNuclearIdMaker::Init() {
     delete m_histManager;
     m_histManager = 0;
     return kStOK;
+  }
+
+  m_centrality = new CentralityHelper();
+  if (!m_centrality->Init(ConfigManager::GetInstance().GetCentralityCuts())) {
+    std::cerr << "[StNuclearIdMaker] CentralityHelper init failed" << std::endl;
   }
 
   return kStOK;
@@ -128,6 +140,70 @@ Int_t StNuclearIdMaker::Make() {
 
   NuclearPID pid;
   NuclearIdCutConfig& cuts = ConfigManager::GetInstance().GetNuclearIdCuts();
+
+  TVector3 pVtx = event->primaryVertex();
+  Int_t refMult = event->refMult();
+  const Int_t runId = event->runId();
+  const Int_t nBTOFMatch = event->nBTOFMatch();
+  const Double_t vz = pVtx.Z();
+
+  CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
+  Int_t rawMult = refMult;
+  if (centCfg.enabled) {
+    TString mode(centCfg.mode.c_str());
+    mode.ToLower();
+    if (mode == "fxtmult") {
+      rawMult = event->fxtMult();
+    }
+  }
+
+  m_cent9 = -1;
+  m_cent16 = -1;
+  m_refMultCorr = -1.0;
+  m_centWeight = 1.0;
+  m_centralityPercent = -1.0;
+
+  if (m_histManager) {
+    m_histManager->Fill("hRefMultVsNTOFMatch", (Double_t)nBTOFMatch, (Double_t)rawMult);
+  }
+
+  CentralityRejectReason centReason = kCentralityOk;
+
+  if (m_centrality && m_centrality->IsEnabled()) {
+    if (!m_centrality->CheckBadRun(runId, centReason)) {
+      return kStOK;
+    }
+    if (!m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) {
+      return kStOK;
+    }
+    if (!m_centrality->ComputeBins(event, rawMult, vz, m_cent9, m_cent16, m_refMultCorr, m_centWeight, centReason)) {
+      return kStOK;
+    }
+    if (m_histManager && centCfg.fillCentralityQA) {
+      m_histManager->Fill("hRawMult", (Double_t)rawMult);
+      m_histManager->Fill("hCentralityRaw", (Double_t)m_cent9);
+      m_histManager->Fill("hRefMultCorr", m_refMultCorr);
+      m_histManager->Fill("hCentralityVsVz", vz, (Double_t)m_cent9);
+      m_histManager->Fill("hRefMultWeight", m_centWeight);
+      m_histManager->Fill("hRefMultVsNTOFMatchAfter", (Double_t)nBTOFMatch, (Double_t)rawMult);
+    }
+    if (!m_centrality->AcceptCentBin(m_cent9, centReason)) {
+      return kStOK;
+    }
+    m_centralityPercent = CentralityHelper::Cent9ToPercentile(m_cent9);
+    if (m_histManager) {
+      const Double_t w = centCfg.useWeight ? m_centWeight : 1.0;
+      TH1* hCent = m_histManager->Get("hCentrality");
+      if (hCent) hCent->Fill((Double_t)m_cent9, w);
+      TH1* hCent16 = m_histManager->Get("hCentrality16");
+      if (hCent16) hCent16->Fill((Double_t)m_cent16, w);
+    }
+  }
+
+  if (m_histManager) {
+    m_histManager->Fill("hVz", pVtx.Z());
+    m_histManager->Fill("hRefMult", refMult);
+  }
 
   double d_mean   = 3.48096e+00;
   double d_sigma  = 1.41458e-01;
@@ -152,6 +228,9 @@ Int_t StNuclearIdMaker::Make() {
 
     if (m_histManager) {
       m_histManager->Fill("hDedxP", p, dedx);
+      if (m_cent9 >= 0 && m_cent9 <= 8) {
+        m_histManager->Fill(Form("hDedxP_CentBin%d", m_cent9), p, dedx);
+      }
 
       if (fabs(trk->nSigmaElectron()) < cuts.nSigmaFill1D) m_histManager->Fill("hDedxP_e", p, dedx);
       if (fabs(trk->nSigmaPion()) < cuts.nSigmaFill1D) m_histManager->Fill("hDedxP_pi", p, dedx);
@@ -172,10 +251,22 @@ Int_t StNuclearIdMaker::Make() {
     double nSigma_4He = pid.GetNSigma(NuclearPID::kHe4,     p, dedx);
 
     if (m_histManager) {
-      if (fabs(nSigma_d)   < cuts.maxNSigmaNuclear) m_histManager->Fill("hDedxP_d", p, dedx);
-      if (fabs(nSigma_t)   < cuts.maxNSigmaNuclear) m_histManager->Fill("hDedxP_t", p, dedx);
-      if (fabs(nSigma_3He) < cuts.maxNSigmaNuclear) m_histManager->Fill("hDedxP_3He", p, dedx);
-      if (fabs(nSigma_4He) < cuts.maxNSigmaNuclear) m_histManager->Fill("hDedxP_4He", p, dedx);
+      if (fabs(nSigma_d)   < cuts.maxNSigmaNuclear) {
+        m_histManager->Fill("hDedxP_d", p, dedx);
+        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_d_CentBin%d", m_cent9), p, dedx);
+      }
+      if (fabs(nSigma_t)   < cuts.maxNSigmaNuclear) {
+        m_histManager->Fill("hDedxP_t", p, dedx);
+        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_t_CentBin%d", m_cent9), p, dedx);
+      }
+      if (fabs(nSigma_3He) < cuts.maxNSigmaNuclear) {
+        m_histManager->Fill("hDedxP_3He", p, dedx);
+        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_3He_CentBin%d", m_cent9), p, dedx);
+      }
+      if (fabs(nSigma_4He) < cuts.maxNSigmaNuclear) {
+        m_histManager->Fill("hDedxP_4He", p, dedx);
+        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_4He_CentBin%d", m_cent9), p, dedx);
+      }
     }
 
     const double M_d   = 1.87561;
@@ -193,6 +284,10 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsEta_d", p, eta);
         m_histManager->Fill("hPvsY_d", p, y);
         m_histManager->Fill("hPvsPt_d", p, pT);
+        if (m_cent9 >= 0 && m_cent9 <= 8) {
+          m_histManager->Fill(Form("hPvsEta_d_CentBin%d", m_cent9), p, eta);
+          m_histManager->Fill(Form("hPvsPt_d_CentBin%d", m_cent9), p, pT);
+        }
       }
     }
     if (fabs(nSigma_t) < cuts.maxNSigmaNuclear) {
@@ -202,6 +297,10 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsEta_t", p, eta);
         m_histManager->Fill("hPvsY_t", p, y);
         m_histManager->Fill("hPvsPt_t", p, pT);
+        if (m_cent9 >= 0 && m_cent9 <= 8) {
+          m_histManager->Fill(Form("hPvsEta_t_CentBin%d", m_cent9), p, eta);
+          m_histManager->Fill(Form("hPvsPt_t_CentBin%d", m_cent9), p, pT);
+        }
       }
     }
     if (fabs(nSigma_3He) < cuts.maxNSigmaNuclear) {
@@ -214,6 +313,10 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsEta_3He", p_act, eta);
         m_histManager->Fill("hPvsY_3He", p_act, y);
         m_histManager->Fill("hPvsPt_3He", p_act, pT_act);
+        if (m_cent9 >= 0 && m_cent9 <= 8) {
+          m_histManager->Fill(Form("hPvsEta_3He_CentBin%d", m_cent9), p_act, eta);
+          m_histManager->Fill(Form("hPvsPt_3He_CentBin%d", m_cent9), p_act, pT_act);
+        }
       }
     }
     if (fabs(nSigma_4He) < cuts.maxNSigmaNuclear) {
@@ -226,6 +329,10 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsEta_4He", p_act, eta);
         m_histManager->Fill("hPvsY_4He", p_act, y);
         m_histManager->Fill("hPvsPt_4He", p_act, pT_act);
+        if (m_cent9 >= 0 && m_cent9 <= 8) {
+          m_histManager->Fill(Form("hPvsEta_4He_CentBin%d", m_cent9), p_act, eta);
+          m_histManager->Fill(Form("hPvsPt_4He_CentBin%d", m_cent9), p_act, pT_act);
+        }
       }
     }
 
@@ -280,6 +387,15 @@ Int_t StNuclearIdMaker::Make() {
         mNuclearMom.push_back(act_pMom);
         mNuclearId.push_back(trk->id());
         mNuclearType.push_back(best_type);
+
+        if (m_histManager) {
+          TVector3 pVtx = event->primaryVertex();
+          double vz = pVtx.Z();
+          if (best_type == 0) m_histManager->Fill("hVz_d", vz);
+          if (best_type == 1) m_histManager->Fill("hVz_t", vz);
+          if (best_type == 2) m_histManager->Fill("hVz_3He", vz);
+          if (best_type == 3) m_histManager->Fill("hVz_4He", vz);
+        }
       }
     }
 
