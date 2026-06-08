@@ -86,8 +86,12 @@ class StFemtoMaker : public StMaker {
   void FillTofInfo(TrackState& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex);
   Bool_t PassTofKaonPid(const TrackState& trk) const;
   Bool_t PassTofProtonPid(const TrackState& trk) const;
+  Bool_t PassFemtoProtonCuts(const TrackState& trk) const;
   Bool_t IsKaon(const TrackState& trk);
   Bool_t IsProton(const TrackState& trk);
+  Double_t ProtonRapidityCm(const TrackState& trk) const;
+  void FillProtonPreFemtoQa(const TrackState& trk);
+  void FillProtonFemtoQa(const TrackState& trk);
 
   TVector3 TrackMomentum(const TrackState& trk) const;
   StPhysicalHelixD BuildHelix(const TrackState& trk);
@@ -104,6 +108,8 @@ class StFemtoMaker : public StMaker {
   void BuildResonanceCandidates(const std::string& speciesKey, const std::string& particleKey,
                                 const std::vector<TrackState>& kaonsPlus, const std::vector<TrackState>& kaonsMinus,
                                 Int_t eventIndex);
+  void BuildRotatedPhiCandidates(const std::string& speciesKey, const std::vector<TrackState>& kaonsPlus,
+                                 const std::vector<TrackState>& kaonsMinus, Int_t eventIndex);
   FemtoCandidate MakeProtonCandidate(const TrackState& trk, Int_t eventIndex, const std::string& speciesKey) const;
   FemtoCandidate MakePhiCandidate(const TrackState& kPlus, const TrackState& kMinus, Double_t invMass,
                                   const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity,
@@ -121,7 +127,6 @@ class StFemtoMaker : public StMaker {
   void FillCandidateQA();
   void FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t refMultCorr, Int_t nTracks, Int_t nBTOFMatch,
                              Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiCandidates, Int_t nProtons);
-  void FinalizeCorrelationFunctions();
   std::string HistName(const std::string& prefix, const std::string& channelName) const;
 };
 

@@ -24,6 +24,8 @@ void CentralityCutConfig::SetDefaults() {
   requireValidCentrality = kTRUE;
   verbose = kFALSE;
   fillCentralityQA = kTRUE;
+  cent9MaxRefMultCorrBin = -1;
+  cent9MaxRefMultCorr = -1.0;
   acceptedCentBins.clear();
   for (Int_t i = 0; i < 9; i++) {
     acceptedCentBins.push_back(i);
@@ -46,6 +48,13 @@ Bool_t CentralityCutConfig::IsCentBinAccepted(Int_t cent9) const {
     if (acceptedCentBins[i] == cent9) return kTRUE;
   }
   return kFALSE;
+}
+
+Bool_t CentralityCutConfig::IsRefMultCorrAccepted(Int_t cent9, Double_t refMultCorr) const {
+  if (cent9MaxRefMultCorrBin < 0 || cent9MaxRefMultCorr <= 0.0) return kTRUE;
+  if (cent9 != cent9MaxRefMultCorrBin) return kTRUE;
+  if (refMultCorr < 0.0) return kTRUE;
+  return refMultCorr <= cent9MaxRefMultCorr;
 }
 
 Bool_t CentralityCutConfig::LoadFromFile(const Char_t* filename) {
@@ -88,6 +97,12 @@ Bool_t CentralityCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("fillPhiVsCentrality") != values.end()) {
     fillCentralityQA = YamlParser::ToBool(values["fillPhiVsCentrality"], fillCentralityQA);
+  }
+  if (values.find("cent9MaxRefMultCorrBin") != values.end()) {
+    cent9MaxRefMultCorrBin = YamlParser::ToInt(values["cent9MaxRefMultCorrBin"], cent9MaxRefMultCorrBin);
+  }
+  if (values.find("cent9MaxRefMultCorr") != values.end()) {
+    cent9MaxRefMultCorr = YamlParser::ToDouble(values["cent9MaxRefMultCorr"], cent9MaxRefMultCorr);
   }
 
   return kTRUE;

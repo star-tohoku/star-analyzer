@@ -103,6 +103,11 @@ Int_t StFemtoMaker::Init() {
     return kStErr;
   }
 
+  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  if (femtoCfg.rotationEnabled && femtoCfg.rotationSeed != 0) {
+    gRandom->SetSeed(femtoCfg.rotationSeed);
+  }
+
   return kStOK;
 }
 
@@ -200,7 +205,7 @@ Int_t StFemtoMaker::Make() {
       m_histManager->Fill("hRefMultVsNTOFMatchAfter", (Double_t)nBTOFMatch, (Double_t)rawMult);
     }
 
-    if (!m_centrality->AcceptCentBin(m_cent9, centReason)) return kStOK;
+    if (!m_centrality->AcceptCentBin(m_cent9, m_refMultCorr, centReason)) return kStOK;
 
     m_centralityPercent = CentralityHelper::Cent9ToPercentile(m_cent9);
     if (m_histManager) {
@@ -295,10 +300,19 @@ Int_t StFemtoMaker::Make() {
       TrackState pTrack;
       BuildTrackState(pTrack, trk, event, pVtx, itrk);
       FillTofInfo(pTrack, trk, pMom, btofIndex);
-      if (IsProton(pTrack) && pTrack.charge > 0 && (Int_t)protons.size() < kMaxTracks) {
-        if (m_histManager && pTrack.tofMatch) {
-          m_histManager->Fill("hP_Mass2", pTrack.mass2);
-        }
+      if (!IsProton(pTrack)) continue;
+      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+      Bool_t passCharge = kTRUE;
+      if (femtoCfg.protonChargeMode == "positive") {
+        passCharge = (pTrack.charge > 0);
+      } else if (femtoCfg.protonChargeMode == "negative") {
+        passCharge = (pTrack.charge < 0);
+      }
+      if (!passCharge) continue;
+      if (pTrack.pT < femtoCfg.protonMinPtPre) continue;
+      FillProtonPreFemtoQa(pTrack);
+      if (PassFemtoProtonCuts(pTrack) && (Int_t)protons.size() < kMaxTracks) {
+        FillProtonFemtoQa(pTrack);
         protons.push_back(pTrack);
       }
     }
@@ -324,7 +338,11 @@ Int_t StFemtoMaker::Make() {
     if (sp.builderType == "track") {
       BuildTrackPidCandidates(sp.key, sp.particleKey, protons, mEventCounter);
     } else if (sp.builderType == "resonance") {
-      BuildResonanceCandidates(sp.key, sp.particleKey, kaonsPlus, kaonsMinus, mEventCounter);
+      if (sp.particleKey == femtoCfg.rotationParticleKey) {
+        BuildRotatedPhiCandidates(sp.key, kaonsPlus, kaonsMinus, mEventCounter);
+      } else {
+        BuildResonanceCandidates(sp.key, sp.particleKey, kaonsPlus, kaonsMinus, mEventCounter);
+      }
     }
   }
 
@@ -362,7 +380,6 @@ Int_t StFemtoMaker::Make() {
 }
 
 Int_t StFemtoMaker::Finish() {
-  FinalizeCorrelationFunctions();
   if (mOutName != "") {
     TFile* fout = new TFile(mOutName.Data(), "RECREATE");
     fout->cd();
@@ -500,6 +517,62 @@ Bool_t StFemtoMaker::PassTofProtonPid(const TrackState& trk) const {
 Bool_t StFemtoMaker::IsKaon(const TrackState& trk) { return PassTofKaonPid(trk); }
 
 Bool_t StFemtoMaker::IsProton(const TrackState& trk) { return PassTofProtonPid(trk); }
+
+Double_t StFemtoMaker::ProtonRapidityCm(const TrackState& trk) const {
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector lv(p.X(), p.Y(), p.Z(), TMath::Sqrt(kProtonMass * kProtonMass + p.Mag2()));
+  Double_t yLab = lv.Rapidity();
+  return ApplyRapidityFrame(yLab);
+}
+
+void StFemtoMaker::FillProtonPreFemtoQa(const TrackState& trk) {
+  if (!m_histManager) return;
+  Double_t yCm = ProtonRapidityCm(trk);
+  m_histManager->Fill("hP_Y_PreFemtoCut", yCm);
+  m_histManager->Fill("hP_PtVsY_PreFemtoCut", yCm, trk.pT);
+}
+
+void StFemtoMaker::FillProtonFemtoQa(const TrackState& trk) {
+  if (!m_histManager) return;
+  Double_t yCm = ProtonRapidityCm(trk);
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  m_histManager->Fill("hP_Y_FemtoCut", yCm);
+  m_histManager->Fill("hP_PtVsY_FemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hP_Mass2VsP", pmom, trk.mass2);
+  m_histManager->Fill("hP_TofMatchVsP", pmom, trk.tofMatch ? 1.0 : 0.0);
+  m_histManager->Fill("hP_NHitsFit_FemtoCut", trk.nHitsFit);
+  if (trk.nHitsMax > 0) {
+    m_histManager->Fill("hP_NHitsRatio_FemtoCut", (Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax);
+  }
+  if (trk.tofMatch) m_histManager->Fill("hP_Mass2", trk.mass2);
+}
+
+Bool_t StFemtoMaker::PassFemtoProtonCuts(const TrackState& trk) const {
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  if (fc.protonChargeMode == "positive" && trk.charge <= 0) return kFALSE;
+  if (fc.protonChargeMode == "negative" && trk.charge >= 0) return kFALSE;
+  if (trk.DCA >= fc.protonMaxDca) return kFALSE;
+  if (trk.pT < fc.protonMinPtPre) return kFALSE;
+  if (TMath::Abs(trk.eta) >= fc.protonMaxAbsEta) return kFALSE;
+  if (TMath::Abs(trk.nSigmaProton) >= fc.protonMaxAbsNSigma) return kFALSE;
+  if (trk.nHitsFit < fc.protonMinNHitsFit) return kFALSE;
+  if (trk.nHitsMax <= 0) return kFALSE;
+  if ((Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax < fc.protonMinNHitsRatio) return kFALSE;
+
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  const Bool_t passTofRule =
+      (pmom < fc.protonTofMomentumThreshold) ||
+      (pmom > fc.protonTofMomentumThreshold && trk.tofMatch && trk.mass2 >= fc.protonMinMass2 &&
+       trk.mass2 <= fc.protonMaxMass2);
+  if (!passTofRule) return kFALSE;
+
+  if (trk.pT < fc.protonMinPtPair || trk.pT > fc.protonMaxPtPair) return kFALSE;
+  Double_t yCm = ProtonRapidityCm(trk);
+  if (yCm < fc.protonMinRapidityCm || yCm > fc.protonMaxRapidityCm) return kFALSE;
+  return kTRUE;
+}
 
 TVector3 StFemtoMaker::TrackMomentum(const TrackState& trk) const {
   return StPhiKKReconstruction::TrackMomentum(ToPhiKkTrack(trk));
@@ -656,6 +729,78 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
   }
 }
 
+void StFemtoMaker::BuildRotatedPhiCandidates(const std::string& speciesKey, const std::vector<TrackState>& kaonsPlus,
+                                             const std::vector<TrackState>& kaonsMinus, Int_t eventIndex) {
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  if (!fc.rotationEnabled) return;
+
+  PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
+  TrackCutConfig& trkCfg = ConfigManager::GetInstance().GetTrackCuts();
+  std::vector<FemtoCandidate>& out = m_eventCandidates[speciesKey];
+  const Double_t mK = StPhiKKReconstruction::KaonMass();
+  Int_t nRotCand = 0;
+
+  for (size_t iPlus = 0; iPlus < kaonsPlus.size(); iPlus++) {
+    for (size_t iMinus = 0; iMinus < kaonsMinus.size(); iMinus++) {
+      TVector3 dcaPosPlus, dcaPosMinus;
+      Double_t invMass;
+      TVector3 phiMom;
+      if (!ReconstructPhi(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom, dcaPosPlus, dcaPosMinus)) continue;
+
+      Double_t openingAngle = CalculateOpeningAngle(kaonsPlus[iPlus], kaonsMinus[iMinus]);
+      Double_t yLab = CalculatePairRapidity(invMass, phiMom);
+      Double_t pairRapidity = ApplyRapidityFrame(yLab);
+      Double_t dcaKK = CalculateDCA(kaonsPlus[iPlus], kaonsMinus[iMinus], dcaPosPlus, dcaPosMinus);
+
+      const Bool_t passStage =
+          (TMath::Abs(kaonsPlus[iPlus].DCA) <= phiCfg.maxDCAKaon) &&
+          (TMath::Abs(kaonsMinus[iMinus].DCA) <= phiCfg.maxDCAKaon) &&
+          (kaonsPlus[iPlus].pT >= trkCfg.minPt && kaonsPlus[iPlus].pT <= trkCfg.maxPt) &&
+          (kaonsMinus[iMinus].pT >= trkCfg.minPt && kaonsMinus[iMinus].pT <= trkCfg.maxPt) &&
+          (kaonsPlus[iPlus].eta >= trkCfg.minEta && kaonsPlus[iPlus].eta <= trkCfg.maxEta) &&
+          (kaonsMinus[iMinus].eta >= trkCfg.minEta && kaonsMinus[iMinus].eta <= trkCfg.maxEta) &&
+          (TMath::Abs(kaonsPlus[iPlus].nSigmaKaon) <= phiCfg.nSigmaKaon) &&
+          (TMath::Abs(kaonsMinus[iMinus].nSigmaKaon) <= phiCfg.nSigmaKaon) &&
+          (openingAngle >= phiCfg.minOpeningAngle && openingAngle <= phiCfg.maxOpeningAngle) &&
+          (pairRapidity >= phiCfg.minPairRapidity && pairRapidity <= phiCfg.maxPairRapidity);
+      if (!passStage) continue;
+      if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
+
+      TVector3 pMinus = TrackMomentum(kaonsMinus[iMinus]);
+      Double_t eMinus = TMath::Sqrt(mK * mK + pMinus.Mag2());
+
+      for (Int_t ir = 0; ir < fc.rotationN; ++ir) {
+        Double_t deltaPhi = gRandom->Uniform(fc.rotationMinAngle, fc.rotationMaxAngle);
+        if (m_histManager) m_histManager->Fill("hPhiRot_DeltaPhiApplied", deltaPhi);
+
+        Float_t phiRot = kaonsPlus[iPlus].phi + (Float_t)deltaPhi;
+        while (phiRot > TMath::Pi()) phiRot -= (Float_t)(2.0 * TMath::Pi());
+        while (phiRot < -TMath::Pi()) phiRot += (Float_t)(2.0 * TMath::Pi());
+
+        TVector3 pPlusRot;
+        pPlusRot.SetPtEtaPhi(kaonsPlus[iPlus].pT, kaonsPlus[iPlus].eta, phiRot);
+        Double_t ePlus = TMath::Sqrt(mK * mK + pPlusRot.Mag2());
+        TVector3 phiMomRot = pPlusRot + pMinus;
+        Double_t invMassRot =
+            TMath::Sqrt(TMath::Max(0.0, (ePlus + eMinus) * (ePlus + eMinus) - phiMomRot.Mag2()));
+        Double_t yLabRot = CalculatePairRapidity(invMassRot, phiMomRot);
+        Double_t pairRapidityRot = ApplyRapidityFrame(yLabRot);
+
+        if (m_histManager) {
+          m_histManager->Fill("hPhiRot_MKK", invMassRot);
+          m_histManager->Fill("hPhiRot_Pt", phiMomRot.Pt());
+          m_histManager->Fill("hPhiRot_Rapidity", pairRapidityRot);
+        }
+
+        out.push_back(MakePhiCandidate(kaonsPlus[iPlus], kaonsMinus[iMinus], invMassRot, phiMomRot, openingAngle,
+                                       pairRapidityRot, dcaKK, eventIndex, speciesKey));
+        nRotCand++;
+      }
+    }
+  }
+  if (m_histManager) m_histManager->Fill("hPhiRot_NCand", (Double_t)nRotCand);
+}
+
 void StFemtoMaker::FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t refMultCorr, Int_t nTracks,
                                          Int_t nBTOFMatch, Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiCandidates,
                                          Int_t nProtons) {
@@ -714,6 +859,8 @@ void StFemtoMaker::FillSameEventPairs(const FemtoConfig::ChannelDef& ch) {
   if (candsA.empty() || candsB.empty()) return;
 
   std::string hName = HistName("hKstarSE", ch.name);
+  std::string h2dName = HistName("hKstarSEVsCent", ch.name);
+  const Double_t centX = (m_cent9 >= 0) ? (Double_t)m_cent9 : -0.5;
   for (size_t i = 0; i < candsA.size(); i++) {
     const FemtoCandidate& a = candsA[i];
     if (a.source == kFemtoCandResonance) {
@@ -723,7 +870,12 @@ void StFemtoMaker::FillSameEventPairs(const FemtoConfig::ChannelDef& ch) {
       const FemtoCandidate& b = candsB[j];
       if (TracksOverlap(a, b)) continue;
       Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
-      if (m_histManager) m_histManager->Fill(hName.c_str(), kstar);
+      if (m_histManager) {
+        m_histManager->Fill(hName.c_str(), kstar);
+        if (m_histManager->Get(h2dName.c_str())) {
+          m_histManager->Fill(h2dName.c_str(), kstar, centX);
+        }
+      }
     }
   }
 }
@@ -767,6 +919,8 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Float_
   if (poolIt == m_mixingPool.end() || poolIt->second.empty()) return;
 
   std::string hName = HistName("hKstarME", ch.name);
+  std::string h2dName = HistName("hKstarMEVsCent", ch.name);
+  const Double_t centX = (m_cent9 >= 0) ? (Double_t)m_cent9 : -0.5;
   Int_t nPairs = (Int_t)candsA.size() * (Int_t)candsB.size();
   if (nPairs > 500) nPairs = 500;
   if (nPairs < 1) nPairs = 1;
@@ -782,7 +936,12 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Float_
     }
     const FemtoCandidate& b = mixB->second[(Int_t)gRandom->Uniform(0, mixB->second.size())];
     Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
-    if (m_histManager) m_histManager->Fill(hName.c_str(), kstar);
+    if (m_histManager) {
+      m_histManager->Fill(hName.c_str(), kstar);
+      if (m_histManager->Get(h2dName.c_str())) {
+        m_histManager->Fill(h2dName.c_str(), kstar, centX);
+      }
+    }
   }
 }
 
@@ -812,43 +971,42 @@ void StFemtoMaker::FillCandidateQA() {
     }
     m_histManager->Fill("hP_NCand", (Double_t)itP->second.size());
   }
-  FemtoCandidateStore::const_iterator itPhi = m_eventCandidates.find("phi");
-  if (itPhi != m_eventCandidates.end()) {
-    for (size_t i = 0; i < itPhi->second.size(); i++) {
-      const FemtoCandidate& c = itPhi->second[i];
-      m_histManager->Fill("hPhi_MKK", c.reso.invMass);
-      m_histManager->Fill("hPhi_Pt", c.pt);
-      m_histManager->Fill("hPhi_Rapidity", c.y);
+
+  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  auto fillPhiMassWindows = [&](const std::string& speciesKey, Bool_t isRot) {
+    FemtoCandidateStore::const_iterator it = m_eventCandidates.find(speciesKey);
+    if (it == m_eventCandidates.end()) return;
+    for (size_t i = 0; i < it->second.size(); i++) {
+      const FemtoCandidate& c = it->second[i];
+      const Double_t mass = c.reso.invMass;
+      if (!isRot) {
+        m_histManager->Fill("hPhi_MKK_allForFemto", mass);
+        m_histManager->Fill("hPhi_MKK", mass);
+        m_histManager->Fill("hPhi_Pt", c.pt);
+        m_histManager->Fill("hPhi_Rapidity", c.y);
+      }
+      for (size_t ic = 0; ic < femtoCfg.channels.size(); ic++) {
+        const FemtoConfig::ChannelDef& ch = femtoCfg.channels[ic];
+        if (!ch.enabled || ch.partA != speciesKey) continue;
+        if (mass >= ch.signalMin && mass <= ch.signalMax) {
+          if (ch.name == "phi_proton_signal") {
+            m_histManager->Fill("hPhi_MKK_signal", mass);
+            m_histManager->Fill("hPhi_PtVsY_signal", c.y, c.pt);
+          } else if (ch.name == "phi_proton_leftSB") {
+            m_histManager->Fill("hPhi_MKK_leftSB", mass);
+          } else if (ch.name == "phi_proton_rightSB") {
+            m_histManager->Fill("hPhi_MKK_rightSB", mass);
+          }
+        }
+      }
+      if (isRot) {
+        m_histManager->Fill("hPhi_MKK_rot", mass);
+        m_histManager->Fill("hPhi_PtVsY_rot", c.y, c.pt);
+      }
     }
-    m_histManager->Fill("hPhi_NCand", (Double_t)itPhi->second.size());
-  }
-}
+    if (!isRot) m_histManager->Fill("hPhi_NCand", (Double_t)it->second.size());
+  };
 
-void StFemtoMaker::FinalizeCorrelationFunctions() {
-  if (!m_histManager) return;
-  FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-  for (size_t ic = 0; ic < femtoCfg.channels.size(); ic++) {
-    const FemtoConfig::ChannelDef& ch = femtoCfg.channels[ic];
-    if (!ch.enabled) continue;
-    std::string seName = HistName("hKstarSE", ch.name);
-    std::string meName = HistName("hKstarME", ch.name);
-    std::string cfName = HistName("hCF", ch.name);
-    TH1* hSE = m_histManager->Get(seName.c_str());
-    TH1* hME = m_histManager->Get(meName.c_str());
-    TH1* hCF = m_histManager->Get(cfName.c_str());
-    if (!hSE || !hME || !hCF) continue;
-
-    Int_t binLo = hSE->FindBin(ch.normQMin + 1e-9);
-    Int_t binHi = hSE->FindBin(ch.normQMax - 1e-9);
-    Double_t seNorm = hSE->Integral(binLo, binHi);
-    Double_t meNorm = hME->Integral(binLo, binHi);
-    if (seNorm <= 0 || meNorm <= 0) continue;
-
-    hCF->Reset();
-    hCF->Add(hSE);
-    TH1* hMEScaled = (TH1*)hME->Clone("_me_scaled");
-    hMEScaled->Scale(seNorm / meNorm);
-    hCF->Divide(hMEScaled);
-    delete hMEScaled;
-  }
+  fillPhiMassWindows("phi", kFALSE);
+  fillPhiMassWindows(femtoCfg.rotationSpeciesKey, kTRUE);
 }

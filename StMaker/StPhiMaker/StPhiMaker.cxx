@@ -224,7 +224,7 @@ Int_t StPhiMaker::Make() {
       m_histManager->Fill("hRefMultVsNTOFMatchAfter", (Double_t)nBTOFMatch, (Double_t)rawMult);
     }
 
-    if (!m_centrality->AcceptCentBin(m_cent9, centReason)) {
+    if (!m_centrality->AcceptCentBin(m_cent9, m_refMultCorr, centReason)) {
       if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
         std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason)
                   << " cent9=" << m_cent9 << std::endl;

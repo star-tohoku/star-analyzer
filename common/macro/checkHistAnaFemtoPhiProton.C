@@ -10,6 +10,7 @@
 #include <TCanvas.h>
 #include <TH1.h>
 #include <TH2.h>
+#include <TGraphErrors.h>
 #include <TLine.h>
 #include <TMath.h>
 #include <TObject.h>
@@ -29,6 +30,8 @@
 #include "cuts/PhiCutConfig.h"
 #include "cuts/CentralityCutConfig.h"
 #include "cuts/PIDCutConfig.h"
+#include "cuts/FemtoConfig.h"
+#include <map>
 
 static Bool_t gConfigLoaded = kFALSE;
 
@@ -118,6 +121,280 @@ static Double_t getHistEntries(TFile* fin, const char* key) {
   TObject* obj = fin->Get(key);
   if (!obj || !obj->InheritsFrom("TH1")) return -1.0;
   return ((TH1*)obj)->GetEntries();
+}
+
+static std::string cfHistKey(const std::string& channel) {
+  return std::string("hCF_") + channel;
+}
+
+static std::string kstarSeHistKey(const std::string& channel) {
+  return std::string("hKstarSE_") + channel;
+}
+
+static std::string kstarMeHistKey(const std::string& channel) {
+  return std::string("hKstarME_") + channel;
+}
+
+static std::string kstarSeVsCentHistKey(const std::string& channel) {
+  return std::string("hKstarSEVsCent_") + channel;
+}
+
+static std::string kstarMeVsCentHistKey(const std::string& channel) {
+  return std::string("hKstarMEVsCent_") + channel;
+}
+
+static std::string cfCentCacheKey(const std::string& channel) {
+  return std::string("cent:") + channel;
+}
+
+static void getCfCent9Range(Int_t& cent9Min, Int_t& cent9Max) {
+  cent9Min = 2;
+  cent9Max = 8;
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    cent9Min = femtoCfg.cfCent9Min;
+    cent9Max = femtoCfg.cfCent9Max;
+  }
+}
+
+static TH1* projectKstarVsCent9(TH2* h2, Int_t cent9Min, Int_t cent9Max, const char* hname) {
+  if (!h2) return 0;
+  Int_t yLo = h2->GetYaxis()->FindBin((Double_t)cent9Min - 0.01);
+  Int_t yHi = h2->GetYaxis()->FindBin((Double_t)cent9Max + 0.01);
+  TH1* h1 = h2->ProjectionX(hname, yLo, yHi);
+  if (h1) {
+    h1->SetDirectory(0);
+    h1->SetTitle(Form("%s (cent9 %d-%d);k^{*} [GeV/c];Counts", h2->GetTitle(), cent9Min, cent9Max));
+  }
+  return h1;
+}
+
+static Int_t getCfRebinFactor() {
+  const Int_t kFallbackCfRebinFactor = 5;
+  if (!gConfigLoaded) return kFallbackCfRebinFactor;
+  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  return (femtoCfg.cfRebinFactor >= 1) ? femtoCfg.cfRebinFactor : 1;
+}
+
+static TH1* rebinHistCopy(TH1* h, Int_t factor, const char* cloneSuffix) {
+  if (!h || factor <= 1) return 0;
+  const Int_t nBins = h->GetNbinsX();
+  if (nBins % factor != 0) {
+    std::cout << "[checkHistAnaFemtoPhiProton] WARNING: cannot rebin " << h->GetName() << " with factor "
+              << factor << " (nbins=" << nBins << ")\n";
+    return 0;
+  }
+  TH1* hRb = (TH1*)h->Clone(cloneSuffix ? cloneSuffix : "_rebinned");
+  hRb->SetDirectory(0);
+  hRb->Rebin(factor);
+  return hRb;
+}
+
+static TGraphErrors* computeCfGraphFromSeMe(TH1* hSE, TH1* hME, Double_t normQMin, Double_t normQMax,
+                                            const char* graphTitle) {
+  if (!hSE || !hME) return 0;
+  Int_t binLo = hSE->FindBin(normQMin + 1e-9);
+  Int_t binHi = hSE->FindBin(normQMax - 1e-9);
+  Double_t seNorm = hSE->Integral(binLo, binHi);
+  Double_t meNorm = hME->Integral(binLo, binHi);
+  if (seNorm <= 0 || meNorm <= 0) return 0;
+
+  const Double_t scale = meNorm / seNorm;
+  std::vector<Double_t> x;
+  std::vector<Double_t> y;
+  std::vector<Double_t> ey;
+  x.reserve(hSE->GetNbinsX());
+  y.reserve(hSE->GetNbinsX());
+  ey.reserve(hSE->GetNbinsX());
+
+  for (Int_t ib = 1; ib <= hSE->GetNbinsX(); ++ib) {
+    Double_t se = hSE->GetBinContent(ib);
+    Double_t me = hME->GetBinContent(ib);
+    if (se <= 0 || me <= 0) continue;
+    Double_t cf = scale * se / me;
+    Double_t err = cf * TMath::Sqrt(1.0 / se + 1.0 / me);
+    x.push_back(hSE->GetBinCenter(ib));
+    y.push_back(cf);
+    ey.push_back(err);
+  }
+  if (x.empty()) return 0;
+
+  TGraphErrors* gCF = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, &ey[0]);
+  gCF->SetTitle(graphTitle ? graphTitle : "C(k^{*})");
+  gCF->SetMarkerStyle(20);
+  gCF->SetMarkerSize(0.8);
+  gCF->SetLineColor(kBlack);
+  gCF->SetMarkerColor(kBlack);
+  return gCF;
+}
+
+static TGraphErrors* computeCfAndCache(const std::string& channel, const std::string& cacheKey, TH1* hSE, TH1* hME,
+                                       Double_t normQMin, Double_t normQMax, std::map<std::string, TGraphErrors*>& cfCache,
+                                       const char* logTag) {
+  std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
+  if (cached != cfCache.end()) return cached->second;
+
+  if (!hSE || !hME) {
+    std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str();
+    if (logTag) std::cout << " (" << logTag << ")";
+    std::cout << ": missing SE/ME histograms\n";
+    cfCache[cacheKey] = 0;
+    return 0;
+  }
+
+  const Int_t cfRebinFactor = getCfRebinFactor();
+  TH1* hSEForCf = hSE;
+  TH1* hMEForCf = hME;
+  TH1* hSERebinned = rebinHistCopy(hSE, cfRebinFactor, "_se_rebin");
+  TH1* hMERebinned = rebinHistCopy(hME, cfRebinFactor, "_me_rebin");
+  if (hSERebinned) hSEForCf = hSERebinned;
+  if (hMERebinned) hMEForCf = hMERebinned;
+
+  Int_t binLo = hSEForCf->FindBin(normQMin + 1e-9);
+  Int_t binHi = hSEForCf->FindBin(normQMax - 1e-9);
+  Double_t seNorm = hSEForCf->Integral(binLo, binHi);
+  Double_t meNorm = hMEForCf->Integral(binLo, binHi);
+  Double_t aNorm = (seNorm > 0) ? meNorm / seNorm : 0.0;
+  std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str();
+  if (logTag) std::cout << " (" << logTag << ")";
+  std::cout << ": normQ=[" << normQMin << ", " << normQMax << "] GeV/c";
+  if (cfRebinFactor > 1 && hSERebinned && hMERebinned) {
+    std::cout << ", cfRebinFactor=" << cfRebinFactor << " (" << hSE->GetNbinsX() << " -> "
+              << hSEForCf->GetNbinsX() << " bins)";
+  }
+  std::cout << ", seNorm=" << seNorm << ", meNorm=" << meNorm << ", a=meNorm/seNorm=" << aNorm << std::endl;
+
+  TString cfTitle = Form("CF %s (checkHist);k^{*} [GeV/c];C(k^{*})", channel.c_str());
+  if (logTag) cfTitle = Form("CF %s %s;k^{*} [GeV/c];C(k^{*})", channel.c_str(), logTag);
+  TGraphErrors* gCF = computeCfGraphFromSeMe(hSEForCf, hMEForCf, normQMin, normQMax, cfTitle.Data());
+  delete hSERebinned;
+  delete hMERebinned;
+  if (!gCF) {
+    std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str() << ": failed (empty norm integrals)\n";
+  } else {
+    std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str() << ": " << gCF->GetN()
+              << " points with Poisson stat errors\n";
+  }
+  cfCache[cacheKey] = gCF;
+  return gCF;
+}
+
+static TGraphErrors* getOrComputeCf(TFile* fin, const std::string& channel, Double_t normQMin, Double_t normQMax,
+                                    std::map<std::string, TGraphErrors*>& cfCache) {
+  TH1* hSE = (TH1*)fin->Get(kstarSeHistKey(channel).c_str());
+  TH1* hME = (TH1*)fin->Get(kstarMeHistKey(channel).c_str());
+  return computeCfAndCache(channel, channel, hSE, hME, normQMin, normQMax, cfCache, 0);
+}
+
+static TH1* getProjectedSeMeFromCent(TFile* fin, const std::string& channel, Bool_t isSE, Int_t cent9Min,
+                                   Int_t cent9Max) {
+  const std::string key = isSE ? kstarSeVsCentHistKey(channel) : kstarMeVsCentHistKey(channel);
+  TH2* h2 = (TH2*)fin->Get(key.c_str());
+  if (!h2) return 0;
+  TString hname = Form("_proj_%s_%s_cent%d_%d", isSE ? "se" : "me", channel.c_str(), cent9Min, cent9Max);
+  return projectKstarVsCent9(h2, cent9Min, cent9Max, hname.Data());
+}
+
+static TGraphErrors* getOrComputeCfCentSlice(TFile* fin, const std::string& channel, Double_t normQMin,
+                                             Double_t normQMax, Int_t cent9Min, Int_t cent9Max,
+                                             std::map<std::string, TGraphErrors*>& cfCache) {
+  TH1* hSE = getProjectedSeMeFromCent(fin, channel, kTRUE, cent9Min, cent9Max);
+  TH1* hME = getProjectedSeMeFromCent(fin, channel, kFALSE, cent9Min, cent9Max);
+  TString logTag = Form("cent9 %d-%d from hKstar*VsCent", cent9Min, cent9Max);
+  TGraphErrors* gCF =
+      computeCfAndCache(channel, cfCentCacheKey(channel), hSE, hME, normQMin, normQMax, cfCache, logTag.Data());
+  delete hSE;
+  delete hME;
+  return gCF;
+}
+
+static Double_t channelNormQMin(const std::string& channel) {
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    const FemtoConfig::ChannelDef* ch = femtoCfg.FindChannel(channel);
+    if (ch) return ch->normQMin;
+  }
+  return 0.5;
+}
+
+static Double_t channelNormQMax(const std::string& channel) {
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    const FemtoConfig::ChannelDef* ch = femtoCfg.FindChannel(channel);
+    if (ch) return ch->normQMax;
+  }
+  return 1.0;
+}
+
+static void populateCfCache(TFile* fin, std::map<std::string, TGraphErrors*>& cfCache) {
+  const Double_t kFallbackNormQMin = 0.5;
+  const Double_t kFallbackNormQMax = 1.0;
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    for (size_t ic = 0; ic < femtoCfg.channels.size(); ic++) {
+      const FemtoConfig::ChannelDef& ch = femtoCfg.channels[ic];
+      if (!ch.enabled) continue;
+      getOrComputeCf(fin, ch.name, ch.normQMin, ch.normQMax, cfCache);
+    }
+    return;
+  }
+  const char* fallbackChannels[] = {"phi_proton",         "phi_proton_signal", "phi_proton_leftSB",
+                                    "phi_proton_rightSB", "phi_rot_proton",    0};
+  for (Int_t i = 0; fallbackChannels[i]; ++i) {
+    getOrComputeCf(fin, fallbackChannels[i], kFallbackNormQMin, kFallbackNormQMax, cfCache);
+  }
+}
+
+static void populateCfCentCache(TFile* fin, std::map<std::string, TGraphErrors*>& cfCache) {
+  Int_t cent9Min = 0;
+  Int_t cent9Max = 0;
+  getCfCent9Range(cent9Min, cent9Max);
+  const char* centChannels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "phi_rot_proton", 0};
+  for (Int_t i = 0; centChannels[i]; ++i) {
+    const std::string channel(centChannels[i]);
+    getOrComputeCfCentSlice(fin, channel, channelNormQMin(channel), channelNormQMax(channel), cent9Min, cent9Max,
+                            cfCache);
+  }
+}
+
+static void drawCentProjectedSeMe(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel, Bool_t isSE,
+                                  Int_t cent9Min, Int_t cent9Max) {
+  if (!canvas) return;
+  canvas->cd(pad);
+  TH1* h = getProjectedSeMeFromCent(fin, channel, isSE, cent9Min, cent9Max);
+  if (h) {
+    h->Draw();
+    delete h;
+  }
+}
+
+static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& channel,
+                            std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  canvas->cd(pad);
+  std::map<std::string, TGraphErrors*>::const_iterator it = cfCache.find(cfCentCacheKey(channel));
+  if (it != cfCache.end() && it->second) it->second->Draw("AP");
+}
+
+static void drawComputedCf(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel, Double_t normQMin,
+                           Double_t normQMax, std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  canvas->cd(pad);
+  TGraphErrors* gCF = getOrComputeCf(fin, channel, normQMin, normQMax, cfCache);
+  if (gCF) gCF->Draw("AP");
+}
+
+static Int_t getCachedCfPointCount(const std::map<std::string, TGraphErrors*>& cfCache, const char* channel) {
+  std::map<std::string, TGraphErrors*>::const_iterator it = cfCache.find(channel);
+  if (it == cfCache.end() || !it->second) return -1;
+  return it->second->GetN();
+}
+
+static void freeCfCache(std::map<std::string, TGraphErrors*>& cfCache) {
+  for (std::map<std::string, TGraphErrors*>::iterator it = cfCache.begin(); it != cfCache.end(); ++it) {
+    if (it->second) delete it->second;
+  }
+  cfCache.clear();
 }
 
 void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
@@ -238,7 +515,26 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
     note += "\n";
   }
   note += "QA: Event/centrality/track/PID pages follow anaPhi layout; femto pages at end (proton, phi cand, k*).\n";
+  note += Form("CF computed in checkHist from merged SE/ME (TGraphErrors, Poisson stat errors); cfRebinFactor=%d; norm region from maker YAML.\n",
+               getCfRebinFactor());
+  Int_t cfCent9MinNote = 2;
+  Int_t cfCent9MaxNote = 8;
+  getCfCent9Range(cfCent9MinNote, cfCent9MaxNote);
+  note += Form("CF cent slice: cent9 [%d, %d] projected from hKstarSEVsCent/hKstarMEVsCent (0-60%% for default 2-8).\n",
+               cfCent9MinNote, cfCent9MaxNote);
+  if (gConfigLoaded) {
+    const CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
+    if (centCfg.cent9MaxRefMultCorrBin >= 0 && centCfg.cent9MaxRefMultCorr > 0.0) {
+      note += Form("Centrality cut (YAML): cent9=%d requires refMult_corr <= %.1f (Maker; re-run needed in ROOT).\n",
+                   centCfg.cent9MaxRefMultCorrBin, centCfg.cent9MaxRefMultCorr);
+    }
+  }
+  note += "phi_proton legacy channel has no hKstar*VsCent 2D; cent-slice CF pages skip it.\n";
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
+
+  std::map<std::string, TGraphErrors*> cfCache;
+  populateCfCache(fin, cfCache);
+  populateCfCentCache(fin, cfCache);
 
   PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoPhiProton.C", inputs, note.Data(), true, anaName);
 
@@ -284,7 +580,15 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->Clear();
   c1->Divide(3, 3);
   c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRawMult_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultCorr_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRefMultCorr_vs_Cent9"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      const CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
+      if (centCfg.cent9MaxRefMultCorrBin >= 0 && centCfg.cent9MaxRefMultCorr > 0.0) {
+        drawCutLine2DH(h2, centCfg.cent9MaxRefMultCorr);
+      }
+    }
+  }
   c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNTracks_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hTofMatchMult_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlus_vs_Cent9"); if (h2) h2->Draw("colz");
@@ -664,13 +968,97 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); h1 = (TH1*)fin->Get("hPhi_NCand"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 13: Femto k* (phi-proton)
+  // Page 13: Femto k* (legacy phi-proton channel)
   c1->Clear();
   c1->Divide(2, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton"); if (h1) h1->Draw();
   c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton"); if (h1) h1->Draw();
-  c1->cd(3); h1 = (TH1*)fin->Get("hCF_phi_proton"); if (h1) h1->Draw();
+  c1->cd(3);
+  drawComputedCf(c1, 3, fin, "phi_proton", channelNormQMin("phi_proton"), channelNormQMax("phi_proton"), cfCache);
   c1->cd(4); h1 = (TH1*)fin->Get("hP_NCand"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 14: Proton femto PID (Zhangwei-like bachelor cuts)
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_PreFemtoCut"); if (h1) h1->Draw();
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_PreFemtoCut"); if (h2) h2->Draw("colz");
+  c1->cd(3); h1 = (TH1*)fin->Get("hP_Y_FemtoCut"); if (h1) h1->Draw();
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_FemtoCut"); if (h2) h2->Draw("colz");
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_Mass2VsP"); if (h2) h2->Draw("colz");
+  c1->cd(6); h1 = (TH1*)fin->Get("hP_NHitsRatio_FemtoCut"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 15: Phi mass windows / sidebands / rotation
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hPhi_MKK_signal"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hPhi_MKK_leftSB"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hPhi_MKK_rightSB"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hPhi_MKK_rot"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hPhiRot_MKK"); if (h1) h1->Draw();
+  c1->cd(6); h1 = (TH1*)fin->Get("hPhiRot_NCand"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 16: k* SE/ME/CF — signal channel
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_signal"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_signal"); if (h1) h1->Draw();
+  c1->cd(3);
+  drawComputedCf(c1, 3, fin, "phi_proton_signal", channelNormQMin("phi_proton_signal"),
+                 channelNormQMax("phi_proton_signal"), cfCache);
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_proton_signal"); if (h2) h2->Draw("colz");
+  c1->Print(pdfName);
+
+  // Page 17: k* SE/ME/CF — sideband channels
+  c1->Clear();
+  c1->Divide(2, 3);
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_leftSB"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_leftSB"); if (h1) h1->Draw();
+  c1->cd(3);
+  drawComputedCf(c1, 3, fin, "phi_proton_leftSB", channelNormQMin("phi_proton_leftSB"),
+                 channelNormQMax("phi_proton_leftSB"), cfCache);
+  c1->cd(4); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_rightSB"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hKstarME_phi_proton_rightSB"); if (h1) h1->Draw();
+  c1->cd(6);
+  drawComputedCf(c1, 6, fin, "phi_proton_rightSB", channelNormQMin("phi_proton_rightSB"),
+                 channelNormQMax("phi_proton_rightSB"), cfCache);
+  c1->Print(pdfName);
+
+  // Page 18: k* SE/ME/CF — rotation background channel
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_proton"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_rot_proton"); if (h1) h1->Draw();
+  c1->cd(3);
+  drawComputedCf(c1, 3, fin, "phi_rot_proton", channelNormQMin("phi_rot_proton"),
+                 channelNormQMax("phi_rot_proton"), cfCache);
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_rot_proton"); if (h2) h2->Draw("colz");
+  c1->Print(pdfName);
+
+  // Page 19-20: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), projected from hKstar*VsCent
+  Int_t cfCent9Min = 0;
+  Int_t cfCent9Max = 0;
+  getCfCent9Range(cfCent9Min, cfCent9Max);
+  c1->Clear();
+  c1->Divide(2, 3);
+  drawCentProjectedSeMe(c1, 1, fin, "phi_proton_signal", kTRUE, cfCent9Min, cfCent9Max);
+  drawCentProjectedSeMe(c1, 2, fin, "phi_proton_signal", kFALSE, cfCent9Min, cfCent9Max);
+  drawCentSliceCf(c1, 3, "phi_proton_signal", cfCache);
+  drawCentProjectedSeMe(c1, 4, fin, "phi_proton_leftSB", kTRUE, cfCent9Min, cfCent9Max);
+  drawCentProjectedSeMe(c1, 5, fin, "phi_proton_leftSB", kFALSE, cfCent9Min, cfCent9Max);
+  drawCentSliceCf(c1, 6, "phi_proton_leftSB", cfCache);
+  c1->Print(pdfName);
+
+  c1->Clear();
+  c1->Divide(2, 3);
+  drawCentProjectedSeMe(c1, 1, fin, "phi_proton_rightSB", kTRUE, cfCent9Min, cfCent9Max);
+  drawCentProjectedSeMe(c1, 2, fin, "phi_proton_rightSB", kFALSE, cfCent9Min, cfCent9Max);
+  drawCentSliceCf(c1, 3, "phi_proton_rightSB", cfCache);
+  drawCentProjectedSeMe(c1, 4, fin, "phi_rot_proton", kTRUE, cfCent9Min, cfCent9Max);
+  drawCentProjectedSeMe(c1, 5, fin, "phi_rot_proton", kFALSE, cfCent9Min, cfCent9Max);
+  drawCentSliceCf(c1, 6, "phi_rot_proton", cfCache);
   c1->Print(pdfName);
 
   // Console: verify key histograms exist and have entries
@@ -684,12 +1072,25 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
                            "hPhiPair_Mass_stage0",
                            "hPhiPair_Mass_tofStrict",
                            "hPhi_MKK",
+                           "hPhi_MKK_signal",
+                           "hPhi_MKK_leftSB",
+                           "hPhi_MKK_rightSB",
+                           "hPhi_MKK_rot",
+                           "hPhiRot_MKK",
                            "hPhi_NCand",
                            "hP_Pt",
+                           "hP_Y_FemtoCut",
                            "hP_NCand",
                            "hKstarSE_phi_proton",
                            "hKstarME_phi_proton",
-                           "hCF_phi_proton",
+                           "hKstarSE_phi_proton_signal",
+                           "hKstarME_phi_proton_signal",
+                           "hKstarSE_phi_proton_leftSB",
+                           "hKstarME_phi_proton_leftSB",
+                           "hKstarSE_phi_proton_rightSB",
+                           "hKstarME_phi_proton_rightSB",
+                           "hKstarSE_phi_rot_proton",
+                           "hKstarME_phi_rot_proton",
                            "hNProton_vs_Cent9",
                            0};
     for (Int_t i = 0; keys[i]; ++i) {
@@ -709,11 +1110,31 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
         std::cout << "  " << keys[i] << ": unexpected class " << o->ClassName() << "\n";
       }
     }
+    const char* cfKeys[] = {"hCF_phi_proton",         "hCF_phi_proton_signal", "hCF_phi_proton_leftSB",
+                            "hCF_phi_proton_rightSB", "hCF_phi_rot_proton",    0};
+    const char* cfChannels[] = {"phi_proton", "phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB",
+                                "phi_rot_proton", 0};
+    for (Int_t i = 0; cfKeys[i]; ++i) {
+      Int_t nPts = getCachedCfPointCount(cfCache, cfChannels[i]);
+      std::cout << "  " << cfKeys[i] << " (computed): nPoints=" << nPts;
+      if (nPts < 1) std::cout << "  [empty — check SE/ME or norm region]";
+      std::cout << "\n";
+    }
+    const char* cfCentChannels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "phi_rot_proton",
+                                     0};
+    std::cout << Form("  CF cent slice (cent9 %d-%d, projected):\n", cfCent9Min, cfCent9Max);
+    for (Int_t i = 0; cfCentChannels[i]; ++i) {
+      Int_t nPts = getCachedCfPointCount(cfCache, cfCentCacheKey(cfCentChannels[i]).c_str());
+      std::cout << "    " << cfCentChannels[i] << ": nPoints=" << nPts;
+      if (nPts < 1) std::cout << "  [empty — check hKstar*VsCent in ROOT]";
+      std::cout << "\n";
+    }
     std::cout << "=============================================================\n\n";
   }
 
   PdfHeader::ClosePdf(pdfName);
 
+  freeCfCache(cfCache);
   delete c1;
   fin->Close();
 

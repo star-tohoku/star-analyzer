@@ -21,6 +21,7 @@ CentralityHelper::CentralityHelper()
       m_nPileup(0),
       m_nInvalidCent(0),
       m_nBinRejected(0),
+      m_nRefMultRejected(0),
       m_nOk(0) {}
 
 CentralityHelper::~CentralityHelper() {
@@ -73,6 +74,7 @@ const char* CentralityHelper::RejectReasonString(CentralityRejectReason reason) 
     case kCentralityPileup: return "pileup";
     case kCentralityInvalidBin: return "invalidCent";
     case kCentralityBinRejected: return "centBinRejected";
+    case kCentralityRefMultRejected: return "refMultRejected";
     default: return "unknown";
   }
 }
@@ -127,7 +129,7 @@ Bool_t CentralityHelper::ComputeBins(StPicoEvent* event, Int_t rawMult, Double_t
   return kTRUE;
 }
 
-Bool_t CentralityHelper::AcceptCentBin(Int_t cent9, CentralityRejectReason& reason) {
+Bool_t CentralityHelper::AcceptCentBin(Int_t cent9, Double_t refMultCorr, CentralityRejectReason& reason) {
   reason = kCentralityOk;
   if (!m_enabled) return kTRUE;
 
@@ -135,6 +137,11 @@ Bool_t CentralityHelper::AcceptCentBin(Int_t cent9, CentralityRejectReason& reas
   if (!cfg.IsCentBinAccepted(cent9)) {
     reason = kCentralityBinRejected;
     m_nBinRejected++;
+    return kFALSE;
+  }
+  if (!cfg.IsRefMultCorrAccepted(cent9, refMultCorr)) {
+    reason = kCentralityRefMultRejected;
+    m_nRefMultRejected++;
     return kFALSE;
   }
   m_nOk++;

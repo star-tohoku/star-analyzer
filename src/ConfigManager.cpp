@@ -140,7 +140,7 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
     if (!LoadConfigFile(basePath.c_str(), values["phi"].c_str(), "phi")) {
       success = kFALSE;
     }
-  } else {
+  } else if (values.find("maker") == values.end()) {
     std::cerr << "WARNING: 'phi' key not found in main config" << std::endl;
   }
 
@@ -194,6 +194,12 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
 
   if (values.find("femto") != values.end()) {
     if (!LoadConfigFile(basePath.c_str(), values["femto"].c_str(), "femto")) {
+      success = kFALSE;
+    }
+  }
+
+  if (values.find("maker") != values.end()) {
+    if (!LoadConfigFile(basePath.c_str(), values["maker"].c_str(), "maker")) {
       success = kFALSE;
     }
   }
@@ -333,6 +339,10 @@ Bool_t ConfigManager::LoadConfigFile(const Char_t* basePath, const Char_t* relat
     return centralityCuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "femto") == 0) {
     return femtoConfig->LoadFromFile(fullPath.c_str());
+  } else if (strcmp(configType, "maker") == 0) {
+    Bool_t ok = phiCuts->LoadFromFile(fullPath.c_str());
+    ok = femtoConfig->LoadFromFile(fullPath.c_str()) && ok;
+    return ok;
   } else {
     std::cerr << "ERROR: Unknown config type: " << configType << std::endl;
     return kFALSE;

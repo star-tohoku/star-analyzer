@@ -22,7 +22,13 @@ public:
   Bool_t fillCentralityQA;
   std::vector<Int_t> acceptedCentBins;
 
+  // Optional: reject events in cent9MaxRefMultCorrBin when refMult_corr > cent9MaxRefMultCorr.
+  // Disabled when cent9MaxRefMultCorrBin < 0 or cent9MaxRefMultCorr <= 0.
+  Int_t cent9MaxRefMultCorrBin;
+  Double_t cent9MaxRefMultCorr;
+
   Bool_t IsCentBinAccepted(Int_t cent9) const;
+  Bool_t IsRefMultCorrAccepted(Int_t cent9, Double_t refMultCorr) const;
 
 private:
   CentralityCutConfig();

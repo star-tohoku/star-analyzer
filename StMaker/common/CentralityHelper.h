@@ -14,7 +14,8 @@ enum CentralityRejectReason {
   kCentralityBadRun,
   kCentralityPileup,
   kCentralityInvalidBin,
-  kCentralityBinRejected
+  kCentralityBinRejected,
+  kCentralityRefMultRejected
 };
 
 class CentralityHelper {
@@ -36,7 +37,7 @@ public:
                      Int_t& cent9, Int_t& cent16, Double_t& refMultCorr, Double_t& weight,
                      CentralityRejectReason& reason);
 
-  Bool_t AcceptCentBin(Int_t cent9, CentralityRejectReason& reason);
+  Bool_t AcceptCentBin(Int_t cent9, Double_t refMultCorr, CentralityRejectReason& reason);
 
   static Double_t Cent9ToPercentile(Int_t cent9);
   static const char* RejectReasonString(CentralityRejectReason reason);
@@ -45,6 +46,7 @@ public:
   Long_t CountPileup() const { return m_nPileup; }
   Long_t CountInvalidCent() const { return m_nInvalidCent; }
   Long_t CountBinRejected() const { return m_nBinRejected; }
+  Long_t CountRefMultRejected() const { return m_nRefMultRejected; }
   Long_t CountOk() const { return m_nOk; }
 
 private:
@@ -62,6 +64,7 @@ private:
   Long_t m_nPileup;
   Long_t m_nInvalidCent;
   Long_t m_nBinRejected;
+  Long_t m_nRefMultRejected;
   Long_t m_nOk;
 };
 

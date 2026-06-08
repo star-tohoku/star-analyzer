@@ -16,11 +16,12 @@ Headers `include/FemtoCandidate.h` and `include/cuts/FemtoConfig.h` point to thi
 ## Required steps when extending femto
 
 1. Read `StMaker/StFemtoMaker/README.md` and follow naming exactly.
-2. Update `config/cuts/femto/femto_<anaName>.yaml` with new species/channel keys.
+2. Update `config/maker/maker_<anaName>.yaml` (femto section) with new species/channel keys.
 3. Extend builder dispatch in `StFemtoMaker` for new `particleKey` values (generic builders, not analysis-specific classes).
-4. Add histogram names using channel suffix: `hKstarSE_<channel>`, `hKstarME_<channel>`, `hCF_<channel>`.
-5. Update `config/hist/hist_anaFemto*.yaml` and checkHist macro pages if QA changes.
-6. Document new keys in `StMaker/StFemtoMaker/README.md`.
+4. Add histogram names using channel suffix: `hKstarSE_<channel>`, `hKstarME_<channel>`, optional empty `hCF_<channel>` shell in hist YAML.
+5. CF for QA: computed in `checkHistAnaFemtoPhiProton.C` from merged SE/ME (not in Maker output); optional `cfRebinFactor`, `cfCent9Min`/`cfCent9Max` for cent-slice CF from `hKstar*VsCent`.
+6. Update `config/hist/hist_anaFemto*.yaml` and checkHist macro pages if QA changes.
+7. Document new keys in `StMaker/StFemtoMaker/README.md`.
 
 ## Guardrails
 
