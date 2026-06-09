@@ -1,4 +1,4 @@
-void draw_p_pt() {
+void draw_p_y() {
     // 開く対象のROOTファイル
     TString fileName = "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer/rootfile/auau13p5_anaNuclearId/auau13p5_anaNuclearId_all.root";
     TFile *file = TFile::Open(fileName);
@@ -9,10 +9,10 @@ void draw_p_pt() {
     }
 
     // キャンバスを作成
-    TCanvas *c1 = new TCanvas("c1", "p vs pT", 1200, 1200);
+    TCanvas *c1 = new TCanvas("c1", "p vs y", 1200, 1200);
     
     // PDFを開く（複数ページの保存を開始）
-    c1->Print("draw_p_pt.pdf[");
+    c1->Print("tools/pdffiles/draw_p_y.pdf[");
 
     // 描画する対象のリスト (各粒子のみ)
     const char* speciesList[] = {"d", "t", "3He", "4He"};
@@ -29,7 +29,7 @@ void draw_p_pt() {
             gPad->SetLogz(1); // z軸をログスケールにする
             
             // ヒストグラム名を作成
-            TString histName = TString::Format("hPvsPt_%s_CentBin%d", sp.Data(), i);
+            TString histName = TString::Format("hPvsY_%s_CentBin%d", sp.Data(), i);
             
             // ヒストグラムを取得して描画 (2次元ヒストグラムを想定し COLZ オプションを使用)
             TH2 *h = (TH2*)file->Get(histName);
@@ -44,9 +44,9 @@ void draw_p_pt() {
         }
         
         // 1ページ分としてPDFに保存
-        c1->Print("draw_p_pt.pdf");
+        c1->Print("tools/pdffiles/draw_p_y.pdf");
     }
 
     // PDFを閉じる
-    c1->Print("draw_p_pt.pdf]");
+    c1->Print("tools/pdffiles/draw_p_y.pdf]");
 }
