@@ -514,7 +514,8 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
     note += ConfigManager::GetInstance().GetPhiCuts().GetRapidityFrameSummary().c_str();
     note += "\n";
   }
-  note += "QA: Event/centrality/track/PID pages follow anaPhi layout; femto pages at end (proton, phi cand, k*).\n";
+  note += "QA layout: pre-cut page immediately followed by post-cut page (Event, Track, Proton, Phi).\n";
+  note += "Phi QA: (A) KK pair Raw/AfterCuts + y-pT; (B) femto candidate pre/post. Kaon PID: before/after on Page 9.\n";
   note += Form("CF computed in checkHist from merged SE/ME (TGraphErrors, Poisson stat errors); cfRebinFactor=%d; norm region from maker YAML.\n",
                getCfRebinFactor());
   Int_t cfCent9MinNote = 2;
@@ -562,6 +563,26 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(9); /* spare */;
   c1->Print(pdfName);
 
+  // Page 1e: Event Level (Post-Cut)
+  c1->Clear();
+  c1->Divide(3, 3);
+  c1->cd(1); h1 = (TH1*)fin->Get("hVz_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minVz, ev.maxVz); } }
+  c1->cd(2); h1 = (TH1*)fin->Get("hVzDiff_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, -ev.maxVzDiff, ev.maxVzDiff); } }
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy_After"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
+      drawVtxCutCircle(ev.vtxCenterX, ev.vtxCenterY, ev.maxVr);
+    }
+  }
+  c1->cd(4); h1 = (TH1*)fin->Get("hRefMult_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minRefMult, ev.maxRefMult); } }
+  c1->cd(5); /* spare */;
+  c1->cd(6); /* spare */;
+  c1->cd(7); /* spare */;
+  c1->cd(8); h1 = (TH1*)fin->Get("hVr_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLine1D(h1, ev.maxVr); } }
+  c1->cd(9); /* spare */;
+  c1->Print(pdfName);
+
   // Page 1b: Centrality QA (event-level)
   c1->Clear();
   c1->Divide(3, 3);
@@ -599,40 +620,6 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   drawCent9ConventionNote();
   c1->Print(pdfName);
 
-  // Page 1e: Event Level (Post-Cut)
-  c1->Clear();
-  c1->Divide(3, 3);
-  c1->cd(1); h1 = (TH1*)fin->Get("hVz_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minVz, ev.maxVz); } }
-  c1->cd(2); h1 = (TH1*)fin->Get("hVzDiff_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, -ev.maxVzDiff, ev.maxVzDiff); } }
-  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hVxVy_After"); if (h2) {
-    h2->Draw("colz");
-    if (gConfigLoaded) {
-      EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts();
-      drawVtxCutCircle(ev.vtxCenterX, ev.vtxCenterY, ev.maxVr);
-    }
-  }
-  c1->cd(4); h1 = (TH1*)fin->Get("hRefMult_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLines1D(h1, ev.minRefMult, ev.maxRefMult); } }
-  c1->cd(5); /* spare */;
-  c1->cd(6); /* spare */;
-  c1->cd(7); /* spare */;
-  c1->cd(8); h1 = (TH1*)fin->Get("hVr_After"); if (h1) { h1->Draw(); if (gConfigLoaded) { EventCutConfig& ev = ConfigManager::GetInstance().GetEventCuts(); drawCutLine1D(h1, ev.maxVr); } }
-  c1->cd(9); /* spare */;
-  c1->Print(pdfName);
-
-  // Page 2: Track Kinematics & Quality (Post-Cut)
-  c1->Clear();
-  c1->Divide(3, 3);
-  c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hPt"); if (h1) h1->Draw();
-  c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta"); if (h1) h1->Draw();
-  c1->cd(3); h1 = (TH1*)fin->Get("hPhi"); if (h1) h1->Draw();
-  c1->cd(4); h1 = (TH1*)fin->Get("hCharge"); if (h1) h1->Draw("hist");
-  c1->cd(5); h1 = (TH1*)fin->Get("hNHitsFit"); if (h1) h1->Draw();
-  c1->cd(6); h1 = (TH1*)fin->Get("hNHitsRatio"); if (h1) h1->Draw();
-  c1->cd(7); h1 = (TH1*)fin->Get("hNHitsDedx"); if (h1) h1->Draw();
-  c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA"); if (h1) h1->Draw();
-  c1->cd(9); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2"); if (h1) h1->Draw();
-  c1->Print(pdfName);
-
   // Page 2b: Track Kinematics & Quality (Pre-Cut)
   c1->Clear();
   c1->Divide(3, 3);
@@ -658,6 +645,20 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
     c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA_Raw"); if (h1) h1->Draw();
     c1->cd(9); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2_Raw"); if (h1) h1->Draw();
   }
+  c1->Print(pdfName);
+
+  // Page 2: Track Kinematics & Quality (Post-Cut)
+  c1->Clear();
+  c1->Divide(3, 3);
+  c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hPt"); if (h1) h1->Draw();
+  c1->cd(2); gPad->SetLogy(0); h1 = (TH1*)fin->Get("hEta"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hPhi"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hCharge"); if (h1) h1->Draw("hist");
+  c1->cd(5); h1 = (TH1*)fin->Get("hNHitsFit"); if (h1) h1->Draw();
+  c1->cd(6); h1 = (TH1*)fin->Get("hNHitsRatio"); if (h1) h1->Draw();
+  c1->cd(7); h1 = (TH1*)fin->Get("hNHitsDedx"); if (h1) h1->Draw();
+  c1->cd(8); gPad->SetLogy(); h1 = (TH1*)fin->Get("hDCA"); if (h1) h1->Draw();
+  c1->cd(9); gPad->SetLogy(); h1 = (TH1*)fin->Get("hChi2"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
   // Page 3: PID (TPC & TOF)
@@ -796,6 +797,47 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); h1 = (TH1*)fin->Get("hPsi2"); if (h1) { h1->SetMinimum(0); h1->Draw(); }
   c1->Print(pdfName);
 
+  // Page 7a: KK pair kinematics (pre-cut: strict TOF, before opening/rapidity)
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hOpeningAngle_Raw"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLines1D(h1, phi.minOpeningAngle, phi.maxOpeningAngle);
+    }
+  }
+  c1->cd(2); h1 = (TH1*)fin->Get("hPairRapidity_Raw"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLines1D(h1, phi.minPairRapidity, phi.maxPairRapidity);
+    }
+  }
+  c1->cd(3); h1 = (TH1*)fin->Get("hPairPt_Raw"); if (h1) h1->Draw();
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPairRapidity_vs_Pt"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLine2DH(h2, phi.minPairRapidity);
+      drawCutLine2DH(h2, phi.maxPairRapidity);
+    }
+  }
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hOpeningAngle_vs_MKK"); if (h2) h2->Draw("colz");
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPairRapidity_vs_MKK"); if (h2) h2->Draw("colz");
+  c1->Print(pdfName);
+
+  // Page 7b: KK pair kinematics (post-cut: opening + rapidity passed)
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hOpeningAngle_AfterCuts"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hPairRapidity_AfterCuts"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hPairPt_AfterCuts"); if (h1) h1->Draw();
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hOpeningAngle_vs_Pt"); if (h2) h2->Draw("colz");
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hOpeningAngle_vs_Rapidity"); if (h2) h2->Draw("colz");
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hMKK_vs_Pt"); if (h2) h2->Draw("colz");
+  c1->Print(pdfName);
+
   // Page 8b: staged pair QA mass and overlay
   c1->Clear();
   c1->Divide(2, 2);
@@ -855,7 +897,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   }
   c1->Print(pdfName);
 
-  // Page 8d: phi pair kinematics (stage0 vs strict TOF)
+  // Page 8d: phi pair kinematics (stage0 vs strict TOF; stage0 is after opening+rapidity)
   c1->Clear();
   c1->Divide(3, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hPhiPair_Pt_stage0"); if (h1) h1->Draw();
@@ -887,6 +929,14 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
       PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
       drawCutLines1D(h1, phi.minOpeningAngle, phi.maxOpeningAngle);
     }
+  }
+  c1->cd(0);
+  {
+    TLatex* stageNote = new TLatex();
+    stageNote->SetNDC(kTRUE);
+    stageNote->SetTextSize(0.028);
+    stageNote->SetTextColor(kBlue + 1);
+    stageNote->DrawLatex(0.12, 0.98, "stage0/tofStrict: after opening+rapidity (see Page 7a/b for Raw/AfterCuts)");
   }
   c1->Print(pdfName);
 
@@ -948,7 +998,45 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsPt"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
-  // Page 11: Proton candidate QA
+  // Page 11a: Proton QA 1D (pre-femto cut)
+  c1->Clear();
+  c1->Divide(3, 2);
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Pt_PreFemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLine1D(h1, femtoCfg.protonMinPtPre);
+      drawCutLine1D(h1, femtoCfg.protonMinPtPair);
+      drawCutLine1D(h1, femtoCfg.protonMaxPtPair);
+    }
+    c1->cd(2); h1 = (TH1*)fin->Get("hP_Eta_PreFemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLines1D(h1, -femtoCfg.protonMaxAbsEta, femtoCfg.protonMaxAbsEta);
+    }
+    c1->cd(3); h1 = (TH1*)fin->Get("hP_NSigmaProton_PreFemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLines1D(h1, -femtoCfg.protonMaxAbsNSigma, femtoCfg.protonMaxAbsNSigma);
+    }
+    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Mass2_PreFemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLines1D(h1, femtoCfg.protonMinMass2, femtoCfg.protonMaxMass2);
+    }
+    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_DCA_PreFemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLine1D(h1, femtoCfg.protonMaxDca);
+    }
+    c1->cd(6); /* spare */;
+  } else {
+    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Pt_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(2); h1 = (TH1*)fin->Get("hP_Eta_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(3); h1 = (TH1*)fin->Get("hP_NSigmaProton_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Mass2_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_DCA_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(6); /* spare */;
+  }
+  c1->Print(pdfName);
+
+  // Page 11b: Proton QA 1D (post-femto cut)
   c1->Clear();
   c1->Divide(3, 2);
   c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Pt"); if (h1) h1->Draw();
@@ -959,16 +1047,107 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_DCA"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 12: Phi candidate QA (final femto resonance list)
+  // Page 12a: Proton y & y-pT (pre-femto cut)
+  c1->Clear();
+  c1->Divide(2, 1);
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_PreFemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLines1D(h1, femtoCfg.protonMinRapidityCm, femtoCfg.protonMaxRapidityCm);
+    }
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_PreFemtoCut"); if (h2) {
+      h2->Draw("colz");
+      drawCutLine2DH(h2, femtoCfg.protonMinRapidityCm);
+      drawCutLine2DH(h2, femtoCfg.protonMaxRapidityCm);
+    }
+  } else {
+    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_PreFemtoCut"); if (h2) h2->Draw("colz");
+  }
+  c1->Print(pdfName);
+
+  // Page 12b: Proton y & y-pT (post-femto cut)
+  c1->Clear();
+  c1->Divide(3, 2);
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_FemtoCut"); if (h1) {
+      h1->Draw();
+      drawCutLines1D(h1, femtoCfg.protonMinRapidityCm, femtoCfg.protonMaxRapidityCm);
+    }
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_FemtoCut"); if (h2) {
+      h2->Draw("colz");
+      drawCutLine2DH(h2, femtoCfg.protonMinRapidityCm);
+      drawCutLine2DH(h2, femtoCfg.protonMaxRapidityCm);
+    }
+  } else {
+    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_FemtoCut"); if (h1) h1->Draw();
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_FemtoCut"); if (h2) h2->Draw("colz");
+  }
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_Mass2VsP"); if (h2) h2->Draw("colz");
+  c1->cd(4); h1 = (TH1*)fin->Get("hP_NHitsRatio_FemtoCut"); if (h1) h1->Draw();
+  c1->cd(5); /* spare */;
+  c1->cd(6); /* spare */;
+  c1->Print(pdfName);
+
+  // Page 13a: Phi candidate QA (pre-cut)
+  c1->Clear();
+  c1->Divide(2, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hPhi_MKK_PreCut"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hPhi_Pt_PreCut"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hPhi_Rapidity_PreCut"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLines1D(h1, phi.minPairRapidity, phi.maxPairRapidity);
+    }
+  }
+  c1->cd(4); /* spare */;
+  c1->Print(pdfName);
+
+  // Page 13b: Phi candidate QA (post-cut, femto resonance list)
   c1->Clear();
   c1->Divide(2, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hPhi_MKK"); if (h1) h1->Draw();
   c1->cd(2); h1 = (TH1*)fin->Get("hPhi_Pt"); if (h1) h1->Draw();
-  c1->cd(3); h1 = (TH1*)fin->Get("hPhi_Rapidity"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hPhi_Rapidity"); if (h1) {
+    h1->Draw();
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLines1D(h1, phi.minPairRapidity, phi.maxPairRapidity);
+    }
+  }
   c1->cd(4); h1 = (TH1*)fin->Get("hPhi_NCand"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 13: Femto k* (legacy phi-proton channel)
+  // Page 14a: Phi y-pT (pre-cut)
+  c1->Clear();
+  c1->Divide(1, 1);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPhi_PtVsY_PreCut"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLine2DH(h2, phi.minPairRapidity);
+      drawCutLine2DH(h2, phi.maxPairRapidity);
+    }
+  }
+  c1->Print(pdfName);
+
+  // Page 14b: Phi y-pT (post-cut, all candidates)
+  c1->Clear();
+  c1->Divide(1, 1);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hPhi_PtVsY_PostCut"); if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+      drawCutLine2DH(h2, phi.minPairRapidity);
+      drawCutLine2DH(h2, phi.maxPairRapidity);
+    }
+  }
+  c1->Print(pdfName);
+
+  // Page 15: Femto k* (legacy phi-proton channel)
   c1->Clear();
   c1->Divide(2, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton"); if (h1) h1->Draw();
@@ -978,18 +1157,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); h1 = (TH1*)fin->Get("hP_NCand"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 14: Proton femto PID (Zhangwei-like bachelor cuts)
-  c1->Clear();
-  c1->Divide(3, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_PreFemtoCut"); if (h1) h1->Draw();
-  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_PreFemtoCut"); if (h2) h2->Draw("colz");
-  c1->cd(3); h1 = (TH1*)fin->Get("hP_Y_FemtoCut"); if (h1) h1->Draw();
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_FemtoCut"); if (h2) h2->Draw("colz");
-  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_Mass2VsP"); if (h2) h2->Draw("colz");
-  c1->cd(6); h1 = (TH1*)fin->Get("hP_NHitsRatio_FemtoCut"); if (h1) h1->Draw();
-  c1->Print(pdfName);
-
-  // Page 15: Phi mass windows / sidebands / rotation
+  // Page 16: Phi mass windows / sidebands / rotation
   c1->Clear();
   c1->Divide(3, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hPhi_MKK_signal"); if (h1) h1->Draw();
@@ -1000,7 +1168,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(6); h1 = (TH1*)fin->Get("hPhiRot_NCand"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 16: k* SE/ME/CF — signal channel
+  // Page 17: k* SE/ME/CF — signal channel
   c1->Clear();
   c1->Divide(2, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_signal"); if (h1) h1->Draw();
@@ -1011,7 +1179,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_proton_signal"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
-  // Page 17: k* SE/ME/CF — sideband channels
+  // Page 18: k* SE/ME/CF — sideband channels
   c1->Clear();
   c1->Divide(2, 3);
   c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_leftSB"); if (h1) h1->Draw();
@@ -1026,7 +1194,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
                  channelNormQMax("phi_proton_rightSB"), cfCache);
   c1->Print(pdfName);
 
-  // Page 18: k* SE/ME/CF — rotation background channel
+  // Page 19: k* SE/ME/CF — rotation background channel
   c1->Clear();
   c1->Divide(2, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_proton"); if (h1) h1->Draw();
@@ -1037,7 +1205,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_rot_proton"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
-  // Page 19-20: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), projected from hKstar*VsCent
+  // Page 20-21: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), projected from hKstar*VsCent
   Int_t cfCent9Min = 0;
   Int_t cfCent9Max = 0;
   getCfCent9Range(cfCent9Min, cfCent9Max);
@@ -1069,17 +1237,27 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
                            "hCentrality",
                            "hNSigmaKaon_Raw",
                            "hK_Pt",
+                           "hPairRapidity_vs_Pt",
+                           "hOpeningAngle_Raw",
+                           "hPairRapidity_AfterCuts",
                            "hPhiPair_Mass_stage0",
                            "hPhiPair_Mass_tofStrict",
+                           "hPhi_MKK_PreCut",
+                           "hPhi_PtVsY_PreCut",
                            "hPhi_MKK",
+                           "hPhi_PtVsY_PostCut",
                            "hPhi_MKK_signal",
                            "hPhi_MKK_leftSB",
                            "hPhi_MKK_rightSB",
                            "hPhi_MKK_rot",
                            "hPhiRot_MKK",
                            "hPhi_NCand",
+                           "hP_Pt_PreFemtoCut",
                            "hP_Pt",
+                           "hP_Y_PreFemtoCut",
                            "hP_Y_FemtoCut",
+                           "hP_PtVsY_PreFemtoCut",
+                           "hP_PtVsY_FemtoCut",
                            "hP_NCand",
                            "hKstarSE_phi_proton",
                            "hKstarME_phi_proton",

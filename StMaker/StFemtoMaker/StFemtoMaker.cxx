@@ -530,6 +530,50 @@ void StFemtoMaker::FillProtonPreFemtoQa(const TrackState& trk) {
   Double_t yCm = ProtonRapidityCm(trk);
   m_histManager->Fill("hP_Y_PreFemtoCut", yCm);
   m_histManager->Fill("hP_PtVsY_PreFemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hP_Pt_PreFemtoCut", trk.pT);
+  m_histManager->Fill("hP_Eta_PreFemtoCut", trk.eta);
+  m_histManager->Fill("hP_NSigmaProton_PreFemtoCut", trk.nSigmaProton);
+  m_histManager->Fill("hP_DCA_PreFemtoCut", trk.DCA);
+  if (trk.tofMatch) m_histManager->Fill("hP_Mass2_PreFemtoCut", trk.mass2);
+}
+
+void StFemtoMaker::FillPhiPairKinematicsQa(Double_t invMass, const TVector3& phiMom, Double_t openingAngle,
+                                           Double_t pairRapidity) {
+  if (!m_histManager) return;
+
+  PhiCutConfig& phiCut = ConfigManager::GetInstance().GetPhiCuts();
+  Bool_t passInvMass = kTRUE;
+  if (phiCut.useInvMassCut) {
+    passInvMass = (invMass >= phiCut.minInvMass && invMass <= phiCut.maxInvMass);
+  }
+  Bool_t passAngle = (openingAngle >= phiCut.minOpeningAngle && openingAngle <= phiCut.maxOpeningAngle);
+  Bool_t passRapidity = (pairRapidity >= phiCut.minPairRapidity && pairRapidity <= phiCut.maxPairRapidity);
+
+  m_histManager->Fill("hOpeningAngle_Raw", openingAngle);
+  m_histManager->Fill("hPairRapidity_Raw", pairRapidity);
+  m_histManager->Fill("hPairPt_Raw", phiMom.Pt());
+  m_histManager->Fill("hOpeningAngle_vs_MKK", openingAngle, invMass);
+  m_histManager->Fill("hPairRapidity_vs_MKK", pairRapidity, invMass);
+  m_histManager->Fill("hOpeningAngle_vs_Pt", openingAngle, phiMom.Pt());
+  m_histManager->Fill("hOpeningAngle_vs_Rapidity", openingAngle, pairRapidity);
+  m_histManager->Fill("hPairRapidity_vs_Pt", pairRapidity, phiMom.Pt());
+  m_histManager->Fill("hMKK_vs_Pt", phiMom.Pt(), invMass);
+
+  if (!passInvMass) return;
+
+  if (passAngle && passRapidity) {
+    m_histManager->Fill("hOpeningAngle_AfterCuts", openingAngle);
+    m_histManager->Fill("hPairRapidity_AfterCuts", pairRapidity);
+    m_histManager->Fill("hPairPt_AfterCuts", phiMom.Pt());
+  }
+}
+
+void StFemtoMaker::FillPhiCandidatePreCutQa(Double_t invMass, Double_t pt, Double_t pairRapidity) {
+  if (!m_histManager) return;
+  m_histManager->Fill("hPhi_MKK_PreCut", invMass);
+  m_histManager->Fill("hPhi_Pt_PreCut", pt);
+  m_histManager->Fill("hPhi_Rapidity_PreCut", pairRapidity);
+  m_histManager->Fill("hPhi_PtVsY_PreCut", pairRapidity, pt);
 }
 
 void StFemtoMaker::FillProtonFemtoQa(const TrackState& trk) {
@@ -696,6 +740,11 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
           (TMath::Abs(kaonsMinus[iMinus].nSigmaKaon) <= phiCfg.nSigmaKaon) &&
           (openingAngle >= phiCfg.minOpeningAngle && openingAngle <= phiCfg.maxOpeningAngle) &&
           (pairRapidity >= phiCfg.minPairRapidity && pairRapidity <= phiCfg.maxPairRapidity);
+
+      if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
+
+      FillPhiPairKinematicsQa(invMass, phiMom, openingAngle, pairRapidity);
+
       if (!passStage) continue;
       if (m_histManager) {
         nPhiPairStage0++;
@@ -704,8 +753,6 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
         m_histManager->Fill("hPhiPair_Rapidity_stage0", pairRapidity);
         m_histManager->Fill("hPhiPair_OpeningAngle_stage0", openingAngle);
       }
-
-      if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
 
       if (m_histManager) {
         nPhiPairTofStrict++;
@@ -718,6 +765,8 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
           m_histManager->Fill("hPhiPair_MassVsCent_tofStrict", (Double_t)m_cent9, invMass);
         }
       }
+
+      FillPhiCandidatePreCutQa(invMass, phiMom.Pt(), pairRapidity);
 
       out.push_back(MakePhiCandidate(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom, openingAngle,
                                      pairRapidity, dcaKK, eventIndex, speciesKey));
@@ -984,6 +1033,7 @@ void StFemtoMaker::FillCandidateQA() {
         m_histManager->Fill("hPhi_MKK", mass);
         m_histManager->Fill("hPhi_Pt", c.pt);
         m_histManager->Fill("hPhi_Rapidity", c.y);
+        m_histManager->Fill("hPhi_PtVsY_PostCut", c.y, c.pt);
       }
       for (size_t ic = 0; ic < femtoCfg.channels.size(); ic++) {
         const FemtoConfig::ChannelDef& ch = femtoCfg.channels[ic];

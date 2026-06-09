@@ -171,7 +171,7 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
       if (!centrality.CheckBadRun(runId, centReason)) continue;
       if (!centrality.CheckPileup(rawMult, nBTOFMatch, vz, centReason)) continue;
       if (!centrality.ComputeBins(event, rawMult, vz, cent9, cent16, refMultCorr, centWeight, centReason)) continue;
-      if (!centrality.AcceptCentBin(cent9, centReason)) continue;
+      if (!centrality.AcceptCentBin(cent9, refMultCorr, centReason)) continue;
     }
 
     // Pass event cuts from EventCutConfig

@@ -92,6 +92,8 @@ class StFemtoMaker : public StMaker {
   Double_t ProtonRapidityCm(const TrackState& trk) const;
   void FillProtonPreFemtoQa(const TrackState& trk);
   void FillProtonFemtoQa(const TrackState& trk);
+  void FillPhiPairKinematicsQa(Double_t invMass, const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity);
+  void FillPhiCandidatePreCutQa(Double_t invMass, Double_t pt, Double_t pairRapidity);
 
   TVector3 TrackMomentum(const TrackState& trk) const;
   StPhysicalHelixD BuildHelix(const TrackState& trk);

@@ -38,6 +38,14 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
   - Default norm region for `anaFemtoPhiProton`: **0.5–1.0 GeV/c** (high k*, where C→1 when SE≈ME).
 - Run QA on `*_merge.root`: `./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf>`.
 
+## QA PDF pre/post layout (`checkHistAnaFemtoPhiProton.C`)
+
+- Pre-cut pages are immediately followed by post-cut pages (event, track, proton femto, phi candidate).
+- **KK pair (A):** `hOpeningAngle_Raw`, `hPairRapidity_vs_Pt`, … filled after strict TOF, before opening/rapidity; **AfterCuts** on pass.
+- **Femto φ (B):** `hPhi_*_PreCut` at candidate push; `hPhi_*` + `hPhi_PtVsY_PostCut` in `FillCandidateQA`.
+- **Proton:** `hP_*_PreFemtoCut` in `FillProtonPreFemtoQa`; post-femto in `FillProtonFemtoQa` / `FillCandidateQA`.
+- Re-run analysis after Maker/hist changes so new ROOT keys exist in merge output.
+
 ## Centrality cuts (event level)
 
 - Centrality YAML (`centrality:` in mainconf) may set optional **per-bin refMult_corr cap**:

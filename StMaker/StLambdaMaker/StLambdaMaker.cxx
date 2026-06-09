@@ -270,7 +270,7 @@ Int_t StLambdaMaker::Make() {
       m_histManager->Fill("hRefMultVsNTOFMatchAfter", (Double_t)nBTOFMatch, (Double_t)rawMult);
     }
 
-    if (!m_centrality->AcceptCentBin(m_cent9, centReason)) {
+    if (!m_centrality->AcceptCentBin(m_cent9, m_refMultCorr, centReason)) {
       return kStOK;
     }
 
