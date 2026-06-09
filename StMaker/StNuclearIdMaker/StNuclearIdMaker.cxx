@@ -286,6 +286,7 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsPt_d", p, pT);
         if (m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_d_CentBin%d", m_cent9), p, eta);
+          m_histManager->Fill(Form("hPvsY_d_CentBin%d", m_cent9), p, y);
           m_histManager->Fill(Form("hPvsPt_d_CentBin%d", m_cent9), p, pT);
         }
       }
@@ -299,6 +300,7 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsPt_t", p, pT);
         if (m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_t_CentBin%d", m_cent9), p, eta);
+          m_histManager->Fill(Form("hPvsY_t_CentBin%d", m_cent9), p, y);
           m_histManager->Fill(Form("hPvsPt_t_CentBin%d", m_cent9), p, pT);
         }
       }
@@ -315,6 +317,7 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsPt_3He", p_act, pT_act);
         if (m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_3He_CentBin%d", m_cent9), p_act, eta);
+          m_histManager->Fill(Form("hPvsY_3He_CentBin%d", m_cent9), p_act, y);
           m_histManager->Fill(Form("hPvsPt_3He_CentBin%d", m_cent9), p_act, pT_act);
         }
       }
@@ -331,6 +334,7 @@ Int_t StNuclearIdMaker::Make() {
         m_histManager->Fill("hPvsPt_4He", p_act, pT_act);
         if (m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_4He_CentBin%d", m_cent9), p_act, eta);
+          m_histManager->Fill(Form("hPvsY_4He_CentBin%d", m_cent9), p_act, y);
           m_histManager->Fill(Form("hPvsPt_4He_CentBin%d", m_cent9), p_act, pT_act);
         }
       }
@@ -431,6 +435,27 @@ Int_t StNuclearIdMaker::Make() {
 
     if (m2 > cuts.minM2_M2cut && m2 < cuts.maxM2_M2cut && p > cuts.minP_M2cut) continue;
     else if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
+  }
+
+  if (m_histManager) {
+    int count[4] = {0, 0, 0, 0};
+    for (size_t i = 0; i < mNuclearType.size(); ++i) {
+      if (mNuclearType[i] >= 0 && mNuclearType[i] < 4) {
+        count[mNuclearType[i]]++;
+      }
+    }
+    
+    m_histManager->Fill("hMult_d", count[0]);
+    m_histManager->Fill("hMult_t", count[1]);
+    m_histManager->Fill("hMult_3He", count[2]);
+    m_histManager->Fill("hMult_4He", count[3]);
+    
+    if (m_cent9 >= 0 && m_cent9 <= 8) {
+      m_histManager->Fill(Form("hMult_d_CentBin%d", m_cent9), count[0]);
+      m_histManager->Fill(Form("hMult_t_CentBin%d", m_cent9), count[1]);
+      m_histManager->Fill(Form("hMult_3He_CentBin%d", m_cent9), count[2]);
+      m_histManager->Fill(Form("hMult_4He_CentBin%d", m_cent9), count[3]);
+    }
   }
 
   return kStOK;
