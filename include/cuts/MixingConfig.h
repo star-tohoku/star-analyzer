@@ -2,6 +2,7 @@
 #define MIXING_CONFIG_H
 
 #include "Rtypes.h"
+#include <string>
 
 class MixingConfig {
 public:
@@ -14,8 +15,16 @@ public:
   Int_t nEventPlaneBins;
   Int_t bufferSize;
 
+  // mixingMode: randomSample (default) | bufferAll (loop all buffer events, Zhangwei-like)
+  std::string mixingMode;
+  // 0 = unlimited pairs per event (randomSample); default 500 for backward compatibility
+  Int_t maxMixedPairsPerEvent;
+  // When true with bufferAll, mix current A with buffer B and buffer A with current B
+  Bool_t mixBothDirections;
+
   // Set default values
   void SetDefaults();
+  Bool_t IsBufferAllMode() const;
   
 private:
   MixingConfig();

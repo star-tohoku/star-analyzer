@@ -33,10 +33,23 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 - `hCF_*` may exist in hist YAML as empty shells; do not rely on CF in subjob or merged ROOT from Maker.
 - **CF is computed in `checkHistAnaFemtoPhiProton.C`** from merged SE/ME after all events are summed:
   - SE/ME are rebinned first when `cfRebinFactor` > 1 in maker YAML (e.g. 100 k* bins / 5 → 20 CF bins).
-  - **Cent slice CF**: project `hKstarSEVsCent_*` / `hKstarMEVsCent_*` over `cfCent9Min`–`cfCent9Max` (default 2–8 ≈ 0–60% centrality; see `StRoot/StRefMultCorr/README.md`), then same CF formula. Drawn as TGraphErrors with Poisson errors.
+  - **Legacy cent page (Page 20)**: project over `cfCent9Min`–`cfCent9Max` (default 2–8 ≈ 0–60%); columns signal / leftSB / rightSB / rot.
+  - **Multi-slice CF (`cfCentSlices`)**: default 15 slices (cent9\_0…8 + pct\_0\_10…60). Per slice: signal, SB-L, SB-R, **SB-LR** (left+right histogram sum in checkHist, no new maker channel).
+  - **Sideband-subtracted CF**: count-level `N_corr = N_sig - α N_SB` on SE and ME separately, then same CF formula (`sidebandSubtractAlpha`, default 1.0; `negativeBinPolicy: zero|skip`).
   - Bin-wise: `C(k*) = SE / (ME * seNorm/meNorm)` with `seNorm`, `meNorm` integrals over `normQMin`–`normQMax` from maker YAML.
   - Default norm region for `anaFemtoPhiProton`: **0.5–1.0 GeV/c** (high k*, where C→1 when SE≈ME).
+- **PDF output** (one checkHist run, `share/figure/<anaName>/`):
+  - QA: `{anaName}_checkHistAnaFemtoPhiProton_{jobid}.pdf` — Pages 1–19 + Page 20 + representative slices (`cfCentSlicesQaPdfInclude`, default pct\_0\_10/20/30).
+  - CF: `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` — remaining slices (SE/ME k* + raw/sub CF; `cfPdfExcludeQaSlices: true` avoids duplicate).
 - Run QA on `*_merge.root`: `./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf>`.
+
+## Event mixing (ME statistics)
+
+- Config: `config/cuts/mixing/mixing_<ana>.yaml` via mainconf `mixing:` key (`MixingConfig`).
+- `mixingMode`: `randomSample` (default) or `bufferAll` (loop all buffer events × all pairs; Zhangwei-like).
+- `maxMixedPairsPerEvent`: cap for randomSample (default 500; 0 = unlimited).
+- `mixBothDirections`: with `bufferAll`, also mix buffer `partA` with current `partB`.
+- Changing mixing requires a **new batch run**; cent-slice CF projection uses existing `hKstar*VsCent_*` in merge ROOT.
 
 ## QA PDF pre/post layout (`checkHistAnaFemtoPhiProton.C`)
 

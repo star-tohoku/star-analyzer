@@ -29,6 +29,13 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 - **Bin conventions:** [`StRoot/StRefMultCorr/README.md`](../../StRoot/StRefMultCorr/README.md) is canonical (cent9: larger index = more central; 0–60% → cent9 2–8).
 - **Agent procedure:** follow [`docs/ai/skills/centrality-strefmultcorr.md`](skills/centrality-strefmultcorr.md) when changing centrality YAML, `CentralityHelper`, cent axes, or `cfCent9Min`/`Max`.
 
+## Femto φ–p checkHist / CF
+
+- **CF and sideband logic live in** `common/macro/checkHistAnaFemtoPhiProton.C` (not in Maker). Skill: [`docs/ai/skills/femto-species-naming.md`](skills/femto-species-naming.md).
+- **Dual PDF:** `singularity_checkHistAnaFemtoPhiProton.sh` writes QA PDF + `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` under `share/figure/<anaName>/`.
+- **YAML (maker):** `cfCentSlices` (defaults in `FemtoConfig::SetDefaults`), `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`, `negativeBinPolicy`.
+- **YAML (mixing):** `mixingMode`, `maxMixedPairsPerEvent`, `mixBothDirections` for ME statistics (`StFemtoMaker::FillMixedEventPairs`).
+
 ## Naming and terminology
 
 - **anaName**: `{system}_{anaId}[_condition]` and use it consistently across configs, outputs, and job artifacts.

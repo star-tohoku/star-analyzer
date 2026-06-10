@@ -967,11 +967,57 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Float_
   std::map<Int_t, std::deque<FemtoMixingEvent> >::const_iterator poolIt = m_mixingPool.find(mixBin);
   if (poolIt == m_mixingPool.end() || poolIt->second.empty()) return;
 
+  const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();
   std::string hName = HistName("hKstarME", ch.name);
   std::string h2dName = HistName("hKstarMEVsCent", ch.name);
   const Double_t centX = (m_cent9 >= 0) ? (Double_t)m_cent9 : -0.5;
+
+  auto fillMixedPair = [&](const FemtoCandidate& a, const FemtoCandidate& b) {
+    if (a.source == kFemtoCandResonance) {
+      if (a.reso.invMass < ch.signalMin || a.reso.invMass > ch.signalMax) return;
+    }
+    if (TracksOverlap(a, b)) return;
+    Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
+    if (m_histManager) {
+      m_histManager->Fill(hName.c_str(), kstar);
+      if (m_histManager->Get(h2dName.c_str())) {
+        m_histManager->Fill(h2dName.c_str(), kstar, centX);
+      }
+    }
+  };
+
+  if (mix.IsBufferAllMode()) {
+    const std::deque<FemtoMixingEvent>& pool = poolIt->second;
+    for (size_t ie = 0; ie < pool.size(); ++ie) {
+      const FemtoMixingEvent& mixEvt = pool[ie];
+      FemtoCandidateStore::const_iterator mixB = mixEvt.candidates.find(ch.partB);
+      if (mixB != mixEvt.candidates.end()) {
+        const std::vector<FemtoCandidate>& bufB = mixB->second;
+        for (size_t ia = 0; ia < candsA.size(); ++ia) {
+          for (size_t ib = 0; ib < bufB.size(); ++ib) {
+            fillMixedPair(candsA[ia], bufB[ib]);
+          }
+        }
+      }
+      if (mix.mixBothDirections) {
+        FemtoCandidateStore::const_iterator mixA = mixEvt.candidates.find(ch.partA);
+        if (mixA != mixEvt.candidates.end()) {
+          const std::vector<FemtoCandidate>& bufA = mixA->second;
+          for (size_t ia = 0; ia < bufA.size(); ++ia) {
+            for (size_t ib = 0; ib < candsB.size(); ++ib) {
+              fillMixedPair(bufA[ia], candsB[ib]);
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+
   Int_t nPairs = (Int_t)candsA.size() * (Int_t)candsB.size();
-  if (nPairs > 500) nPairs = 500;
+  if (mix.maxMixedPairsPerEvent > 0 && nPairs > mix.maxMixedPairsPerEvent) {
+    nPairs = mix.maxMixedPairsPerEvent;
+  }
   if (nPairs < 1) nPairs = 1;
 
   for (Int_t ip = 0; ip < nPairs; ip++) {
@@ -980,17 +1026,8 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Float_
     if (mixB == mixEvt.candidates.end() || mixB->second.empty()) continue;
 
     const FemtoCandidate& a = candsA[(Int_t)gRandom->Uniform(0, candsA.size())];
-    if (a.source == kFemtoCandResonance) {
-      if (a.reso.invMass < ch.signalMin || a.reso.invMass > ch.signalMax) continue;
-    }
     const FemtoCandidate& b = mixB->second[(Int_t)gRandom->Uniform(0, mixB->second.size())];
-    Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
-    if (m_histManager) {
-      m_histManager->Fill(hName.c_str(), kstar);
-      if (m_histManager->Get(h2dName.c_str())) {
-        m_histManager->Fill(h2dName.c_str(), kstar, centX);
-      }
-    }
+    fillMixedPair(a, b);
   }
 }
 

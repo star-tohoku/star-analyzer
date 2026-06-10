@@ -67,7 +67,29 @@ class FemtoConfig {
   Int_t cfCent9Min;
   Int_t cfCent9Max;
 
+  struct CfCentSlice {
+    std::string id;
+    Int_t cent9Min;
+    Int_t cent9Max;
+  };
+
+  // checkHist: per-slice cent9 projection ranges (default 15: cent9_0..8 + pct_0_10..60).
+  std::vector<CfCentSlice> cfCentSlices;
+
+  // Slice ids printed in QA PDF (default pct_0_10, pct_0_20, pct_0_30).
+  std::vector<std::string> cfCentSlicesQaPdfInclude;
+
+  // When true, slices in cfCentSlicesQaPdfInclude are omitted from CF PDF.
+  Bool_t cfPdfExcludeQaSlices;
+
+  // Sideband-subtracted CF (checkHist Phase 3).
+  Double_t sidebandSubtractAlpha;
+  std::string sidebandAlphaMode;  // fixed | massYieldRatio (future)
+  std::string negativeBinPolicy;  // zero | skip
+
   Bool_t Validate() const;
+  const CfCentSlice* FindCfCentSlice(const std::string& id) const;
+  Bool_t IsCfCentSliceInQaPdf(const std::string& id) const;
   const SpeciesDef* FindSpecies(const std::string& key) const;
   const ChannelDef* FindChannel(const std::string& name) const;
 

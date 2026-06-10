@@ -199,7 +199,7 @@ On some login or dev nodes (for example AL9), host `root4star` may fail before t
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi-p femto:** `./script/singularity_run_anaFemtoPhiProton.sh` — same arguments as `run_anaFemtoPhiProton.sh`; uses `StFemtoMaker` (`libStFemtoMaker.so`). Mainconf key **`maker:`** → `config/maker/maker_<anaName>.yaml` (φ builder + femto species/channels in one file).
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
-- **Phi-p femto QA:** `./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>`.
+- **Phi-p femto QA:** `./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>`. Writes QA PDF plus `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` (multi-centrality SE/ME + CF). Femto maker YAML: `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`. Mixing YAML: `mixingMode` (`randomSample`|`bufferAll`), `maxMixedPairsPerEvent`, `mixBothDirections`.
 
 Example (build):
 

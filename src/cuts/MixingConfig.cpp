@@ -21,7 +21,12 @@ void MixingConfig::SetDefaults() {
   nCentralityBins = 9;
   nEventPlaneBins = 1;
   bufferSize = 20;
+  mixingMode = "randomSample";
+  maxMixedPairsPerEvent = 500;
+  mixBothDirections = kTRUE;
 }
+
+Bool_t MixingConfig::IsBufferAllMode() const { return mixingMode == "bufferAll"; }
 
 Bool_t MixingConfig::LoadFromFile(const Char_t* filename) {
   return ParseYamlFile(filename);
@@ -47,7 +52,14 @@ Bool_t MixingConfig::ParseYamlFile(const Char_t* filename) {
   if (values.find("bufferSize") != values.end()) {
     bufferSize = YamlParser::ToInt(values["bufferSize"], bufferSize);
   }
-  
+  if (values.find("mixingMode") != values.end()) mixingMode = values["mixingMode"];
+  if (values.find("maxMixedPairsPerEvent") != values.end()) {
+    maxMixedPairsPerEvent = YamlParser::ToInt(values["maxMixedPairsPerEvent"], maxMixedPairsPerEvent);
+  }
+  if (values.find("mixBothDirections") != values.end()) {
+    mixBothDirections = YamlParser::ToBool(values["mixBothDirections"], mixBothDirections);
+  }
+
   return kTRUE;
 }
 

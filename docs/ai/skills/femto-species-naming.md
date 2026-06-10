@@ -19,9 +19,14 @@ Headers `include/FemtoCandidate.h` and `include/cuts/FemtoConfig.h` point to thi
 2. Update `config/maker/maker_<anaName>.yaml` (femto section) with new species/channel keys.
 3. Extend builder dispatch in `StFemtoMaker` for new `particleKey` values (generic builders, not analysis-specific classes).
 4. Add histogram names using channel suffix: `hKstarSE_<channel>`, `hKstarME_<channel>`, optional empty `hCF_<channel>` shell in hist YAML.
-5. CF for QA: computed in `checkHistAnaFemtoPhiProton.C` from merged SE/ME (not in Maker output); optional `cfRebinFactor`, `cfCent9Min`/`cfCent9Max` for cent-slice CF from `hKstar*VsCent` (default 2–8 = 0–60% centrality; see `StRoot/StRefMultCorr/README.md`).
-6. Update `config/hist/hist_anaFemto*.yaml` and checkHist macro pages if QA changes.
-7. Document new keys in `StMaker/StFemtoMaker/README.md`.
+5. CF for QA: computed in `checkHistAnaFemtoPhiProton.C` from merged SE/ME (not in Maker output).
+   - `cfRebinFactor`, `cfCent9Min`/`cfCent9Max` (legacy Page 20).
+   - `cfCentSlices` (default 15 slices), `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`.
+   - Sideband subtract: `sidebandSubtractAlpha`, `negativeBinPolicy`.
+   - Outputs two PDFs per run: QA + `*_CF_{jobid}.pdf` (see `StMaker/StFemtoMaker/README.md`).
+6. ME statistics: `mixingMode`, `maxMixedPairsPerEvent`, `mixBothDirections` in mixing YAML (`MixingConfig`).
+7. Update `config/hist/hist_anaFemto*.yaml` and checkHist macro pages if QA changes.
+8. Document new keys in `StMaker/StFemtoMaker/README.md`.
 
 ## Guardrails
 

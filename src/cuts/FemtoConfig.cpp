@@ -74,6 +74,38 @@ void FemtoConfig::SetDefaults() {
   cfRebinFactor = 1;
   cfCent9Min = 2;
   cfCent9Max = 8;
+  cfCentSlices.clear();
+  for (Int_t i = 0; i <= 8; ++i) {
+    CfCentSlice sl;
+    sl.id = "cent9_" + std::to_string(i);
+    sl.cent9Min = i;
+    sl.cent9Max = i;
+    cfCentSlices.push_back(sl);
+  }
+  struct PctDef {
+    const char* id;
+    Int_t cmin;
+    Int_t cmax;
+  };
+  static const PctDef kPctDefs[] = {
+      {"pct_0_10", 7, 8}, {"pct_0_20", 6, 8}, {"pct_0_30", 5, 8},
+      {"pct_0_40", 4, 8}, {"pct_0_50", 3, 8}, {"pct_0_60", 2, 8},
+  };
+  for (size_t ip = 0; ip < sizeof(kPctDefs) / sizeof(kPctDefs[0]); ++ip) {
+    CfCentSlice sl;
+    sl.id = kPctDefs[ip].id;
+    sl.cent9Min = kPctDefs[ip].cmin;
+    sl.cent9Max = kPctDefs[ip].cmax;
+    cfCentSlices.push_back(sl);
+  }
+  cfCentSlicesQaPdfInclude.clear();
+  cfCentSlicesQaPdfInclude.push_back("pct_0_10");
+  cfCentSlicesQaPdfInclude.push_back("pct_0_20");
+  cfCentSlicesQaPdfInclude.push_back("pct_0_30");
+  cfPdfExcludeQaSlices = kTRUE;
+  sidebandSubtractAlpha = 1.0;
+  sidebandAlphaMode = "fixed";
+  negativeBinPolicy = "zero";
 
   SpeciesDef proton;
   proton.key = "proton";
@@ -128,6 +160,37 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   if (values.find("cfRebinFactor") != values.end()) cfRebinFactor = YamlParser::ToInt(values.at("cfRebinFactor"), cfRebinFactor);
   if (values.find("cfCent9Min") != values.end()) cfCent9Min = YamlParser::ToInt(values.at("cfCent9Min"), cfCent9Min);
   if (values.find("cfCent9Max") != values.end()) cfCent9Max = YamlParser::ToInt(values.at("cfCent9Max"), cfCent9Max);
+  if (values.find("cfPdfExcludeQaSlices") != values.end()) {
+    cfPdfExcludeQaSlices = YamlParser::ToBool(values.at("cfPdfExcludeQaSlices"), cfPdfExcludeQaSlices);
+  }
+  if (values.find("sidebandSubtractAlpha") != values.end()) {
+    sidebandSubtractAlpha = YamlParser::ToDouble(values.at("sidebandSubtractAlpha"), sidebandSubtractAlpha);
+  }
+  if (values.find("sidebandAlphaMode") != values.end()) sidebandAlphaMode = values.at("sidebandAlphaMode");
+  if (values.find("negativeBinPolicy") != values.end()) negativeBinPolicy = values.at("negativeBinPolicy");
+  if (values.find("cfCentSlicesQaPdfInclude") != values.end()) {
+    cfCentSlicesQaPdfInclude = SplitComma(values.at("cfCentSlicesQaPdfInclude"));
+  }
+
+  Int_t nCfCentSlices = -1;
+  if (values.find("nCfCentSlices") != values.end()) {
+    nCfCentSlices = YamlParser::ToInt(values.at("nCfCentSlices"), -1);
+  }
+  if (nCfCentSlices > 0) {
+    cfCentSlices.clear();
+    for (Int_t is = 0; is < nCfCentSlices; ++is) {
+      const std::string prefix = "cfCentSlice_" + std::to_string(is) + "_";
+      CfCentSlice sl;
+      if (values.find(prefix + "id") != values.end()) sl.id = values.at(prefix + "id");
+      if (values.find(prefix + "cent9Min") != values.end()) {
+        sl.cent9Min = YamlParser::ToInt(values.at(prefix + "cent9Min"), sl.cent9Min);
+      }
+      if (values.find(prefix + "cent9Max") != values.end()) {
+        sl.cent9Max = YamlParser::ToInt(values.at(prefix + "cent9Max"), sl.cent9Max);
+      }
+      if (!sl.id.empty()) cfCentSlices.push_back(sl);
+    }
+  }
 }
 
 Bool_t FemtoConfig::LoadFromFile(const Char_t* filename) {
@@ -267,7 +330,37 @@ Bool_t FemtoConfig::Validate() const {
               << "], valid cent9 is 0-8)" << std::endl;
     ok = kFALSE;
   }
+  for (size_t is = 0; is < cfCentSlices.size(); ++is) {
+    const CfCentSlice& sl = cfCentSlices[is];
+    if (sl.id.empty()) {
+      std::cerr << "ERROR: FemtoConfig cfCentSlices[" << is << "] has empty id" << std::endl;
+      ok = kFALSE;
+    }
+    if (sl.cent9Min < 0 || sl.cent9Max > 8 || sl.cent9Min > sl.cent9Max) {
+      std::cerr << "ERROR: FemtoConfig cfCentSlices '" << sl.id << "' cent9Min/Max out of range ["
+                << sl.cent9Min << ", " << sl.cent9Max << "]" << std::endl;
+      ok = kFALSE;
+    }
+  }
+  if (sidebandSubtractAlpha < 0.0) {
+    std::cerr << "ERROR: FemtoConfig sidebandSubtractAlpha must be >= 0" << std::endl;
+    ok = kFALSE;
+  }
   return ok;
+}
+
+const FemtoConfig::CfCentSlice* FemtoConfig::FindCfCentSlice(const std::string& id) const {
+  for (size_t i = 0; i < cfCentSlices.size(); ++i) {
+    if (cfCentSlices[i].id == id) return &cfCentSlices[i];
+  }
+  return 0;
+}
+
+Bool_t FemtoConfig::IsCfCentSliceInQaPdf(const std::string& id) const {
+  for (size_t i = 0; i < cfCentSlicesQaPdfInclude.size(); ++i) {
+    if (cfCentSlicesQaPdfInclude[i] == id) return kTRUE;
+  }
+  return kFALSE;
 }
 
 const FemtoConfig::SpeciesDef* FemtoConfig::FindSpecies(const std::string& key) const {

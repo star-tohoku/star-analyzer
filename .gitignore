@@ -41,6 +41,7 @@ job/run/analysis
 job/run/config
 job/run/include
 job/run/lib
+job/run/watchmerge/*
 job/run/joblog/*
 job/run/configlog/*
 job/run/joblistlog/*

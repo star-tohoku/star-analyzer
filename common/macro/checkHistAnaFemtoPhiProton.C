@@ -424,6 +424,313 @@ static void freeCentProjKeepAlive(std::vector<TH1*>& centProjKeepAlive) {
   centProjKeepAlive.clear();
 }
 
+static const char* kSidebandSliceChannels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", 0};
+
+static std::string cfSliceCacheKey(const std::string& sliceId, const std::string& tag) {
+  return std::string("slice:") + sliceId + ":" + tag;
+}
+
+static std::vector<FemtoConfig::CfCentSlice> getCfCentSliceList() {
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    if (!femtoCfg.cfCentSlices.empty()) return femtoCfg.cfCentSlices;
+  }
+  std::vector<FemtoConfig::CfCentSlice> fallback;
+  for (Int_t i = 0; i <= 8; ++i) {
+    FemtoConfig::CfCentSlice sl;
+    sl.id = Form("cent9_%d", i);
+    sl.cent9Min = i;
+    sl.cent9Max = i;
+    fallback.push_back(sl);
+  }
+  static const char* kPctIds[] = {"pct_0_10", "pct_0_20", "pct_0_30", "pct_0_40", "pct_0_50", "pct_0_60", 0};
+  static const Int_t kPctMin[] = {7, 6, 5, 4, 3, 2};
+  static const Int_t kPctMax[] = {8, 8, 8, 8, 8, 8};
+  for (Int_t ip = 0; kPctIds[ip]; ++ip) {
+    FemtoConfig::CfCentSlice sl;
+    sl.id = kPctIds[ip];
+    sl.cent9Min = kPctMin[ip];
+    sl.cent9Max = kPctMax[ip];
+    fallback.push_back(sl);
+  }
+  return fallback;
+}
+
+static Bool_t isSliceInQaPdf(const std::string& sliceId) {
+  if (!gConfigLoaded) {
+    return sliceId == "pct_0_10" || sliceId == "pct_0_20" || sliceId == "pct_0_30";
+  }
+  return ConfigManager::GetInstance().GetFemtoConfig().IsCfCentSliceInQaPdf(sliceId);
+}
+
+static Bool_t isSliceInCfPdf(const std::string& sliceId) {
+  if (!isSliceInQaPdf(sliceId)) return kTRUE;
+  if (!gConfigLoaded) return kFALSE;
+  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  if (!femtoCfg.cfPdfExcludeQaSlices) return kTRUE;
+  return kFALSE;
+}
+
+static TH1* combineSidebandLR(TH1* left, TH1* right) {
+  if (!left && !right) return 0;
+  if (!left) {
+    TH1* c = (TH1*)right->Clone("_sblr");
+    c->SetDirectory(0);
+    return c;
+  }
+  if (!right) {
+    TH1* c = (TH1*)left->Clone("_sblr");
+    c->SetDirectory(0);
+    return c;
+  }
+  TH1* sum = (TH1*)left->Clone("_sblr");
+  sum->SetDirectory(0);
+  sum->Add(right);
+  return sum;
+}
+
+static Double_t getSidebandAlpha() {
+  if (!gConfigLoaded) return 1.0;
+  return ConfigManager::GetInstance().GetFemtoConfig().sidebandSubtractAlpha;
+}
+
+static const char* getNegativeBinPolicy() {
+  if (!gConfigLoaded) return "zero";
+  return ConfigManager::GetInstance().GetFemtoConfig().negativeBinPolicy.c_str();
+}
+
+static TH1* subtractSidebandHist(TH1* signal, TH1* sb, Double_t alpha) {
+  if (!signal || !sb) return 0;
+  TH1* out = (TH1*)signal->Clone("_sb_sub");
+  out->SetDirectory(0);
+  out->Add(sb, -alpha);
+  const char* policy = getNegativeBinPolicy();
+  if (policy && TString(policy) == "zero") {
+    for (Int_t ib = 1; ib <= out->GetNbinsX(); ++ib) {
+      if (out->GetBinContent(ib) < 0.0) {
+        out->SetBinContent(ib, 0.0);
+        out->SetBinError(ib, 0.0);
+      }
+    }
+  }
+  return out;
+}
+
+static TH1* getSliceProjectedSeMe(TFile* fin, const std::string& channel, Bool_t isSE, Int_t cent9Min,
+                                  Int_t cent9Max) {
+  return getProjectedSeMeFromCent(fin, channel, isSE, cent9Min, cent9Max);
+}
+
+static TGraphErrors* getOrComputeSliceChannelCf(TFile* fin, const std::string& sliceId, Int_t cent9Min,
+                                                Int_t cent9Max, const std::string& channel, Double_t normQMin,
+                                                Double_t normQMax, std::map<std::string, TGraphErrors*>& cfCache) {
+  const std::string cacheKey = cfSliceCacheKey(sliceId, channel);
+  std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
+  if (cached != cfCache.end()) return cached->second;
+
+  TH1* hSE = getSliceProjectedSeMe(fin, channel, kTRUE, cent9Min, cent9Max);
+  TH1* hME = getSliceProjectedSeMe(fin, channel, kFALSE, cent9Min, cent9Max);
+  TString logTag = Form("%s cent9 %d-%d", sliceId.c_str(), cent9Min, cent9Max);
+  TGraphErrors* gCF =
+      computeCfAndCache(channel, cacheKey, hSE, hME, normQMin, normQMax, cfCache, logTag.Data());
+  delete hSE;
+  delete hME;
+  return gCF;
+}
+
+static TGraphErrors* getOrComputeSliceSblrCf(TFile* fin, const std::string& sliceId, Int_t cent9Min,
+                                             Int_t cent9Max, Double_t normQMin, Double_t normQMax,
+                                             std::map<std::string, TGraphErrors*>& cfCache) {
+  const std::string cacheKey = cfSliceCacheKey(sliceId, "SBLR");
+  std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
+  if (cached != cfCache.end()) return cached->second;
+
+  TH1* hSEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kTRUE, cent9Min, cent9Max);
+  TH1* hSER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kTRUE, cent9Min, cent9Max);
+  TH1* hMEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kFALSE, cent9Min, cent9Max);
+  TH1* hMER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kFALSE, cent9Min, cent9Max);
+  TH1* hSE = combineSidebandLR(hSEL, hSER);
+  TH1* hME = combineSidebandLR(hMEL, hMER);
+  delete hSEL;
+  delete hSER;
+  delete hMEL;
+  delete hMER;
+  TString logTag = Form("%s SBLR cent9 %d-%d", sliceId.c_str(), cent9Min, cent9Max);
+  TGraphErrors* gCF =
+      computeCfAndCache("phi_proton_SBLR", cacheKey, hSE, hME, normQMin, normQMax, cfCache, logTag.Data());
+  delete hSE;
+  delete hME;
+  return gCF;
+}
+
+static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sliceId, Int_t cent9Min,
+                                               Int_t cent9Max, const std::string& sbChannel, const char* subTag,
+                                               Double_t normQMin, Double_t normQMax,
+                                               std::map<std::string, TGraphErrors*>& cfCache) {
+  const std::string cacheKey = cfSliceCacheKey(sliceId, subTag);
+  std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
+  if (cached != cfCache.end()) return cached->second;
+
+  const Double_t alpha = getSidebandAlpha();
+  TH1* hSEsig = getSliceProjectedSeMe(fin, "phi_proton_signal", kTRUE, cent9Min, cent9Max);
+  TH1* hMEsig = getSliceProjectedSeMe(fin, "phi_proton_signal", kFALSE, cent9Min, cent9Max);
+  TH1* hSEsb = 0;
+  TH1* hMEsb = 0;
+  if (sbChannel == "SBLR") {
+    TH1* hSEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kTRUE, cent9Min, cent9Max);
+    TH1* hSER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kTRUE, cent9Min, cent9Max);
+    TH1* hMEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kFALSE, cent9Min, cent9Max);
+    TH1* hMER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kFALSE, cent9Min, cent9Max);
+    hSEsb = combineSidebandLR(hSEL, hSER);
+    hMEsb = combineSidebandLR(hMEL, hMER);
+    delete hSEL;
+    delete hSER;
+    delete hMEL;
+    delete hMER;
+  } else {
+    hSEsb = getSliceProjectedSeMe(fin, sbChannel, kTRUE, cent9Min, cent9Max);
+    hMEsb = getSliceProjectedSeMe(fin, sbChannel, kFALSE, cent9Min, cent9Max);
+  }
+  TH1* hSEcorr = subtractSidebandHist(hSEsig, hSEsb, alpha);
+  TH1* hMEcorr = subtractSidebandHist(hMEsig, hMEsb, alpha);
+  delete hSEsig;
+  delete hMEsig;
+  delete hSEsb;
+  delete hMEsb;
+  TString logTag = Form("%s %s cent9 %d-%d", sliceId.c_str(), subTag, cent9Min, cent9Max);
+  TGraphErrors* gCF = computeCfAndCache("phi_proton_signal", cacheKey, hSEcorr, hMEcorr, normQMin, normQMax,
+                                        cfCache, logTag.Data());
+  delete hSEcorr;
+  delete hMEcorr;
+  return gCF;
+}
+
+static void populateCfSliceCaches(TFile* fin, std::map<std::string, TGraphErrors*>& cfCache) {
+  const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSliceList();
+  const Double_t normQMin = channelNormQMin("phi_proton_signal");
+  const Double_t normQMax = channelNormQMax("phi_proton_signal");
+  for (size_t is = 0; is < slices.size(); ++is) {
+    const FemtoConfig::CfCentSlice& sl = slices[is];
+    for (Int_t ic = 0; kSidebandSliceChannels[ic]; ++ic) {
+      const std::string channel(kSidebandSliceChannels[ic]);
+      getOrComputeSliceChannelCf(fin, sl.id, sl.cent9Min, sl.cent9Max, channel, channelNormQMin(channel),
+                                 channelNormQMax(channel), cfCache);
+    }
+    getOrComputeSliceSblrCf(fin, sl.id, sl.cent9Min, sl.cent9Max, normQMin, normQMax, cfCache);
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_proton_leftSB", "CF_sig_sub_SBL",
+                              normQMin, normQMax, cfCache);
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_proton_rightSB", "CF_sig_sub_SBR",
+                              normQMin, normQMax, cfCache);
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "SBLR", "CF_sig_sub_SBLR", normQMin,
+                              normQMax, cfCache);
+  }
+}
+
+static Int_t sidebandSliceLayoutPad(Int_t col, Int_t row) { return col + row * 4 + 1; }
+
+static void drawSliceCfGraph(TCanvas* canvas, Int_t pad, const std::string& sliceId, const std::string& tag,
+                             std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  canvas->cd(pad);
+  std::map<std::string, TGraphErrors*>::const_iterator it = cfCache.find(cfSliceCacheKey(sliceId, tag));
+  if (it != cfCache.end() && it->second) it->second->Draw("AP");
+}
+
+static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig::CfCentSlice& slice,
+                                  std::vector<TH1*>& centProjKeepAlive,
+                                  std::map<std::string, TGraphErrors*>& cfCache, Bool_t drawSubCfRow) {
+  if (!canvas) return;
+  canvas->Clear();
+  const Int_t nRows = drawSubCfRow ? 4 : 3;
+  canvas->Divide(4, nRows);
+  const char* colTags[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "SBLR"};
+  for (Int_t ic = 0; ic < 4; ++ic) {
+    const std::string tag(colTags[ic]);
+    if (tag == "SBLR") {
+      TH1* hSEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kTRUE, slice.cent9Min, slice.cent9Max);
+      TH1* hSER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kTRUE, slice.cent9Min, slice.cent9Max);
+      TH1* hMEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kFALSE, slice.cent9Min, slice.cent9Max);
+      TH1* hMER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kFALSE, slice.cent9Min, slice.cent9Max);
+      TH1* hSE = combineSidebandLR(hSEL, hSER);
+      TH1* hME = combineSidebandLR(hMEL, hMER);
+      // Do not delete hSEL/hSER/hMEL/hMER: same ProjectionX objects as ic=1/2 (SB-L/R SE/ME panels).
+      canvas->cd(sidebandSliceLayoutPad(ic, 0));
+      if (hSE) {
+        hSE->SetTitle(Form("SE SBLR %s", slice.id.c_str()));
+        hSE->Draw();
+        centProjKeepAlive.push_back(hSE);
+      }
+      canvas->cd(sidebandSliceLayoutPad(ic, 1));
+      if (hME) {
+        hME->SetTitle(Form("ME SBLR %s", slice.id.c_str()));
+        hME->Draw();
+        centProjKeepAlive.push_back(hME);
+      }
+      getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max,
+                              channelNormQMin("phi_proton_signal"), channelNormQMax("phi_proton_signal"),
+                              cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, "SBLR", cfCache);
+    } else {
+      canvas->cd(sidebandSliceLayoutPad(ic, 0));
+      TH1* hSE = getSliceProjectedSeMe(fin, tag, kTRUE, slice.cent9Min, slice.cent9Max);
+      if (hSE) {
+        hSE->Draw();
+        centProjKeepAlive.push_back(hSE);
+      }
+      canvas->cd(sidebandSliceLayoutPad(ic, 1));
+      TH1* hME = getSliceProjectedSeMe(fin, tag, kFALSE, slice.cent9Min, slice.cent9Max);
+      if (hME) {
+        hME->Draw();
+        centProjKeepAlive.push_back(hME);
+      }
+      getOrComputeSliceChannelCf(fin, slice.id, slice.cent9Min, slice.cent9Max, tag, channelNormQMin(tag),
+                                 channelNormQMax(tag), cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, tag, cfCache);
+    }
+  }
+  if (drawSubCfRow) {
+    const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
+    const char* subSb[] = {"phi_proton_leftSB", "phi_proton_rightSB", "SBLR"};
+    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 3), slice.id, "phi_proton_signal", cfCache);
+    for (Int_t isb = 0; isb < 3; ++isb) {
+      getOrComputeSliceSigSubCf(fin, slice.id, slice.cent9Min, slice.cent9Max, subSb[isb], subTags[isb],
+                                channelNormQMin("phi_proton_signal"), channelNormQMax("phi_proton_signal"),
+                                cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(isb + 1, 3), slice.id, subTags[isb], cfCache);
+    }
+  }
+  if (gPad) {
+    TLatex* lat = new TLatex();
+    lat->SetNDC(kTRUE);
+    lat->SetTextSize(0.03);
+    lat->DrawLatex(0.02, 0.98, Form("%s (cent9 %d-%d)", slice.id.c_str(), slice.cent9Min, slice.cent9Max));
+  }
+}
+
+static void printCfSliceConsoleSummary(const std::map<std::string, TGraphErrors*>& cfCache) {
+  const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSliceList();
+  std::cout << "\n=== CF cent slices (15 default) ===\n";
+  for (size_t is = 0; is < slices.size(); ++is) {
+    const FemtoConfig::CfCentSlice& sl = slices[is];
+    std::cout << "  slice " << sl.id << " cent9 [" << sl.cent9Min << "," << sl.cent9Max << "]:\n";
+    for (Int_t ic = 0; kSidebandSliceChannels[ic]; ++ic) {
+      const std::string channel(kSidebandSliceChannels[ic]);
+      Int_t nPts = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, channel).c_str());
+      TH1* hSE = 0;
+      std::cout << "    " << channel << " raw CF nPoints=" << nPts << "\n";
+      (void)hSE;
+    }
+    Int_t nSblr = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, "SBLR").c_str());
+    std::cout << "    SBLR raw CF nPoints=" << nSblr << "\n";
+    const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
+    for (Int_t it = 0; it < 3; ++it) {
+      Int_t nSub = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, subTags[it]).c_str());
+      std::cout << "    " << subTags[it] << " nPoints=" << nSub << "\n";
+    }
+  }
+  std::cout << "=============================================================\n\n";
+}
+
 void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
                                 const Char_t* anaNameArg = "auau3p85fxt_anaFemtoPhiProton",
                                 const Char_t* mainconfPath = 0)
@@ -500,7 +807,11 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   TString pdfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhiProton";
   if (jobid.Length()) pdfName += "_" + jobid;
   pdfName += ".pdf";
-  std::cout << "Output PDF: " << pdfName.Data() << std::endl;
+  TString pdfCfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhiProton_CF";
+  if (jobid.Length()) pdfCfName += "_" + jobid;
+  pdfCfName += ".pdf";
+  std::cout << "Output QA PDF: " << pdfName.Data() << std::endl;
+  std::cout << "Output CF PDF: " << pdfCfName.Data() << std::endl;
 
   PdfHeader::OpenPdf(pdfName);
 
@@ -565,6 +876,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   std::vector<TH1*> centProjKeepAlive;
   populateCfCache(fin, cfCache);
   populateCfCentCache(fin, cfCache);
+  populateCfSliceCaches(fin, cfCache);
 
   PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoPhiProton.C", inputs, note.Data(), true, anaName);
 
@@ -1241,7 +1553,43 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->SetCanvasSize(1800, 900);
   drawCentSlicePage(c1, fin, cfCent9Min, cfCent9Max, centProjKeepAlive, cfCache);
   c1->Print(pdfName);
-  c1->SetCanvasSize(1200, 800);
+
+  // QA representative slices (default pct_0_10, pct_0_20, pct_0_30): signal/SB-L/SB-R/SB-LR
+  {
+    const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
+    const Int_t qaCanvasH = 1200;
+    c1->SetCanvasSize(1800, qaCanvasH);
+    for (size_t is = 0; is < allSlices.size(); ++is) {
+      if (!isSliceInQaPdf(allSlices[is].id)) continue;
+      drawSidebandSlicePage(c1, fin, allSlices[is], centProjKeepAlive, cfCache, kTRUE);
+      c1->Print(pdfName);
+    }
+    c1->SetCanvasSize(1200, 800);
+  }
+
+  PdfHeader::ClosePdf(pdfName);
+
+  // CF PDF: remaining centrality slices (SE/ME k* + raw/sub CF)
+  {
+    TString cfNote = "Multi-slice CF PDF from checkHistAnaFemtoPhiProton.C.\n";
+    cfNote += Form("cfRebinFactor=%d; sidebandSubtractAlpha=%.3f; negativeBinPolicy=%s.\n",
+                   getCfRebinFactor(), getSidebandAlpha(), getNegativeBinPolicy());
+    cfNote += "Layout per slice: rows SE/ME/CF_raw/sub; cols signal/SB-L/SB-R/SB-LR.\n";
+    if (gConfigLoaded && ConfigManager::GetInstance().GetFemtoConfig().cfPdfExcludeQaSlices) {
+      cfNote += "Slices in cfCentSlicesQaPdfInclude are excluded (no duplicate with QA PDF).\n";
+    }
+    PdfHeader::OpenPdf(pdfCfName);
+    PdfHeader::MakePdfHeaderPage(pdfCfName, "checkHistAnaFemtoPhiProton.C", inputs, cfNote.Data(), true, anaName);
+    const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
+    c1->SetCanvasSize(1800, 1200);
+    for (size_t is = 0; is < allSlices.size(); ++is) {
+      if (!isSliceInCfPdf(allSlices[is].id)) continue;
+      drawSidebandSlicePage(c1, fin, allSlices[is], centProjKeepAlive, cfCache, kTRUE);
+      c1->Print(pdfCfName);
+    }
+    c1->SetCanvasSize(1200, 800);
+    PdfHeader::ClosePdf(pdfCfName);
+  }
 
   // Console: verify key histograms exist and have entries
   {
@@ -1321,15 +1669,20 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
       if (nPts < 1) std::cout << "  [empty — check hKstar*VsCent in ROOT]";
       std::cout << "\n";
     }
+    printCfSliceConsoleSummary(cfCache);
     std::cout << "=============================================================\n\n";
   }
 
-  PdfHeader::ClosePdf(pdfName);
-
-  freeCentProjKeepAlive(centProjKeepAlive);
-  freeCfCache(cfCache);
   delete c1;
+  c1 = 0;
+  // Pad-owned drawables may be deleted with the canvas; drop pointers only.
+  centProjKeepAlive.clear();
+  for (std::map<std::string, TGraphErrors*>::iterator it = cfCache.begin(); it != cfCache.end(); ++it) {
+    it->second = 0;
+  }
+  cfCache.clear();
   fin->Close();
 
-  std::cout << "Done. PDF saved to: " << pdfName.Data() << std::endl;
+  std::cout << "Done. QA PDF: " << pdfName.Data() << std::endl;
+  std::cout << "Done. CF PDF: " << pdfCfName.Data() << std::endl;
 }
