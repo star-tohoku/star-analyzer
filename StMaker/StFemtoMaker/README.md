@@ -40,16 +40,21 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
   - Default norm region for `anaFemtoPhiProton`: **0.5–1.0 GeV/c** (high k*, where C→1 when SE≈ME).
 - **PDF output** (one checkHist run, `share/figure/<anaName>/`):
   - QA: `{anaName}_checkHistAnaFemtoPhiProton_{jobid}.pdf` — Pages 1–19 + Page 20 + representative slices (`cfCentSlicesQaPdfInclude`, default pct\_0\_10/20/30).
-  - CF: `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` — remaining slices (SE/ME k* + raw/sub CF; `cfPdfExcludeQaSlices: true` avoids duplicate).
+  - CF: `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` — remaining slices (`cfPdfExcludeQaSlices: true` avoids duplicate).
+  - **Per-slice layout (representative + CF PDF):** 4 columns (signal / SB-L / SB-R / SB-LR) × 4 rows (SE k*, ME k*, raw `CF_sig_raw`, sub `CF_sig_sub_SBL|SBR|SBLR` on row 4).
 - Run QA on `*_merge.root`: `./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf>`.
+- Implementation record: `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md` (φ–p cent/SB/CF extension).
 
 ## Event mixing (ME statistics)
 
 - Config: `config/cuts/mixing/mixing_<ana>.yaml` via mainconf `mixing:` key (`MixingConfig`).
 - `mixingMode`: `randomSample` (default) or `bufferAll` (loop all buffer events × all pairs; Zhangwei-like).
-- `maxMixedPairsPerEvent`: cap for randomSample (default 500; 0 = unlimited).
-- `mixBothDirections`: with `bufferAll`, also mix buffer `partA` with current `partB`.
+- `maxMixedPairsPerEvent`: cap for **randomSample only** — max ME pairs **per event** (default 500; 0 = unlimited). Ignored by `bufferAll`.
+- `mixBothDirections`: with `bufferAll`, also mix buffer `partA` with current `partB` (and vice versa).
+- **Mixing bin:** `GetMixingBin(vz, cent9, psi2)` uses Vz bin × **cent9 as bin index** × EP bin. ME pairs only **different events** in the same bin (never same-event pairs; those are SE).
+- **Centrality slices in checkHist:** `pct_0_10` etc. project cent9 ranges **after** fill; Maker mixing stays at cent9 resolution.
 - Changing mixing requires a **new batch run**; cent-slice CF projection uses existing `hKstar*VsCent_*` in merge ROOT.
+- **Rollout:** benchmark `bufferAll` on a short joblist before full catalog; check high-k* `C→1`, ME shape, job time, merge ROOT size.
 
 ## QA PDF pre/post layout (`checkHistAnaFemtoPhiProton.C`)
 

@@ -39,8 +39,11 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 
 - **CF and sideband logic live in** `common/macro/checkHistAnaFemtoPhiProton.C` (not in Maker). Skill: [`docs/ai/skills/femto-species-naming.md`](skills/femto-species-naming.md).
 - **Dual PDF:** `singularity_checkHistAnaFemtoPhiProton.sh` writes QA PDF + `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` under `share/figure/<anaName>/`.
-- **YAML (maker):** `cfCentSlices` (defaults in `FemtoConfig::SetDefaults`), `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`, `negativeBinPolicy`.
-- **YAML (mixing):** `mixingMode`, `maxMixedPairsPerEvent`, `mixBothDirections` for ME statistics (`StFemtoMaker::FillMixedEventPairs`).
+- **YAML (maker):** `cfCentSlices` (defaults in `FemtoConfig::SetDefaults`), `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`, `sidebandAlphaMode`, `negativeBinPolicy`.
+- **YAML (mixing):** `mixingMode`, `maxMixedPairsPerEvent`, `mixBothDirections`, `bufferSize` for ME statistics (`StFemtoMaker::FillMixedEventPairs`). Mixing bin = same Vz × **same cent9** × EP; ME is cross-event only.
+- **SB-LR:** no new maker channel; checkHist `combineSidebandLR` on projected leftSB + rightSB histograms.
+- **Sub CF keys (checkHist cache):** `CF_sig_raw`, `CF_sig_sub_SBL`, `CF_sig_sub_SBR`, `CF_sig_sub_SBLR` per slice id.
+- **Plan / ops record:** `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md` (when present).
 
 ## Naming and terminology
 

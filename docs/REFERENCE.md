@@ -199,7 +199,7 @@ On some login or dev nodes (for example AL9), host `root4star` may fail before t
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi-p femto:** `./script/singularity_run_anaFemtoPhiProton.sh` — same arguments as `run_anaFemtoPhiProton.sh`; uses `StFemtoMaker` (`libStFemtoMaker.so`). Mainconf key **`maker:`** → `config/maker/maker_<anaName>.yaml` (φ builder + femto species/channels in one file).
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
-- **Phi-p femto QA:** `./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>`. Writes QA PDF plus `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` (multi-centrality SE/ME + CF). Femto maker YAML: `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`. Mixing YAML: `mixingMode` (`randomSample`|`bufferAll`), `maxMixedPairsPerEvent`, `mixBothDirections`.
+- **Phi-p femto QA:** `./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>`. Writes QA PDF plus `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` (15 centrality slices: SE/ME k*, raw CF, sideband-subtracted CF). Maker YAML (`FemtoConfig`): `cfCentSlices`, `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`, `negativeBinPolicy`. Mixing YAML: `mixingMode` (`randomSample`|`bufferAll`), `maxMixedPairsPerEvent`, `mixBothDirections`, `bufferSize`. See `StMaker/StFemtoMaker/README.md` and `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md`.
 
 Example (build):
 
@@ -258,6 +258,24 @@ After running the Lambda analysis (locally or after merging batch output), produ
 ```
 
 On **AL9**, use **`./script/singularity_checkHistAnaLambda.sh`** with the same arguments (recommended during the SL7→AL9 transition). PDF naming: `share/figure/<anaName>/<anaName>_checkHistAnaLambda[_<jobid>].pdf`. Pages **1b–1d** show centrality QA when `centrality:` is enabled in mainconf and the ROOT file contains the corresponding histograms. Page **1d** shows `hLambda_InvMass_CentBin0`–`8`.
+
+### Result QA (Phi-p femto): checkHistAnaFemtoPhiProton.sh
+
+After merging batch output for `auau3p85fxt_anaFemtoPhiProton` (or any StFemtoMaker analysis using the same checkHist macro):
+
+```bash
+./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf_path>
+```
+
+Example:
+
+```bash
+./script/singularity_checkHistAnaFemtoPhiProton.sh \
+  rootfile/auau3p85fxt_anaFemtoPhiProton/auau3p85fxt_anaFemtoPhiProton_FC1269B1A73EA32BC18AC1A389355EC3_merge.root \
+  config/mainconf/main_auau3p85fxt_anaFemtoPhiProton.yaml
+```
+
+Writes **two** PDFs under `share/figure/<anaName>/`: QA (`..._checkHistAnaFemtoPhiProton_<jobid>.pdf`) and multi-centrality CF (`..._checkHistAnaFemtoPhiProton_CF_<jobid>.pdf`). CF is computed from merged SE/ME in the macro (not stored in ROOT). Plan record: `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md`.
 
 ### StRoot vendoring
 
