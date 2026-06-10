@@ -26,5 +26,6 @@ Use when editing centrality selection, `CentralityHelper`, centrality YAML, cent
 
 ## Related skills
 
+- [`reuse-star-stroot.md`](reuse-star-stroot.md) — how `StRefMultCorr` was vendored; use when adding new `StRoot/` packages
 - [`femto-species-naming.md`](femto-species-naming.md) — `cfCent9Min`/`Max` for femto CF pages
 - [`stmaker-add-histograms.md`](stmaker-add-histograms.md) — centrality QA histograms in Makers

@@ -24,6 +24,12 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
   - `../../README.md` when index/table changes
   - `../../job/run/README.md` for submit/cleanup/archive details
 
+## StRoot vendoring
+
+- **When to vendor:** only when `$STAR/lib` is insufficient and the code cannot live in `StMaker/`; see [`docs/ai/skills/reuse-star-stroot.md`](skills/reuse-star-stroot.md).
+- **Canonical example:** [`StRoot/StRefMultCorr/`](../../StRoot/StRefMultCorr/) with `PROVENANCE.md`, `Makefile` target, and repo-local `.so` load in `run_ana*.C` (not `$STAR/lib` duplicate).
+- **Agent procedure:** follow `reuse-star-stroot.md` when searching `$STAR/StRoot` or past trees and copying into `StRoot/<Package>/`.
+
 ## Centrality work
 
 - **Bin conventions:** [`StRoot/StRefMultCorr/README.md`](../../StRoot/StRefMultCorr/README.md) is canonical (cent9: larger index = more central; 0–60% → cent9 2–8).

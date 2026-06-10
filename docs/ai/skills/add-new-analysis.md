@@ -20,6 +20,7 @@ For local validation on hosts where host `make` or `root4star` is unreliable —
 - Keep physics/cut logic in Maker, not runner macro.
 - Prefer existing naming conventions and YAML aliases to keep `anaName` consistent.
 - If scripts/workflow changed, follow `update-readme-scripts.md`.
+- If the analysis needs STAR or past-analysis code from `$STAR/StRoot`, `papers/`, or `others/`, follow [`reuse-star-stroot.md`](reuse-star-stroot.md) before vendoring into `StRoot/`.
 
 ## Reference
 

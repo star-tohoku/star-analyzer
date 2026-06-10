@@ -259,6 +259,11 @@ After running the Lambda analysis (locally or after merging batch output), produ
 
 On **AL9**, use **`./script/singularity_checkHistAnaLambda.sh`** with the same arguments (recommended during the SL7→AL9 transition). PDF naming: `share/figure/<anaName>/<anaName>_checkHistAnaLambda[_<jobid>].pdf`. Pages **1b–1d** show centrality QA when `centrality:` is enabled in mainconf and the ROOT file contains the corresponding histograms. Page **1d** shows `hLambda_InvMass_CentBin0`–`8`.
 
+### StRoot vendoring
+
+- **When to vendor:** prefer `$STAR/lib` and `StMaker/` first; copy into `StRoot/<Package>/` only when STAR or past-analysis source must ship with the repo. Agent procedure: `docs/ai/skills/reuse-star-stroot.md`.
+- **Template:** `StRoot/StRefMultCorr/` — `PROVENANCE.md`, dedicated `Makefile` target, load `lib/libStRefMultCorr.so` from repo `lib/` in `run_ana*.C` (never duplicate-load from `$STAR/lib`).
+
 ### Centrality (StRefMultCorr)
 
 - **Canonical reference:** [`StRoot/StRefMultCorr/README.md`](../StRoot/StRefMultCorr/README.md) — cent9/cent16 bin table, 0–60% ↔ cent9 2–8 mapping, `CentralityHelper` event order, YAML keys, femto `cfCent9Min`/`Max`. Agent skill: `docs/ai/skills/centrality-strefmultcorr.md`.
