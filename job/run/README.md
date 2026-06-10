@@ -48,6 +48,29 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   - **runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `anaName+jobid+*` files such as `.list`, `.csh`, `.condor`, `.report`, and `.session.xml`
   - **runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` console output
 
+## Auto merge after batch completion (`--watch-merge`)
+
+To poll subjob ROOT output and run `merge_root_files.csh` automatically when all subjobs finish:
+
+```bash
+cd job/run
+./submit.sh --watch-merge ../joblist/joblist_auau3p85fxt_anaFemtoPhiProton.xml
+```
+
+- **`--watch-merge`**: after a successful submit, starts `script/watch_job_and_merge.sh` in the background (`nohup`).
+- **`--watch-merge-foreground`**: same watcher, but blocks until merge finishes (debug).
+- **Log**: `job/run/watchmerge/watchmerge_<anaName>_<jobid>.log`
+- **Completion rule**: count subjob ROOT files under `rootfile/<anaName>/` (excluding `*_merge.root`) until it matches the number of SUMS `{anaName}{jobid}_*.list` files in `job/run/`; requires two consecutive polls with the same count (GPFS settle). Default poll interval: 300 s (`WATCH_MERGE_POLL_SEC`). Default timeout: 72 h (`WATCH_MERGE_TIMEOUT_SEC` or `--timeout-hours` on the watch script).
+- **runmeta update**: on finish, `runmeta_<anaName>_<jobid>.json` gets a `postProcess.watchMerge` block (`status`, paths, counts).
+- **Skip**: if `*_merge.root` already exists, the watcher exits without re-merging (use `watch_job_and_merge.sh --force-merge` to override).
+- **QA PDF**: not run automatically; after merge, run the usual `singularity_checkHistAna*` script on `*_merge.root` manually.
+
+Manual re-run (e.g. after a timeout):
+
+```bash
+./script/watch_job_and_merge.sh --runmeta job/run/runmeta/runmeta_<anaName>_<jobid>.json
+```
+
 ## Quick Check
 
 - Generate from the intended mainconf: `./script/generate_joblist.sh config/mainconf/main_auau19_anaPhi_test.yaml`

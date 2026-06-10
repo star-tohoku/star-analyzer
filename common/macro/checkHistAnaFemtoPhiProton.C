@@ -358,13 +358,13 @@ static void populateCfCentCache(TFile* fin, std::map<std::string, TGraphErrors*>
 }
 
 static void drawCentProjectedSeMe(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel, Bool_t isSE,
-                                  Int_t cent9Min, Int_t cent9Max) {
+                                  Int_t cent9Min, Int_t cent9Max, std::vector<TH1*>& centProjKeepAlive) {
   if (!canvas) return;
   canvas->cd(pad);
   TH1* h = getProjectedSeMeFromCent(fin, channel, isSE, cent9Min, cent9Max);
   if (h) {
     h->Draw();
-    delete h;
+    centProjKeepAlive.push_back(h);
   }
 }
 
@@ -374,6 +374,26 @@ static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& chann
   canvas->cd(pad);
   std::map<std::string, TGraphErrors*>::const_iterator it = cfCache.find(cfCentCacheKey(channel));
   if (it != cfCache.end() && it->second) it->second->Draw("AP");
+}
+
+// Divide(4, 3): columns = channels, rows = SE / ME / CF.
+static Int_t centSliceLayoutPad(Int_t col, Int_t rowSeMeCf) { return col + rowSeMeCf * 4 + 1; }
+
+static void drawCentSlicePage(TCanvas* canvas, TFile* fin, Int_t cent9Min, Int_t cent9Max,
+                              std::vector<TH1*>& centProjKeepAlive,
+                              std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->Divide(4, 3);
+  const char* channels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "phi_rot_proton", 0};
+  for (Int_t ic = 0; channels[ic]; ++ic) {
+    const std::string channel(channels[ic]);
+    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 0), fin, channel, kTRUE, cent9Min, cent9Max,
+                          centProjKeepAlive);
+    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 1), fin, channel, kFALSE, cent9Min, cent9Max,
+                          centProjKeepAlive);
+    drawCentSliceCf(canvas, centSliceLayoutPad(ic, 2), channel, cfCache);
+  }
 }
 
 static void drawComputedCf(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel, Double_t normQMin,
@@ -395,6 +415,13 @@ static void freeCfCache(std::map<std::string, TGraphErrors*>& cfCache) {
     if (it->second) delete it->second;
   }
   cfCache.clear();
+}
+
+static void freeCentProjKeepAlive(std::vector<TH1*>& centProjKeepAlive) {
+  for (size_t i = 0; i < centProjKeepAlive.size(); ++i) {
+    if (centProjKeepAlive[i]) delete centProjKeepAlive[i];
+  }
+  centProjKeepAlive.clear();
 }
 
 void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
@@ -521,7 +548,8 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   Int_t cfCent9MinNote = 2;
   Int_t cfCent9MaxNote = 8;
   getCfCent9Range(cfCent9MinNote, cfCent9MaxNote);
-  note += Form("CF cent slice: cent9 [%d, %d] projected from hKstarSEVsCent/hKstarMEVsCent (0-60%% for default 2-8).\n",
+  note += Form("CF cent slice: cent9 [%d, %d] projected from hKstarSEVsCent/hKstarMEVsCent (0-60%% for default 2-8); "
+               "layout 3x4 (rows SE/ME/CF, cols signal/leftSB/rightSB/rot).\n",
                cfCent9MinNote, cfCent9MaxNote);
   if (gConfigLoaded) {
     const CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
@@ -534,6 +562,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
   std::map<std::string, TGraphErrors*> cfCache;
+  std::vector<TH1*> centProjKeepAlive;
   populateCfCache(fin, cfCache);
   populateCfCentCache(fin, cfCache);
 
@@ -1205,29 +1234,14 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_rot_proton"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
-  // Page 20-21: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), projected from hKstar*VsCent
+  // Page 20: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), 3x4 (rows SE/ME/CF, cols per channel)
   Int_t cfCent9Min = 0;
   Int_t cfCent9Max = 0;
   getCfCent9Range(cfCent9Min, cfCent9Max);
-  c1->Clear();
-  c1->Divide(2, 3);
-  drawCentProjectedSeMe(c1, 1, fin, "phi_proton_signal", kTRUE, cfCent9Min, cfCent9Max);
-  drawCentProjectedSeMe(c1, 2, fin, "phi_proton_signal", kFALSE, cfCent9Min, cfCent9Max);
-  drawCentSliceCf(c1, 3, "phi_proton_signal", cfCache);
-  drawCentProjectedSeMe(c1, 4, fin, "phi_proton_leftSB", kTRUE, cfCent9Min, cfCent9Max);
-  drawCentProjectedSeMe(c1, 5, fin, "phi_proton_leftSB", kFALSE, cfCent9Min, cfCent9Max);
-  drawCentSliceCf(c1, 6, "phi_proton_leftSB", cfCache);
+  c1->SetCanvasSize(1800, 900);
+  drawCentSlicePage(c1, fin, cfCent9Min, cfCent9Max, centProjKeepAlive, cfCache);
   c1->Print(pdfName);
-
-  c1->Clear();
-  c1->Divide(2, 3);
-  drawCentProjectedSeMe(c1, 1, fin, "phi_proton_rightSB", kTRUE, cfCent9Min, cfCent9Max);
-  drawCentProjectedSeMe(c1, 2, fin, "phi_proton_rightSB", kFALSE, cfCent9Min, cfCent9Max);
-  drawCentSliceCf(c1, 3, "phi_proton_rightSB", cfCache);
-  drawCentProjectedSeMe(c1, 4, fin, "phi_rot_proton", kTRUE, cfCent9Min, cfCent9Max);
-  drawCentProjectedSeMe(c1, 5, fin, "phi_rot_proton", kFALSE, cfCent9Min, cfCent9Max);
-  drawCentSliceCf(c1, 6, "phi_rot_proton", cfCache);
-  c1->Print(pdfName);
+  c1->SetCanvasSize(1200, 800);
 
   // Console: verify key histograms exist and have entries
   {
@@ -1312,6 +1326,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
 
   PdfHeader::ClosePdf(pdfName);
 
+  freeCentProjKeepAlive(centProjKeepAlive);
   freeCfCache(cfCache);
   delete c1;
   fin->Close();

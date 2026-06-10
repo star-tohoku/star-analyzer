@@ -21,6 +21,19 @@ std::vector<std::string> SplitComma(const std::string& s) {
   }
   return out;
 }
+
+Int_t MaxChannelIndexInYaml(const std::map<std::string, std::string>& values) {
+  Int_t maxIdx = -1;
+  for (std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it) {
+    const std::string& key = it->first;
+    if (key.size() < 10 || key.compare(0, 8, "channel_") != 0) continue;
+    const size_t end = key.find('_', 8);
+    if (end == std::string::npos || end <= 8) continue;
+    const Int_t idx = YamlParser::ToInt(key.substr(8, end - 8), -1);
+    if (idx > maxIdx) maxIdx = idx;
+  }
+  return maxIdx;
+}
 }  // namespace
 
 FemtoConfig& FemtoConfig::GetInstance() {
@@ -214,6 +227,13 @@ Bool_t FemtoConfig::ParseYamlFile(const Char_t* filename) {
     ch.normQMin = 0.2;
     ch.normQMax = 0.3;
     channels.push_back(ch);
+  }
+
+  const Int_t maxChannelIdx = MaxChannelIndexInYaml(values);
+  if (maxChannelIdx >= nChannels) {
+    std::cerr << "ERROR: FemtoConfig nChannels=" << nChannels << " but YAML defines channel_" << maxChannelIdx
+              << "_* (set nChannels >= " << (maxChannelIdx + 1) << ")" << std::endl;
+    return kFALSE;
   }
 
   return Validate();

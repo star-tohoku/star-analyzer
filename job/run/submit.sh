@@ -11,6 +11,8 @@ cd "$SCRIPT_DIR"
 
 PROJECT_ROOT="$(cd .. && cd .. && pwd)"
 REBUILD_IF_NEEDED=0
+WATCH_MERGE=0
+WATCH_MERGE_FOREGROUND=0
 TEMPLATE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,13 +20,27 @@ while [[ $# -gt 0 ]]; do
       REBUILD_IF_NEEDED=1
       shift
       ;;
+    --watch-merge)
+      WATCH_MERGE=1
+      shift
+      ;;
+    --watch-merge-foreground)
+      WATCH_MERGE=1
+      WATCH_MERGE_FOREGROUND=1
+      shift
+      ;;
     -h|--help)
       cat <<'EOF'
-Usage: ./submit.sh [--rebuild-if-needed] [joblist.xml]
+Usage: ./submit.sh [--rebuild-if-needed] [--watch-merge] [joblist.xml]
 
 Options:
-  --rebuild-if-needed   Run setup+make once if preflight fails.
-  -h, --help            Show this help.
+  --rebuild-if-needed        Run setup+make once if preflight fails.
+  --watch-merge              After submit, poll subjob ROOT output and run merge_root_files.csh in background.
+  --watch-merge-foreground   Same as --watch-merge but run watcher in foreground (debug).
+  -h, --help                 Show this help.
+
+Example:
+  ./submit.sh --watch-merge ../joblist/joblist_auau3p85fxt_anaFemtoPhiProton.xml
 EOF
       exit 0
       ;;
@@ -212,8 +228,27 @@ if [[ -n "$jobid" ]]; then
   "$SCRIPT_DIR/snapshot_config.sh" "$anaName" "$jobid" "$mainconf_rel" || true
   "$SCRIPT_DIR/snapshot_joblist.sh" "$anaName" "$jobid" "$OUTPUT" || true
   "$SCRIPT_DIR/snapshot_runmeta.sh" "$anaName" "$jobid" "$OUTPUT" "$mainconf_rel" "$submit_out" || true
+
+  if [[ "$WATCH_MERGE" -eq 1 ]]; then
+    RUNMETA_JSON="$SCRIPT_DIR/runmeta/runmeta_${anaName}_${jobid}.json"
+    WATCHMERGE_DIR="$SCRIPT_DIR/watchmerge"
+    mkdir -p "$WATCHMERGE_DIR"
+    WATCH_LOG="$WATCHMERGE_DIR/watchmerge_${anaName}_${jobid}.log"
+    WATCH_CMD=("$PROJECT_ROOT/script/watch_job_and_merge.sh" --runmeta "$RUNMETA_JSON")
+    if [[ "$WATCH_MERGE_FOREGROUND" -eq 1 ]]; then
+      echo "Starting watch-merge in foreground (log: $WATCH_LOG)"
+      "${WATCH_CMD[@]}"
+    else
+      nohup "${WATCH_CMD[@]}" >> "$WATCH_LOG" 2>&1 &
+      watch_pid=$!
+      echo "watch-merge started (PID $watch_pid, log: $WATCH_LOG)"
+    fi
+  fi
 else
   echo "WARNING: Could not extract jobid; skipping configlog, joblistlog, and runmeta." >&2
+  if [[ "$WATCH_MERGE" -eq 1 ]]; then
+    echo "WARNING: --watch-merge requires a jobid; watcher not started." >&2
+  fi
 fi
 
 exit "$submit_rc"

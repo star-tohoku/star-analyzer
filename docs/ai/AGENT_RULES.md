@@ -24,6 +24,11 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
   - `../../README.md` when index/table changes
   - `../../job/run/README.md` for submit/cleanup/archive details
 
+## Centrality work
+
+- **Bin conventions:** [`StRoot/StRefMultCorr/README.md`](../../StRoot/StRefMultCorr/README.md) is canonical (cent9: larger index = more central; 0–60% → cent9 2–8).
+- **Agent procedure:** follow [`docs/ai/skills/centrality-strefmultcorr.md`](skills/centrality-strefmultcorr.md) when changing centrality YAML, `CentralityHelper`, cent axes, or `cfCent9Min`/`Max`.
+
 ## Naming and terminology
 
 - **anaName**: `{system}_{anaId}[_condition]` and use it consistently across configs, outputs, and job artifacts.
@@ -47,6 +52,7 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 - Submitted joblist snapshot: `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`
 - Submit-time runmeta manifest: `job/run/runmeta/runmeta_<anaName>_<jobid>.json`
 - Submit-time runmeta sidecars: `job/run/runmeta/gitstatus_<anaName>_<jobid>.txt`, `gitdiff_<anaName>_<jobid>.patch`, `gitsubmodules_<anaName>_<jobid>.txt`, `runtime_bundle_<anaName>_<jobid>.tar.gz`, `sums_artifacts_<anaName>_<jobid>.tar.gz`, `submit_stdout_<anaName>_<jobid>.txt`
+- Watch-merge log: `job/run/watchmerge/watchmerge_<anaName>_<jobid>.pid` / `.log`; completion metadata in runmeta `postProcess.watchMerge`
 - QA PDF: `share/figure/<anaName>/<anaName>_checkHistAnaPhi[_<jobid>].pdf`
 
 ## Submit reproducibility artifacts

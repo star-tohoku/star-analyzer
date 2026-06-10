@@ -12,6 +12,7 @@ Example:
   python script/analysis_info_helper.py --generate-joblist config/mainconf/main_auau19_anaLambda.yaml
 """
 from __future__ import print_function
+import json
 import os
 import re
 import sys
@@ -160,6 +161,79 @@ def extract_batch_dirs_from_joblist(joblist_path):
     return dirs
 
 
+def extract_output_stem_from_joblist(joblist_path):
+    """Parse output file stem from joblist fromScratch (stem before _$JOBID.root)."""
+    with open(joblist_path, 'r') as f:
+        content = f.read()
+    match = re.search(r'fromScratch="[^"]+/([^/$]+)_\$JOBID\.root"', content)
+    if not match:
+        print("ERROR: could not parse fromScratch output stem in joblist: {}".format(
+            joblist_path), file=sys.stderr)
+        sys.exit(1)
+    return match.group(1)
+
+
+def rootfile_dir_from_joblist(joblist_path):
+    """Return absolute rootfile output directory from joblist toURL."""
+    dirs = extract_batch_dirs_from_joblist(joblist_path)
+    return dirs[2]
+
+
+def merge_sample_from_joblist(joblist_path, jobid):
+    """Return path to first subjob ROOT used as merge_root_files.csh sample input."""
+    rootfile_dir = rootfile_dir_from_joblist(joblist_path)
+    output_stem = extract_output_stem_from_joblist(joblist_path)
+    sample = os.path.join(rootfile_dir, "{}_{}_0.root".format(output_stem, jobid))
+    merge_output = os.path.join(rootfile_dir, "{}_{}_merge.root".format(output_stem, jobid))
+    return sample, merge_output, rootfile_dir, output_stem
+
+
+def count_expected_subjobs(job_run_dir, job_prefix):
+    """Count SUMS subjob .list files: {job_prefix}_*.list under job/run."""
+    if not os.path.isdir(job_run_dir):
+        print("ERROR: job run directory not found: {}".format(job_run_dir), file=sys.stderr)
+        sys.exit(1)
+    prefix = job_prefix + "_"
+    count = 0
+    for name in os.listdir(job_run_dir):
+        if name.startswith(prefix) and name.endswith('.list'):
+            count += 1
+    if count < 1:
+        print("ERROR: no subjob .list files matching {}*.list in {}".format(
+            prefix, job_run_dir), file=sys.stderr)
+        sys.exit(1)
+    return count
+
+
+def count_subjob_roots(rootfile_dir, output_stem, jobid):
+    """Count subjob ROOT files excluding *_merge.root."""
+    pattern_prefix = "{}_{}_".format(output_stem, jobid)
+    merge_name = "{}_{}_merge.root".format(output_stem, jobid)
+    count = 0
+    if not os.path.isdir(rootfile_dir):
+        return 0
+    for name in os.listdir(rootfile_dir):
+        if not name.endswith('.root'):
+            continue
+        if name == merge_name:
+            continue
+        if name.startswith(pattern_prefix):
+            count += 1
+    return count
+
+
+def update_runmeta_postprocess(runmeta_path, postprocess):
+    """Merge postProcess.watchMerge into runmeta JSON."""
+    with open(runmeta_path, 'r') as handle:
+        data = json.load(handle)
+    existing = data.get('postProcess') or {}
+    existing['watchMerge'] = postprocess
+    data['postProcess'] = existing
+    with open(runmeta_path, 'w') as handle:
+        json.dump(data, handle, indent=2, sort_keys=True)
+        handle.write('\n')
+
+
 def ensure_batch_dirs_from_joblist(joblist_path):
     """Create batch log/err/rootfile directories and verify they are writable."""
     dirs = extract_batch_dirs_from_joblist(joblist_path)
@@ -246,20 +320,129 @@ def main():
     parser.add_argument('--ensure-batch-dirs', dest='ensure_batch_dirs_joblist', default=None,
                         metavar='JOBLIST_XML',
                         help='Create log/err/rootfile dirs from joblist stdout/stderr/output URLs')
+    parser.add_argument('--expected-subjobs-from-joblist', dest='expected_subjobs_joblist',
+                        default=None, metavar='JOBLIST_XML',
+                        help='Print expected subjob count from job/run .list files')
+    parser.add_argument('--job-run-dir', default=None,
+                        help='Directory containing SUMS {jobPrefix}_N.list files (with --expected-subjobs-from-joblist)')
+    parser.add_argument('--job-prefix', default=None,
+                        help='SUMS job prefix anaName+jobid (with --expected-subjobs-from-joblist)')
+    parser.add_argument('--merge-sample-from-joblist', dest='merge_sample_joblist',
+                        default=None, metavar='JOBLIST_XML',
+                        help='Print merge sample ROOT path for merge_root_files.csh')
+    parser.add_argument('--merge-output-from-joblist', dest='merge_output_joblist',
+                        default=None, metavar='JOBLIST_XML',
+                        help='Print expected merged ROOT output path')
+    parser.add_argument('--rootfile-dir-from-joblist', dest='rootfile_dir_joblist',
+                        default=None, metavar='JOBLIST_XML',
+                        help='Print absolute rootfile output directory from joblist')
+    parser.add_argument('--output-stem-from-joblist', dest='output_stem_joblist',
+                        default=None, metavar='JOBLIST_XML',
+                        help='Print output file stem parsed from joblist fromScratch')
+    parser.add_argument('--count-subjob-roots', action='store_true',
+                        help='Print count of subjob ROOT files (requires --rootfile-dir-from-joblist context)')
+    parser.add_argument('--watch-merge-jobid', default=None,
+                        help='32-char jobid for merge/count helpers')
+    parser.add_argument('--update-runmeta-postprocess', dest='update_runmeta_postprocess',
+                        default=None, metavar='RUNMETA_JSON',
+                        help='Write postProcess.watchMerge into runmeta JSON (JSON on stdin)')
     args = parser.parse_args()
 
     project_root = os.path.abspath(args.project_root)
     config_base = os.path.join(project_root, 'config')
 
-    if args.ensure_batch_dirs_joblist:
-        joblist_path = args.ensure_batch_dirs_joblist
-        if not os.path.isabs(joblist_path):
-            joblist_path = os.path.join(project_root, joblist_path)
-        if not os.path.isfile(joblist_path):
-            print("ERROR: joblist not found: {}".format(joblist_path), file=sys.stderr)
+    def resolve_joblist_path(path):
+        if not os.path.isabs(path):
+            path = os.path.join(project_root, path)
+        if not os.path.isfile(path):
+            print("ERROR: joblist not found: {}".format(path), file=sys.stderr)
             sys.exit(1)
-        ensure_batch_dirs_from_joblist(joblist_path)
+        return path
+
+    if args.update_runmeta_postprocess:
+        runmeta_path = args.update_runmeta_postprocess
+        if not os.path.isabs(runmeta_path):
+            runmeta_path = os.path.join(project_root, runmeta_path)
+        if not os.path.isfile(runmeta_path):
+            print("ERROR: runmeta not found: {}".format(runmeta_path), file=sys.stderr)
+            sys.exit(1)
+        payload = sys.stdin.read()
+        if not payload.strip():
+            print("ERROR: --update-runmeta-postprocess requires JSON on stdin", file=sys.stderr)
+            sys.exit(1)
+        postprocess = json.loads(payload)
+        update_runmeta_postprocess(runmeta_path, postprocess)
         return
+
+    if args.ensure_batch_dirs_joblist:
+        ensure_batch_dirs_from_joblist(resolve_joblist_path(args.ensure_batch_dirs_joblist))
+        return
+
+    joblist_watch_actions = (
+        args.expected_subjobs_joblist,
+        args.merge_sample_joblist,
+        args.merge_output_joblist,
+        args.rootfile_dir_joblist,
+        args.output_stem_joblist,
+        args.count_subjob_roots,
+    )
+    if any(joblist_watch_actions):
+        if not args.watch_merge_jobid and args.count_subjob_roots:
+            print("ERROR: --count-subjob-roots requires --watch-merge-jobid", file=sys.stderr)
+            sys.exit(1)
+        joblist_for_watch = None
+        for candidate in (
+            args.expected_subjobs_joblist,
+            args.merge_sample_joblist,
+            args.merge_output_joblist,
+            args.rootfile_dir_joblist,
+            args.output_stem_joblist,
+        ):
+            if candidate:
+                joblist_for_watch = resolve_joblist_path(candidate)
+                break
+        if args.count_subjob_roots:
+            if not joblist_for_watch and args.rootfile_dir_joblist:
+                joblist_for_watch = resolve_joblist_path(args.rootfile_dir_joblist)
+            elif not joblist_for_watch:
+                print("ERROR: --count-subjob-roots requires a joblist option", file=sys.stderr)
+                sys.exit(1)
+        if args.expected_subjobs_joblist:
+            joblist_path = resolve_joblist_path(args.expected_subjobs_joblist)
+            if not args.job_run_dir or not args.job_prefix:
+                print("ERROR: --expected-subjobs-from-joblist requires --job-run-dir and --job-prefix",
+                      file=sys.stderr)
+                sys.exit(1)
+            job_run_dir = os.path.abspath(os.path.expandvars(os.path.expanduser(args.job_run_dir)))
+            print(count_expected_subjobs(job_run_dir, args.job_prefix))
+            return
+        if args.merge_sample_joblist or args.merge_output_joblist:
+            if not args.watch_merge_jobid:
+                print("ERROR: merge path helpers require --watch-merge-jobid", file=sys.stderr)
+                sys.exit(1)
+            joblist_path = resolve_joblist_path(
+                args.merge_sample_joblist or args.merge_output_joblist)
+            sample, merge_output, _, _ = merge_sample_from_joblist(
+                joblist_path, args.watch_merge_jobid)
+            if args.merge_sample_joblist:
+                print(sample)
+            else:
+                print(merge_output)
+            return
+        if args.count_subjob_roots:
+            if not joblist_for_watch:
+                print("ERROR: --count-subjob-roots requires a joblist option", file=sys.stderr)
+                sys.exit(1)
+            rootfile_dir = rootfile_dir_from_joblist(joblist_for_watch)
+            output_stem = extract_output_stem_from_joblist(joblist_for_watch)
+            print(count_subjob_roots(rootfile_dir, output_stem, args.watch_merge_jobid))
+            return
+        if args.rootfile_dir_joblist:
+            print(rootfile_dir_from_joblist(resolve_joblist_path(args.rootfile_dir_joblist)))
+            return
+        if args.output_stem_joblist:
+            print(extract_output_stem_from_joblist(resolve_joblist_path(args.output_stem_joblist)))
+            return
 
     if args.joblist_path:
         joblist_path = args.joblist_path
@@ -398,7 +581,8 @@ def main():
         print("Wrote {}".format(out_path))
         return
 
-    print("ERROR: specify --library-tag, --ana-name, --pico-dst-list, --output-rootfile, --generate-joblist, or --ensure-batch-dirs", file=sys.stderr)
+    print("ERROR: specify --library-tag, --ana-name, --pico-dst-list, --output-rootfile, "
+          "--generate-joblist, --ensure-batch-dirs, or watch-merge helper options", file=sys.stderr)
     sys.exit(1)
 
 

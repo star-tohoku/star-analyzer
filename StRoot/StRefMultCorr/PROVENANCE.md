@@ -1,5 +1,7 @@
 # StRefMultCorr (vendored)
 
+**Centrality bin conventions and framework usage:** see [`README.md`](README.md) (canonical).
+
 Copied from STAR papers analysis tree:
 
 - **Source**: `/gpfs/mnt/gpfs01/star/pwg/oura/papers/psn0836/9GeV/StRoot/StRefMultCorr/`

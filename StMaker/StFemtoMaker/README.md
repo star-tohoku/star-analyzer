@@ -33,7 +33,7 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 - `hCF_*` may exist in hist YAML as empty shells; do not rely on CF in subjob or merged ROOT from Maker.
 - **CF is computed in `checkHistAnaFemtoPhiProton.C`** from merged SE/ME after all events are summed:
   - SE/ME are rebinned first when `cfRebinFactor` > 1 in maker YAML (e.g. 100 k* bins / 5 → 20 CF bins).
-  - **Cent slice CF**: project `hKstarSEVsCent_*` / `hKstarMEVsCent_*` over `cfCent9Min`–`cfCent9Max` (default 2–8 ≈ 0–60%), then same CF formula. Drawn as TGraphErrors with Poisson errors.
+  - **Cent slice CF**: project `hKstarSEVsCent_*` / `hKstarMEVsCent_*` over `cfCent9Min`–`cfCent9Max` (default 2–8 ≈ 0–60% centrality; see `StRoot/StRefMultCorr/README.md`), then same CF formula. Drawn as TGraphErrors with Poisson errors.
   - Bin-wise: `C(k*) = SE / (ME * seNorm/meNorm)` with `seNorm`, `meNorm` integrals over `normQMin`–`normQMax` from maker YAML.
   - Default norm region for `anaFemtoPhiProton`: **0.5–1.0 GeV/c** (high k*, where C→1 when SE≈ME).
 - Run QA on `*_merge.root`: `./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf>`.
@@ -63,7 +63,9 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 
 ## YAML flat-key layout
 
-`YamlParser` is flat; the femto section of maker YAML uses prefixed keys:
+`YamlParser` is flat; the femto section of maker YAML uses prefixed keys.
+
+**`nChannels`** must be at least one greater than the highest `channel_N_*` index present (e.g. `channel_0` … `channel_4` requires `nChannels: 5`). If `nChannels` is too small, sideband and rotation channels are silently skipped at load time.
 
 ```yaml
 speciesKeys: proton,phi
