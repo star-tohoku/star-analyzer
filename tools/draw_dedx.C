@@ -1,6 +1,6 @@
 void draw_dedx() {
     // 開く対象のROOTファイル
-    TString fileName = "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer/rootfile/auau13p5_anaNuclearId/auau13p5_anaNuclearId_all.root";
+    TString fileName = "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer/rootfile/auau7p3_anaNuclearId/auau7p3_anaNuclearId_all.root";
     TFile *file = TFile::Open(fileName);
     
     if (!file || file->IsZombie()) {
@@ -12,7 +12,7 @@ void draw_dedx() {
     TCanvas *c1 = new TCanvas("c1", "dE/dx vs p", 1200, 1200);
     
     // PDFを開く（複数ページの保存を開始）
-    c1->Print("tools/pdffiles/draw_dedx.pdf[");
+    c1->Print("rootfile/auau7p3_anaNuclearId/pdf/draw_dedx.pdf[");
 
     // 描画する対象のリスト (空文字はInclusive, それ以外は各粒子)
     const char* speciesList[] = {"", "d", "t", "3He", "4He"};
@@ -51,9 +51,9 @@ void draw_dedx() {
         }
         
         // 1ページ分としてPDFに保存
-        c1->Print("tools/pdffiles/draw_dedx.pdf");
+        c1->Print("rootfile/auau7p3_anaNuclearId/pdf/draw_dedx.pdf");
     }
 
     // PDFを閉じる
-    c1->Print("tools/pdffiles/draw_dedx.pdf]");
+    c1->Print("rootfile/auau7p3_anaNuclearId/pdf/draw_dedx.pdf]");
 }

@@ -336,7 +336,10 @@ Int_t StLambdaMaker::Make() {
       TLorentzVector lp, lpi;
       lp.SetVectM(momP,  kProtonMass);
       lpi.SetVectM(momPi, kPionMass);
-      Double_t invMass = (lp + lpi).M();
+      TLorentzVector lLambda = lp + lpi;
+      Double_t invMass = lLambda.M();
+      Double_t rapidity = lLambda.Rapidity();
+      Double_t decayLength = flight.Mag();
 
       mLambdaMom.push_back(pLam);
       mLambdaInvMass.push_back(invMass);
@@ -354,6 +357,8 @@ Int_t StLambdaMaker::Make() {
         m_histManager->Fill("hNSigmaProton", p->nSigmaProton());
         m_histManager->Fill("hNSigmaPion", pi->nSigmaPion());
         m_histManager->Fill("hLambda_InvMass_vs_Pt", pLam.Pt(), invMass);
+        m_histManager->Fill("hLambda_InvMass_vs_DecayLength", decayLength, invMass);
+        m_histManager->Fill("hLambda_InvMass_vs_Y", rapidity, invMass);
         m_histManager->Fill("hDCAV0_vs_InvMass", invMass, dcaV0);
         m_histManager->Fill("hCosPointing_vs_InvMass", invMass, cosPoint);
         FillLambdaInvMassCentrality(invMass);

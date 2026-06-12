@@ -9,6 +9,14 @@ axes:
     nBins: 200
     min: 0.0
     max: 10.0
+  Y: &Y
+    nBins: 100
+    min: -2.0
+    max: 2.0
+  DecayLength: &DecayLength
+    nBins: 200
+    min: 0.0
+    max: 100.0
   Eta: &Eta
     nBins: 100
     min: -2.5
@@ -209,6 +217,14 @@ histograms:
     xAxis: *Pt
     yAxis: *InvMassLambda
     title: "M_{p#pi^{-}} vs p_{T};p_{T} [GeV/c];M_{p#pi^{-}} [GeV/c^{2}]"
+  hLambda_InvMass_vs_DecayLength:
+    xAxis: *DecayLength
+    yAxis: *InvMassLambda
+    title: "M_{p#pi^{-}} vs Decay Length;Decay Length [cm];M_{p#pi^{-}} [GeV/c^{2}]"
+  hLambda_InvMass_vs_Y:
+    xAxis: *Y
+    yAxis: *InvMassLambda
+    title: "M_{p#pi^{-}} vs Rapidity;y;M_{p#pi^{-}} [GeV/c^{2}]"
   hDCAV0_vs_InvMass:
     xAxis: *InvMassLambda
     yAxis: *DCA
