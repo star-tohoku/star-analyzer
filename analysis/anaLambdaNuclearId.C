@@ -210,9 +210,15 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
     // 2. Correlate Lambdas and Nuclei
     for (size_t il = 0; il < lamMoms.size(); il++) {
       double invMass = lamMasses[il];
+      double delta   = invMass - nucCuts.MeanLambda;
+      double window  = nucCuts.nsigmaLambda * nucCuts.sigmaLambda;
 
-      // Enforce the mass selection window (from NuclearIdCutConfig)
-      if (TMath::Abs(invMass - nucCuts.MeanLambda) > nucCuts.nsigmaLambda * nucCuts.sigmaLambda) continue;
+      // Classify Lambda candidate into signal or sideband regions
+      bool isSig   = (TMath::Abs(delta) <= window);
+      bool isSBPos = (!isSig && delta > window  && delta <= 2.0 * window);
+      bool isSBNeg = (!isSig && delta < -window && delta >= -2.0 * window);
+
+      if (!isSig && !isSBPos && !isSBNeg) continue;
 
       // Construct Lambda TLorentzVector using PDG mass
       TLorentzVector lambdaMom;
@@ -250,14 +256,14 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
         lamRest.Boost(boostVec);
         double k_star = lamRest.P();
 
-        // Fill histograms based on nucleus type
+        // Fill histograms based on region
         if (nuclearidMaker) {
-          nuclearidMaker->FillKstar(k_star, q_lab, nucType);
-          
-          static int pairCount = 0;
-          if (pairCount < 50) {
-            std::cout << "DEBUG Pair " << pairCount << ": k_star=" << k_star << ", q_lab=" << q_lab << " (type=" << nucType << ")" << std::endl;
-            pairCount++;
+          if (isSig) {
+            nuclearidMaker->FillKstar(k_star, q_lab, nucType, cent9);
+          } else if (isSBPos) {
+            nuclearidMaker->FillKstarSideband(k_star, q_lab, nucType, +1, cent9);
+          } else if (isSBNeg) {
+            nuclearidMaker->FillKstarSideband(k_star, q_lab, nucType, -1, cent9);
           }
         }
       }

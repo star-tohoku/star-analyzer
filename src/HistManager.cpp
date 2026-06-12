@@ -176,6 +176,11 @@ TH1* HistManager::Get(const char* name) const {
   return it->second;
 }
 
+Bool_t HistManager::HasHistogram(const char* name) const {
+  if (!name) return kFALSE;
+  return m_histograms.find(name) != m_histograms.end();
+}
+
 void HistManager::Fill(const char* name, Double_t x) {
   if (!name) return;
   TH1* h = Get(name);

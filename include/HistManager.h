@@ -23,6 +23,9 @@ public:
   /** Get histogram by name. Returns nullptr if not found. */
   TH1* Get(const char* name) const;
 
+  /** Return true if a histogram with the given name was loaded from YAML. */
+  Bool_t HasHistogram(const char* name) const;
+
   /** Fill 1D histogram. No-op and log once if name not found. */
   void Fill(const char* name, Double_t x);
 

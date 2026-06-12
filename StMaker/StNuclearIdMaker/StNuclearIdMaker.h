@@ -29,7 +29,8 @@ class StNuclearIdMaker : public StMaker {
   const std::vector<Int_t>& GetNuclearIdList() const { return mNuclearId; }
   const std::vector<Int_t>& GetNuclearTypeList() const { return mNuclearType; }
 
-  void FillKstar(Double_t k_star, Double_t q_lab, Int_t type);
+  void FillKstar(Double_t k_star, Double_t q_lab, Int_t type, Int_t cent9 = -1);
+  void FillKstarSideband(Double_t k_star, Double_t q_lab, Int_t type, Int_t sbSign, Int_t cent9 = -1);
 
  private:
   StPicoDstMaker* mPicoDstMaker;

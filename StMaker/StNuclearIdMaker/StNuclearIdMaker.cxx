@@ -163,7 +163,7 @@ Int_t StNuclearIdMaker::Make() {
   m_centWeight = 1.0;
   m_centralityPercent = -1.0;
 
-  if (m_histManager) {
+  if (m_histManager && m_histManager->HasHistogram("hRefMultVsNTOFMatch")) {
     m_histManager->Fill("hRefMultVsNTOFMatch", (Double_t)nBTOFMatch, (Double_t)rawMult);
   }
 
@@ -179,7 +179,7 @@ Int_t StNuclearIdMaker::Make() {
     if (!m_centrality->ComputeBins(event, rawMult, vz, m_cent9, m_cent16, m_refMultCorr, m_centWeight, centReason)) {
       return kStOK;
     }
-    if (m_histManager && centCfg.fillCentralityQA) {
+    if (m_histManager && centCfg.fillCentralityQA && m_histManager->HasHistogram("hRawMult")) {
       m_histManager->Fill("hRawMult", (Double_t)rawMult);
       m_histManager->Fill("hCentralityRaw", (Double_t)m_cent9);
       m_histManager->Fill("hRefMultCorr", m_refMultCorr);
@@ -200,7 +200,7 @@ Int_t StNuclearIdMaker::Make() {
     }
   }
 
-  if (m_histManager) {
+  if (m_histManager && m_histManager->HasHistogram("hVz")) {
     m_histManager->Fill("hVz", pVtx.Z());
     m_histManager->Fill("hRefMult", refMult);
   }
@@ -213,6 +213,21 @@ Int_t StNuclearIdMaker::Make() {
   double t_sigma  = 3.41755e-01;
 
   Int_t nTracks = mPicoDst->numberOfTracks();
+
+  // Sentinel flags: check once before the track loop whether per-cent histograms
+  // exist in the loaded YAML. This avoids per-track HasHistogram calls for
+  // dynamic names like Form("hDedxP_CentBin%d", cent9).
+  const bool hasCentBinDedxP    = m_histManager && m_histManager->HasHistogram("hDedxP_CentBin0");
+  const bool hasCentBinDedxP_d  = m_histManager && m_histManager->HasHistogram("hDedxP_d_CentBin0");
+  const bool hasCentBinDedxP_t  = m_histManager && m_histManager->HasHistogram("hDedxP_t_CentBin0");
+  const bool hasCentBinDedxP_3He= m_histManager && m_histManager->HasHistogram("hDedxP_3He_CentBin0");
+  const bool hasCentBinDedxP_4He= m_histManager && m_histManager->HasHistogram("hDedxP_4He_CentBin0");
+  const bool hasCentBinPvsEta_d = m_histManager && m_histManager->HasHistogram("hPvsEta_d_CentBin0");
+  const bool hasCentBinPvsEta_t = m_histManager && m_histManager->HasHistogram("hPvsEta_t_CentBin0");
+  const bool hasCentBinPvsEta_3He=m_histManager && m_histManager->HasHistogram("hPvsEta_3He_CentBin0");
+  const bool hasCentBinPvsEta_4He=m_histManager && m_histManager->HasHistogram("hPvsEta_4He_CentBin0");
+  const bool hasCentBinMult_d   = m_histManager && m_histManager->HasHistogram("hMult_d_CentBin0");
+
   for (Int_t it = 0; it < nTracks; it++) {
     StPicoTrack* trk = mPicoDst->track(it);
     if (!trk) continue;
@@ -226,9 +241,9 @@ Int_t StNuclearIdMaker::Make() {
     Double_t dedx = trk->dEdx();
     if (dedx <= 0) continue;
 
-    if (m_histManager) {
+    if (m_histManager && m_histManager->HasHistogram("hDedxP")) {
       m_histManager->Fill("hDedxP", p, dedx);
-      if (m_cent9 >= 0 && m_cent9 <= 8) {
+      if (hasCentBinDedxP && m_cent9 >= 0 && m_cent9 <= 8) {
         m_histManager->Fill(Form("hDedxP_CentBin%d", m_cent9), p, dedx);
       }
 
@@ -250,22 +265,22 @@ Int_t StNuclearIdMaker::Make() {
     double nSigma_3He = pid.GetNSigma(NuclearPID::kHe3,     p, dedx);
     double nSigma_4He = pid.GetNSigma(NuclearPID::kHe4,     p, dedx);
 
-    if (m_histManager) {
+    if (m_histManager && m_histManager->HasHistogram("hDedxP_d")) {
       if (fabs(nSigma_d)   < cuts.maxNSigmaNuclear) {
         m_histManager->Fill("hDedxP_d", p, dedx);
-        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_d_CentBin%d", m_cent9), p, dedx);
+        if (hasCentBinDedxP_d && m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_d_CentBin%d", m_cent9), p, dedx);
       }
       if (fabs(nSigma_t)   < cuts.maxNSigmaNuclear) {
         m_histManager->Fill("hDedxP_t", p, dedx);
-        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_t_CentBin%d", m_cent9), p, dedx);
+        if (hasCentBinDedxP_t && m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_t_CentBin%d", m_cent9), p, dedx);
       }
       if (fabs(nSigma_3He) < cuts.maxNSigmaNuclear) {
         m_histManager->Fill("hDedxP_3He", p, dedx);
-        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_3He_CentBin%d", m_cent9), p, dedx);
+        if (hasCentBinDedxP_3He && m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_3He_CentBin%d", m_cent9), p, dedx);
       }
       if (fabs(nSigma_4He) < cuts.maxNSigmaNuclear) {
         m_histManager->Fill("hDedxP_4He", p, dedx);
-        if (m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_4He_CentBin%d", m_cent9), p, dedx);
+        if (hasCentBinDedxP_4He && m_cent9 >= 0 && m_cent9 <= 8) m_histManager->Fill(Form("hDedxP_4He_CentBin%d", m_cent9), p, dedx);
       }
     }
 
@@ -280,11 +295,11 @@ Int_t StNuclearIdMaker::Make() {
     if (fabs(nSigma_d) < cuts.maxNSigmaNuclear) {
       double E = TMath::Sqrt(M_d*M_d + p*p);
       double y = 0.5 * TMath::Log((E + pz) / (E - pz));
-      if (m_histManager) {
+      if (m_histManager && m_histManager->HasHistogram("hPvsEta_d")) {
         m_histManager->Fill("hPvsEta_d", p, eta);
         m_histManager->Fill("hPvsY_d", p, y);
         m_histManager->Fill("hPvsPt_d", p, pT);
-        if (m_cent9 >= 0 && m_cent9 <= 8) {
+        if (hasCentBinPvsEta_d && m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_d_CentBin%d", m_cent9), p, eta);
           m_histManager->Fill(Form("hPvsY_d_CentBin%d", m_cent9), p, y);
           m_histManager->Fill(Form("hPvsPt_d_CentBin%d", m_cent9), p, pT);
@@ -294,11 +309,11 @@ Int_t StNuclearIdMaker::Make() {
     if (fabs(nSigma_t) < cuts.maxNSigmaNuclear) {
       double E = TMath::Sqrt(M_t*M_t + p*p);
       double y = 0.5 * TMath::Log((E + pz) / (E - pz));
-      if (m_histManager) {
+      if (m_histManager && m_histManager->HasHistogram("hPvsEta_t")) {
         m_histManager->Fill("hPvsEta_t", p, eta);
         m_histManager->Fill("hPvsY_t", p, y);
         m_histManager->Fill("hPvsPt_t", p, pT);
-        if (m_cent9 >= 0 && m_cent9 <= 8) {
+        if (hasCentBinPvsEta_t && m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_t_CentBin%d", m_cent9), p, eta);
           m_histManager->Fill(Form("hPvsY_t_CentBin%d", m_cent9), p, y);
           m_histManager->Fill(Form("hPvsPt_t_CentBin%d", m_cent9), p, pT);
@@ -311,11 +326,11 @@ Int_t StNuclearIdMaker::Make() {
       double pT_act = 2.0 * pT;
       double E = TMath::Sqrt(M_3He*M_3He + p_act*p_act);
       double y = 0.5 * TMath::Log((E + pz_act) / (E - pz_act));
-      if (m_histManager) {
+      if (m_histManager && m_histManager->HasHistogram("hPvsEta_3He")) {
         m_histManager->Fill("hPvsEta_3He", p_act, eta);
         m_histManager->Fill("hPvsY_3He", p_act, y);
         m_histManager->Fill("hPvsPt_3He", p_act, pT_act);
-        if (m_cent9 >= 0 && m_cent9 <= 8) {
+        if (hasCentBinPvsEta_3He && m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_3He_CentBin%d", m_cent9), p_act, eta);
           m_histManager->Fill(Form("hPvsY_3He_CentBin%d", m_cent9), p_act, y);
           m_histManager->Fill(Form("hPvsPt_3He_CentBin%d", m_cent9), p_act, pT_act);
@@ -328,11 +343,11 @@ Int_t StNuclearIdMaker::Make() {
       double pT_act = 2.0 * pT;
       double E = TMath::Sqrt(M_4He*M_4He + p_act*p_act);
       double y = 0.5 * TMath::Log((E + pz_act) / (E - pz_act));
-      if (m_histManager) {
+      if (m_histManager && m_histManager->HasHistogram("hPvsEta_4He")) {
         m_histManager->Fill("hPvsEta_4He", p_act, eta);
         m_histManager->Fill("hPvsY_4He", p_act, y);
         m_histManager->Fill("hPvsPt_4He", p_act, pT_act);
-        if (m_cent9 >= 0 && m_cent9 <= 8) {
+        if (hasCentBinPvsEta_4He && m_cent9 >= 0 && m_cent9 <= 8) {
           m_histManager->Fill(Form("hPvsEta_4He_CentBin%d", m_cent9), p_act, eta);
           m_histManager->Fill(Form("hPvsY_4He_CentBin%d", m_cent9), p_act, y);
           m_histManager->Fill(Form("hPvsPt_4He_CentBin%d", m_cent9), p_act, pT_act);
@@ -392,7 +407,7 @@ Int_t StNuclearIdMaker::Make() {
         mNuclearId.push_back(trk->id());
         mNuclearType.push_back(best_type);
 
-        if (m_histManager) {
+        if (m_histManager && m_histManager->HasHistogram("hVz_d")) {
           TVector3 pVtx = event->primaryVertex();
           double vz = pVtx.Z();
           if (best_type == 0) m_histManager->Fill("hVz_d", vz);
@@ -404,53 +419,53 @@ Int_t StNuclearIdMaker::Make() {
     }
 
     if (!trk->isTofTrack()) {
-      if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
+      if (m_histManager && m_histManager->HasHistogram("hDedxP_cut")) m_histManager->Fill("hDedxP_cut", p, dedx);
       continue;
     }
 
     int idx = trk->bTofPidTraitsIndex();
     if (idx < 0) {
-      if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
+      if (m_histManager && m_histManager->HasHistogram("hDedxP_cut")) m_histManager->Fill("hDedxP_cut", p, dedx);
       continue;
     }
     StPicoBTofPidTraits* btof = mPicoDst->btofPidTraits(idx);
     if (!btof) {
-      if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
+      if (m_histManager && m_histManager->HasHistogram("hDedxP_cut")) m_histManager->Fill("hDedxP_cut", p, dedx);
       continue;
     }
     double beta = btof->btofBeta();
     if (beta <= 0) {
-      if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
+      if (m_histManager && m_histManager->HasHistogram("hDedxP_cut")) m_histManager->Fill("hDedxP_cut", p, dedx);
       continue;
     }
 
     double m2 = p*p*(1.0/(beta*beta) - 1.0);
-    if (m_histManager) m_histManager->Fill("hM2P", p, m2);
+    if (m_histManager && m_histManager->HasHistogram("hM2P")) m_histManager->Fill("hM2P", p, m2);
 
-    if (m_histManager) {
+    if (m_histManager && m_histManager->HasHistogram("hDedxP_d_m2")) {
       if (m2 > d_mean   - cuts.m2SigmaCut * d_sigma   && m2 < d_mean   + cuts.m2SigmaCut * d_sigma)   m_histManager->Fill("hDedxP_d_m2", p, dedx);
       if (m2 > t_mean   - cuts.m2SigmaCut * t_sigma   && m2 < t_mean   + cuts.m2SigmaCut * t_sigma)   m_histManager->Fill("hDedxP_t_m2", p, dedx);
       if (m2 > He3_mean - cuts.m2SigmaCut * He3_sigma && m2 < He3_mean + cuts.m2SigmaCut * He3_sigma) m_histManager->Fill("hDedxP_3He_m2", p, dedx);
     }
 
     if (m2 > cuts.minM2_M2cut && m2 < cuts.maxM2_M2cut && p > cuts.minP_M2cut) continue;
-    else if (m_histManager) m_histManager->Fill("hDedxP_cut", p, dedx);
+    else if (m_histManager && m_histManager->HasHistogram("hDedxP_cut")) m_histManager->Fill("hDedxP_cut", p, dedx);
   }
 
-  if (m_histManager) {
+  if (m_histManager && m_histManager->HasHistogram("hMult_d")) {
     int count[4] = {0, 0, 0, 0};
     for (size_t i = 0; i < mNuclearType.size(); ++i) {
       if (mNuclearType[i] >= 0 && mNuclearType[i] < 4) {
         count[mNuclearType[i]]++;
       }
     }
-    
+
     m_histManager->Fill("hMult_d", count[0]);
     m_histManager->Fill("hMult_t", count[1]);
     m_histManager->Fill("hMult_3He", count[2]);
     m_histManager->Fill("hMult_4He", count[3]);
-    
-    if (m_cent9 >= 0 && m_cent9 <= 8) {
+
+    if (hasCentBinMult_d && m_cent9 >= 0 && m_cent9 <= 8) {
       m_histManager->Fill(Form("hMult_d_CentBin%d", m_cent9), count[0]);
       m_histManager->Fill(Form("hMult_t_CentBin%d", m_cent9), count[1]);
       m_histManager->Fill(Form("hMult_3He_CentBin%d", m_cent9), count[2]);
@@ -478,19 +493,33 @@ void StNuclearIdMaker::WriteHistograms() {
   if (m_histManager) m_histManager->Write();
 }
 
-void StNuclearIdMaker::FillKstar(Double_t k_star, Double_t q_lab, Int_t type) {
+//-----------------------------------------------------------------------------
+void StNuclearIdMaker::FillKstar(Double_t k_star, Double_t q_lab, Int_t type, Int_t cent9) {
   if (!m_histManager) return;
-  if (type == 0) {
-    m_histManager->Fill("hKstar_d", k_star);
-    m_histManager->Fill("hQlab_d", q_lab);
-  } else if (type == 1) {
-    m_histManager->Fill("hKstar_t", k_star);
-    m_histManager->Fill("hQlab_t", q_lab);
-  } else if (type == 2) {
-    m_histManager->Fill("hKstar_3He", k_star);
-    m_histManager->Fill("hQlab_3He", q_lab);
-  } else if (type == 3) {
-    m_histManager->Fill("hKstar_4He", k_star);
-    m_histManager->Fill("hQlab_4He", q_lab);
+  static const char* kSpecies[] = {"d", "t", "3He", "4He"};
+  if (type < 0 || type > 3) return;
+  const char* sp = kSpecies[type];
+
+  m_histManager->Fill(Form("hKstar_%s", sp), k_star);
+  m_histManager->Fill(Form("hQlab_%s", sp),  q_lab);
+
+  if (cent9 >= 0 && cent9 <= 8) {
+    m_histManager->Fill(Form("hKstar_%s_CentBin%d", sp, cent9), k_star);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void StNuclearIdMaker::FillKstarSideband(Double_t k_star, Double_t q_lab, Int_t type, Int_t sbSign, Int_t cent9) {
+  if (!m_histManager) return;
+  static const char* kSpecies[] = {"d", "t", "3He", "4He"};
+  if (type < 0 || type > 3) return;
+  const char* sp = kSpecies[type];
+  const char* sbTag = (sbSign > 0) ? "SBPos" : "SBNeg";
+
+  m_histManager->Fill(Form("hKstar_%s_%s", sp, sbTag), k_star);
+  m_histManager->Fill(Form("hQlab_%s_%s",  sp, sbTag), q_lab);
+
+  if (cent9 >= 0 && cent9 <= 8) {
+    m_histManager->Fill(Form("hKstar_%s_%s_CentBin%d", sp, sbTag, cent9), k_star);
   }
 }
