@@ -356,10 +356,14 @@ Int_t StNuclearIdMaker::Make() {
     }
 
     // Populate mNuclearList
-    bool is_d   = (fabs(nSigma_d) < cuts.maxNSigmaNuclear);
-    bool is_t   = (fabs(nSigma_t) < cuts.maxNSigmaNuclear);
-    bool is_3He = (fabs(nSigma_3He) < cuts.maxNSigmaNuclear);
-    bool is_4He = (fabs(nSigma_4He) < cuts.maxNSigmaNuclear);
+    // p/q upper limit: reject tracks with raw TPC rigidity p >= maxPOverQ
+    // (for 3He/4He this is the value BEFORE the x2 correction, i.e. the measured p/q)
+    bool passMaxP = (cuts.maxPOverQ <= 0 || p < cuts.maxPOverQ);
+    bool is_d   = passMaxP && (fabs(nSigma_d) < cuts.maxNSigmaNuclear);
+    bool is_t   = passMaxP && (fabs(nSigma_t) < cuts.maxNSigmaNuclear);
+    bool is_3He = passMaxP && (fabs(nSigma_3He) < cuts.maxNSigmaNuclear);
+    bool is_4He = passMaxP && (fabs(nSigma_4He) < cuts.maxNSigmaNuclear);
+
 
     if (cuts.m2_selection) {
       bool hasTof = false;
