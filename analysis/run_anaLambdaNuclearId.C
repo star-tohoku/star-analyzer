@@ -33,11 +33,15 @@ void run_anaLambdaNuclearId(const Char_t* inputFile,
     std::cerr << "ERROR: failed to load libStNuclearIdMaker.so" << std::endl;
     return;
   }
+  if (gSystem->Load(TString(pwd) + "/lib/libStLambdaNuclearMixMaker.so") < 0) {
+    std::cerr << "ERROR: failed to load libStLambdaNuclearMixMaker.so" << std::endl;
+    return;
+  }
 
   gInterpreter->AddIncludePath(pwd);
   gInterpreter->AddIncludePath(TString::Format("%s/include", pwd));
   gInterpreter->AddIncludePath("$STAR/StRoot");
-  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStLambdaMaker -lStNuclearIdMaker -Wl,-rpath,%s/lib", pwd, pwd));
+  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStLambdaMaker -lStNuclearIdMaker -lStLambdaNuclearMixMaker -Wl,-rpath,%s/lib", pwd, pwd));
 
   gROOT->ProcessLine(TString::Format(".L %s/analysis/anaLambdaNuclearId.C+", pwd));
   anaLambdaNuclearId(inputFile, outputFile, jobid, nEventsMax, configPath);

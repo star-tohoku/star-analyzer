@@ -14,6 +14,7 @@
 #include "StPicoDstMaker/StPicoDstMaker.h"
 #include "StMaker/StLambdaMaker/StLambdaMaker.h"
 #include "StMaker/StNuclearIdMaker/StNuclearIdMaker.h"
+#include "StMaker/StLambdaNuclearMixMaker/StLambdaNuclearMixMaker.h"
 #include "ConfigManager.h"
 #include <iostream>
 #include <fstream>
@@ -41,6 +42,7 @@ namespace {
 StChain* chain = 0;
 StLambdaMaker* lambdaMaker = 0;
 StNuclearIdMaker* nuclearidMaker = 0;
+StLambdaNuclearMixMaker* mixMaker = 0;
 
 void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_lambda.list",
             const Char_t* outputFile = "rootfile/auau19_anaLambdaNuclearId_temp/auau19_anaLambdaNuclearId_temp.root",
@@ -98,10 +100,12 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
   // Pass empty string as output file so the makers don't write during their Finish()
   lambdaMaker = new StLambdaMaker("lambda", picoMaker, "");
   nuclearidMaker = new StNuclearIdMaker("nuclearid", picoMaker, "");
+  mixMaker = new StLambdaNuclearMixMaker("mix", "");
 
   chain->AddMaker(picoMaker);
   chain->AddMaker(lambdaMaker);
   chain->AddMaker(nuclearidMaker);
+  chain->AddMaker(mixMaker);
 
   if (chain->Init() == kStErr) {
     std::cerr << "ERROR: chain->Init() returned kStErr" << std::endl;
@@ -109,6 +113,7 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
     chain = 0;
     lambdaMaker = 0;
     nuclearidMaker = 0;
+    mixMaker = 0;
     return;
   }
 
@@ -122,6 +127,7 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
     chain = 0;
     lambdaMaker = 0;
     nuclearidMaker = 0;
+    mixMaker = 0;
     return;
   }
 
@@ -290,6 +296,10 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
         std::cout << "Writing NuclearId histograms..." << std::endl;
         nuclearidMaker->WriteHistograms();
       }
+      if (mixMaker) {
+        std::cout << "Writing Mix histograms..." << std::endl;
+        mixMaker->WriteHistograms();
+      }
 
       fout->Close();
       delete fout;
@@ -309,4 +319,5 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
   chain = 0;
   lambdaMaker = 0;
   nuclearidMaker = 0;
+  mixMaker = 0;
 }

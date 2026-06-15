@@ -143,9 +143,15 @@ LIB_FEMTO_NAME := libStFemtoMaker.so
 SRC_FEMTO := $(STFEMTO_DIR)/StFemtoMaker.cxx
 OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o
 
+# --- libStLambdaNuclearMixMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
+STMIX_DIR := StMaker/StLambdaNuclearMixMaker
+LIB_MIX_NAME := libStLambdaNuclearMixMaker.so
+SRC_MIX := $(STMIX_DIR)/StLambdaNuclearMixMaker.cxx
+OBJ_MIX := $(LIB_DIR)/StLambdaNuclearMixMaker.o $(LIB_DIR)/CentralityHelper.o
+
 .PHONY: all clean
 
-all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME)
+all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME) $(LIB_DIR)/$(LIB_MIX_NAME)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -236,6 +242,13 @@ $(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LI
 $(LIB_DIR)/StNuclearIdMaker.o: $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
 
+# libStLambdaNuclearMixMaker.so
+$(LIB_DIR)/$(LIB_MIX_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_MIX)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_MIX) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+
+$(LIB_DIR)/StLambdaNuclearMixMaker.o: $(SRC_MIX) $(STMIX_DIR)/StLambdaNuclearMixMaker.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_MIX) -o $@
+
 clean:
-	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
+	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME) $(LIB_DIR)/$(LIB_MIX_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
 	rm -rf $(YAML_CPP_BUILD)
