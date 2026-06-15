@@ -25,6 +25,9 @@ public:
   // p/q upper momentum cut (applied to raw TPC rigidity before x2 for He)
   Double_t maxPOverQ;  // GeV/c; cut: p(TPC) < maxPOverQ  for all species
 
+  Bool_t requireBestSpecies;
+  Short_t minNHitsDedxNuclear;
+
   // Lambda selection cuts
   Double_t MeanLambda;
   Double_t sigmaLambda;

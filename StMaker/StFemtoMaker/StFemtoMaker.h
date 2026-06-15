@@ -56,6 +56,11 @@ class StFemtoMaker : public StMaker {
     Int_t trackIndex;
   };
 
+  struct He4TrackState {
+    TrackState trk;
+    Float_t nSigmaHe4;
+  };
+
   struct FemtoMixingEvent {
     FemtoCandidateStore candidates;
   };
@@ -87,11 +92,15 @@ class StFemtoMaker : public StMaker {
   Bool_t PassTofKaonPid(const TrackState& trk) const;
   Bool_t PassTofProtonPid(const TrackState& trk) const;
   Bool_t PassFemtoProtonCuts(const TrackState& trk) const;
+  Bool_t PassFemtoHe4Cuts(const He4TrackState& h4) const;
   Bool_t IsKaon(const TrackState& trk);
   Bool_t IsProton(const TrackState& trk);
   Double_t ProtonRapidityCm(const TrackState& trk) const;
+  Double_t He4RapidityCm(const TrackState& trk) const;
   void FillProtonPreFemtoQa(const TrackState& trk);
   void FillProtonFemtoQa(const TrackState& trk);
+  void FillHe4PreFemtoQa(const TrackState& trk, Float_t nSigmaHe4);
+  void FillHe4FemtoQa(const TrackState& trk);
   void FillPhiPairKinematicsQa(Double_t invMass, const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity);
   void FillPhiCandidatePreCutQa(Double_t invMass, Double_t pt, Double_t pairRapidity);
 
@@ -106,13 +115,15 @@ class StFemtoMaker : public StMaker {
   Bool_t PassPairTofCut(const TrackState& kPlus, const TrackState& kMinus) const;
 
   void BuildTrackPidCandidates(const std::string& speciesKey, const std::string& particleKey,
-                               const std::vector<TrackState>& tracks, Int_t eventIndex);
+                               const std::vector<TrackState>& protonTracks,
+                               const std::vector<He4TrackState>& he4Tracks, Int_t eventIndex);
   void BuildResonanceCandidates(const std::string& speciesKey, const std::string& particleKey,
                                 const std::vector<TrackState>& kaonsPlus, const std::vector<TrackState>& kaonsMinus,
                                 Int_t eventIndex);
   void BuildRotatedPhiCandidates(const std::string& speciesKey, const std::vector<TrackState>& kaonsPlus,
                                  const std::vector<TrackState>& kaonsMinus, Int_t eventIndex);
   FemtoCandidate MakeProtonCandidate(const TrackState& trk, Int_t eventIndex, const std::string& speciesKey) const;
+  FemtoCandidate MakeHe4Candidate(const He4TrackState& trk, Int_t eventIndex, const std::string& speciesKey) const;
   FemtoCandidate MakePhiCandidate(const TrackState& kPlus, const TrackState& kMinus, Double_t invMass,
                                   const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity,
                                   Double_t dcaKK, Int_t eventIndex, const std::string& speciesKey) const;
@@ -128,7 +139,7 @@ class StFemtoMaker : public StMaker {
   void StoreEventForMixing(Float_t vz, Int_t cent9, Double_t psi2);
   void FillCandidateQA();
   void FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t refMultCorr, Int_t nTracks, Int_t nBTOFMatch,
-                             Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiCandidates, Int_t nProtons);
+                             Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiCandidates, Int_t nProtons, Int_t nHe4);
   std::string HistName(const std::string& prefix, const std::string& channelName) const;
 };
 

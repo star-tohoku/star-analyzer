@@ -15,15 +15,15 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 ## Particle keys (`particleKey` field)
 
 - Selects builder logic inside generic `TrackPidBuilder` / `ResonanceBuilder`
-- Phase 1 supported values: `proton` (track), `phi` (resonance from KK)
+- Phase 1 supported values: `proton` (track), `he4` (track, via `StNuclearIdHelper`), `phi` (resonance from KK)
 - Background QA: `phi_rotation` (resonance builder dispatch → `BuildRotatedPhiCandidates`, stored as species `phi_rot`)
 - Use PDG-inspired names; charge sign goes in species key when needed (`anti_proton`)
 
 ## Channel names
 
 - Format: `{partA}_{partB}` using species keys
-- Example: `phi_proton` with `partA: phi`, `partB: proton`
-- Background channels (same `partB`, different `partA` / mass window): `phi_proton_signal`, `phi_proton_leftSB`, `phi_proton_rightSB`, `phi_rot_proton`
+- Example: `phi_proton` with `partA: phi`, `partB: proton`; or `phi_he4` with `partB: he4`
+- Background channels (same `partB`, different `partA` / mass window): `phi_proton_signal`, `phi_proton_leftSB`, `phi_proton_rightSB`, `phi_rot_proton` (or `phi_he4_*` / `phi_rot_he4` for ⁴He)
 - Histogram suffixes use channel name: `hKstarSE_phi_proton`, `hCF_phi_proton`, `hKstarSEVsCent_phi_proton_signal`, etc.
 - Mass window per channel: `signalMin` / `signalMax` on resonance `partA` invMass at pairing time (sidebands need no extra maker logic)
 
@@ -116,5 +116,12 @@ When `rotationEnabled: true`, species `phi_rot` with `particleKey: phi_rotation`
 3. Add channel entry referencing existing species keys
 4. Add histogram entries to `config/hist/hist_anaFemto*.yaml` using channel name suffix
 5. Document new keys in this file
+
+## ⁴He bachelor (`anaFemtoPhi4He`)
+
+- **Nuclear ID** (`nuclearid:` YAML → `StNuclearIdHelper`): TPC nσ + `requireBestSpecies`. Set `m2_selection: false` to skip TOF m² at ID time.
+- **Femto TOF rule** (`he4TofMomentumThreshold` in maker YAML): tracks with `|p| >= threshold` require TOF m² in `[he4MinMass2, he4MaxMass2]`. Set threshold high (e.g. `99`) to disable.
+- **Kinematics** (maker `he4*` keys): primary window `he4MinPMom` / `he4MaxPMom`; pT limits `he4MinPtPre`–`he4MaxPtPre` (pre QA) and `he4MinPtPair`–`he4MaxPtPair` (femto cut).
+- **QA histograms:** `hHe4_Mass2VsP` (m² 0–16) plus `hHe4_Mass2VsP_*_wide` (m² 0–20) for TOF diagnostics when fills are enabled.
 
 See also `docs/femto_track_sharing_concerns.md` for overlap risks when extending species.

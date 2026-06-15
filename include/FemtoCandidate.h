@@ -17,6 +17,7 @@ enum FemtoCandSource {
 struct TrackExtra {
   Float_t nSigmaProton;
   Float_t nSigmaKaon;
+  Float_t nSigmaHe4;
   Float_t mass2;
   Float_t dca;
   Short_t nHitsFit;
@@ -25,6 +26,7 @@ struct TrackExtra {
   TrackExtra()
       : nSigmaProton(0.0f),
         nSigmaKaon(0.0f),
+        nSigmaHe4(0.0f),
         mass2(-999.0f),
         dca(0.0f),
         nHitsFit(0),

@@ -1,7 +1,7 @@
-// checkHistAnaFemtoPhiProton.C - Draw histograms from run_anaFemtoPhiProton.C output and write PDF.
-// Invoke via: ./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>
-// Or: root4star -b -q 'analysis/run_checkHistAnaFemtoPhiProton.C("rootfile/...","anaName","config/mainconf/...")'
-// If input is anaName_jobid_merge.root, jobid (32 hex) is parsed and PDF becomes anaName_checkHistAnaFemtoPhiProton_jobid.pdf.
+// checkHistAnaFemtoPhi4He.C - Draw histograms from run_anaFemtoPhi4He.C output and write PDF.
+// Invoke via: ./script/singularity_checkHistAnaFemtoPhi4He.sh <root_file> <mainconf_path>
+// Or: root4star -b -q 'analysis/run_checkHistAnaFemtoPhi4He.C("rootfile/...","anaName","config/mainconf/...")'
+// If input is anaName_jobid_merge.root, jobid (32 hex) is parsed and PDF becomes anaName_checkHistAnaFemtoPhi4He_jobid.pdf.
 // With config loaded, cut regions are overlaid on pre-cut histograms.
 
 #include <TROOT.h>
@@ -34,6 +34,69 @@
 #include <map>
 
 static Bool_t gConfigLoaded = kFALSE;
+
+static void setHe4Mass2AxisRange(TH1* h, Double_t ymax = 16.0) {
+  if (!h) return;
+  if (h->InheritsFrom("TH2")) {
+    ((TH2*)h)->GetYaxis()->SetRangeUser(0.0, ymax);
+  } else {
+    h->GetXaxis()->SetRangeUser(0.0, ymax);
+  }
+}
+
+// ROOT files booked before hist YAML relabel still carry proton fork titles; fix at draw time.
+static void prepareHe4Hist(TH1* h, const char* key) {
+  if (!h || !key) return;
+  TString k(key);
+  if (k == "hHe4_Pt_PreFemtoCut")
+    h->SetTitle("^{4}He p_{T} pre-femto cut;p_{T} [GeV/c];Counts");
+  else if (k == "hHe4_Eta_PreFemtoCut")
+    h->SetTitle("^{4}He #eta pre-femto cut;#eta;Counts");
+  else if (k == "hHe4_NSigmaHe4_PreFemtoCut")
+    h->SetTitle("^{4}He n#sigma_{^{4}He} pre-femto cut;n#sigma_{^{4}He};Counts");
+  else if (k == "hHe4_Mass2_PreFemtoCut")
+    h->SetTitle("^{4}He TOF m^{2} pre-femto cut;m^{2} [(GeV/c^{2})^{2}];Counts");
+  else if (k == "hHe4_DCA_PreFemtoCut")
+    h->SetTitle("^{4}He DCA pre-femto cut;DCA [cm];Counts");
+  else if (k == "hHe4_Pt")
+    h->SetTitle("^{4}He p_{T};p_{T} [GeV/c];Counts");
+  else if (k == "hHe4_Eta")
+    h->SetTitle("^{4}He #eta;#eta;Counts");
+  else if (k == "hHe4_Phi")
+    h->SetTitle("^{4}He #phi;#phi [rad];Counts");
+  else if (k == "hHe4_NSigmaHe4")
+    h->SetTitle("^{4}He n#sigma_{^{4}He};n#sigma_{^{4}He};Counts");
+  else if (k == "hHe4_Mass2")
+    h->SetTitle("^{4}He TOF m^{2};m^{2} [(GeV/c^{2})^{2}];Counts");
+  else if (k == "hHe4_DCA")
+    h->SetTitle("^{4}He DCA;DCA [cm];Counts");
+  else if (k == "hHe4_Y_PreFemtoCut")
+    h->SetTitle("^{4}He y_{cm} pre-femto cut;y_{cm};Counts");
+  else if (k == "hHe4_PtVsY_PreFemtoCut")
+    h->SetTitle("^{4}He p_{T} vs y_{cm} pre-femto;y_{cm};p_{T} [GeV/c]");
+  else if (k == "hHe4_Y_FemtoCut")
+    h->SetTitle("^{4}He y_{cm} after femto cut;y_{cm};Counts");
+  else if (k == "hHe4_PtVsY_FemtoCut")
+    h->SetTitle("^{4}He p_{T} vs y_{cm} femto cut;y_{cm};p_{T} [GeV/c]");
+  else if (k == "hHe4_Mass2VsP")
+    h->SetTitle("^{4}He TOF m^{2} vs p;p [GeV/c];m^{2}");
+  else if (k == "hHe4_Mass2VsP_PreFemtoCut_wide")
+    h->SetTitle("^{4}He TOF m^{2} vs p pre-femto (wide);p [GeV/c];m^{2}");
+  else if (k == "hHe4_Mass2VsP_wide")
+    h->SetTitle("^{4}He TOF m^{2} vs p femto cut (wide);p [GeV/c];m^{2}");
+  else if (k == "hHe4_NHitsRatio_FemtoCut")
+    h->SetTitle("^{4}He nHitsFit/nHitsMax (femto cut);ratio;Counts");
+  else if (k == "hHe4_NCand")
+    h->SetTitle("^{4}He candidates per event;N_{^{4}He};Counts");
+  else if (k == "hNSigmaHe4VsP")
+    h->SetTitle("n#sigma_{^{4}He} vs p (after ID cut);p [GeV/c];n#sigma_{^{4}He}");
+  else if (k == "hNSigmaHe4VsP_All")
+    h->SetTitle("n#sigma_{^{4}He} vs p (all tracks, no ID cut);p [GeV/c];n#sigma_{^{4}He}");
+  if (k.Contains("Mass2")) {
+    if (k.Contains("_wide")) setHe4Mass2AxisRange(h, 20.0);
+    else setHe4Mass2AxisRange(h, 16.0);
+  }
+}
 
 static TString resolveFigureRoot(const char* pwd) {
   const char* envFigureRoot = gSystem->Getenv("STAR_QA_FIGURE_ROOT");
@@ -180,7 +243,7 @@ static TH1* rebinHistCopy(TH1* h, Int_t factor, const char* cloneSuffix) {
   if (!h || factor <= 1) return 0;
   const Int_t nBins = h->GetNbinsX();
   if (nBins % factor != 0) {
-    std::cout << "[checkHistAnaFemtoPhiProton] WARNING: cannot rebin " << h->GetName() << " with factor "
+    std::cout << "[checkHistAnaFemtoPhi4He] WARNING: cannot rebin " << h->GetName() << " with factor "
               << factor << " (nbins=" << nBins << ")\n";
     return 0;
   }
@@ -235,7 +298,7 @@ static TGraphErrors* computeCfAndCache(const std::string& channel, const std::st
   if (cached != cfCache.end()) return cached->second;
 
   if (!hSE || !hME) {
-    std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str();
+    std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str();
     if (logTag) std::cout << " (" << logTag << ")";
     std::cout << ": missing SE/ME histograms\n";
     cfCache[cacheKey] = 0;
@@ -255,7 +318,7 @@ static TGraphErrors* computeCfAndCache(const std::string& channel, const std::st
   Double_t seNorm = hSEForCf->Integral(binLo, binHi);
   Double_t meNorm = hMEForCf->Integral(binLo, binHi);
   Double_t aNorm = (seNorm > 0) ? meNorm / seNorm : 0.0;
-  std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str();
+  std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str();
   if (logTag) std::cout << " (" << logTag << ")";
   std::cout << ": normQ=[" << normQMin << ", " << normQMax << "] GeV/c";
   if (cfRebinFactor > 1 && hSERebinned && hMERebinned) {
@@ -270,9 +333,9 @@ static TGraphErrors* computeCfAndCache(const std::string& channel, const std::st
   delete hSERebinned;
   delete hMERebinned;
   if (!gCF) {
-    std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str() << ": failed (empty norm integrals)\n";
+    std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str() << ": failed (empty norm integrals)\n";
   } else {
-    std::cout << "[checkHistAnaFemtoPhiProton] CF " << channel.c_str() << ": " << gCF->GetN()
+    std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str() << ": " << gCF->GetN()
               << " points with Poisson stat errors\n";
   }
   cfCache[cacheKey] = gCF;
@@ -338,8 +401,8 @@ static void populateCfCache(TFile* fin, std::map<std::string, TGraphErrors*>& cf
     }
     return;
   }
-  const char* fallbackChannels[] = {"phi_proton",         "phi_proton_signal", "phi_proton_leftSB",
-                                    "phi_proton_rightSB", "phi_rot_proton",    0};
+  const char* fallbackChannels[] = {"phi_he4",         "phi_he4_signal", "phi_he4_leftSB",
+                                    "phi_he4_rightSB", "phi_rot_he4",    0};
   for (Int_t i = 0; fallbackChannels[i]; ++i) {
     getOrComputeCf(fin, fallbackChannels[i], kFallbackNormQMin, kFallbackNormQMax, cfCache);
   }
@@ -349,7 +412,7 @@ static void populateCfCentCache(TFile* fin, std::map<std::string, TGraphErrors*>
   Int_t cent9Min = 0;
   Int_t cent9Max = 0;
   getCfCent9Range(cent9Min, cent9Max);
-  const char* centChannels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "phi_rot_proton", 0};
+  const char* centChannels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "phi_rot_he4", 0};
   for (Int_t i = 0; centChannels[i]; ++i) {
     const std::string channel(centChannels[i]);
     getOrComputeCfCentSlice(fin, channel, channelNormQMin(channel), channelNormQMax(channel), cent9Min, cent9Max,
@@ -385,7 +448,7 @@ static void drawCentSlicePage(TCanvas* canvas, TFile* fin, Int_t cent9Min, Int_t
   if (!canvas) return;
   canvas->Clear();
   canvas->Divide(4, 3);
-  const char* channels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "phi_rot_proton", 0};
+  const char* channels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "phi_rot_he4", 0};
   for (Int_t ic = 0; channels[ic]; ++ic) {
     const std::string channel(channels[ic]);
     drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 0), fin, channel, kTRUE, cent9Min, cent9Max,
@@ -424,7 +487,7 @@ static void freeCentProjKeepAlive(std::vector<TH1*>& centProjKeepAlive) {
   centProjKeepAlive.clear();
 }
 
-static const char* kSidebandSliceChannels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", 0};
+static const char* kSidebandSliceChannels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", 0};
 
 static std::string cfSliceCacheKey(const std::string& sliceId, const std::string& tag) {
   return std::string("slice:") + sliceId + ":" + tag;
@@ -491,14 +554,14 @@ static TH1* combineSidebandLR(TH1* left, TH1* right) {
 
 // Sub-CF alpha from FemtoConfig channel mass-window widths: alpha = w_signal / w_sideband.
 static Bool_t getSidebandWidthAlphas(Double_t& alphaL, Double_t& alphaR) {
-  // Fallback matches default maker_auau3p85fxt_anaFemtoPhiProton.yaml windows.
+  // Fallback matches default maker_auau3p85fxt_anaFemtoPhi4He.yaml windows.
   alphaL = 0.014 / 0.015;
   alphaR = 0.014 / 0.025;
   if (!gConfigLoaded) return kFALSE;
   const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-  const FemtoConfig::ChannelDef* chSig = femtoCfg.FindChannel("phi_proton_signal");
-  const FemtoConfig::ChannelDef* chL = femtoCfg.FindChannel("phi_proton_leftSB");
-  const FemtoConfig::ChannelDef* chR = femtoCfg.FindChannel("phi_proton_rightSB");
+  const FemtoConfig::ChannelDef* chSig = femtoCfg.FindChannel("phi_he4_signal");
+  const FemtoConfig::ChannelDef* chL = femtoCfg.FindChannel("phi_he4_leftSB");
+  const FemtoConfig::ChannelDef* chR = femtoCfg.FindChannel("phi_he4_rightSB");
   if (!chSig || !chL || !chR) return kFALSE;
   const Double_t wSig = chSig->signalMax - chSig->signalMin;
   const Double_t wL = chL->signalMax - chL->signalMin;
@@ -583,10 +646,10 @@ static TGraphErrors* getOrComputeSliceSblrCf(TFile* fin, const std::string& slic
   std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
   if (cached != cfCache.end()) return cached->second;
 
-  TH1* hSEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kTRUE, cent9Min, cent9Max);
-  TH1* hSER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kTRUE, cent9Min, cent9Max);
-  TH1* hMEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kFALSE, cent9Min, cent9Max);
-  TH1* hMER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kFALSE, cent9Min, cent9Max);
+  TH1* hSEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kTRUE, cent9Min, cent9Max);
+  TH1* hSER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kTRUE, cent9Min, cent9Max);
+  TH1* hMEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kFALSE, cent9Min, cent9Max);
+  TH1* hMER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kFALSE, cent9Min, cent9Max);
   TH1* hSE = combineSidebandLR(hSEL, hSER);
   TH1* hME = combineSidebandLR(hMEL, hMER);
   delete hSEL;
@@ -595,7 +658,7 @@ static TGraphErrors* getOrComputeSliceSblrCf(TFile* fin, const std::string& slic
   delete hMER;
   TString logTag = Form("%s SBLR cent9 %d-%d", sliceId.c_str(), cent9Min, cent9Max);
   TGraphErrors* gCF =
-      computeCfAndCache("phi_proton_SBLR", cacheKey, hSE, hME, normQMin, normQMax, cfCache, logTag.Data());
+      computeCfAndCache("phi_he4_SBLR", cacheKey, hSE, hME, normQMin, normQMax, cfCache, logTag.Data());
   delete hSE;
   delete hME;
   return gCF;
@@ -613,15 +676,15 @@ static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sl
   Double_t alphaR = 0.0;
   getSidebandWidthAlphas(alphaL, alphaR);
   Double_t alphaApply = 1.0;
-  TH1* hSEsig = getSliceProjectedSeMe(fin, "phi_proton_signal", kTRUE, cent9Min, cent9Max);
-  TH1* hMEsig = getSliceProjectedSeMe(fin, "phi_proton_signal", kFALSE, cent9Min, cent9Max);
+  TH1* hSEsig = getSliceProjectedSeMe(fin, "phi_he4_signal", kTRUE, cent9Min, cent9Max);
+  TH1* hMEsig = getSliceProjectedSeMe(fin, "phi_he4_signal", kFALSE, cent9Min, cent9Max);
   TH1* hSEsb = 0;
   TH1* hMEsb = 0;
   if (sbChannel == "SBLR") {
-    TH1* hSEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kTRUE, cent9Min, cent9Max);
-    TH1* hSER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kTRUE, cent9Min, cent9Max);
-    TH1* hMEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kFALSE, cent9Min, cent9Max);
-    TH1* hMER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kFALSE, cent9Min, cent9Max);
+    TH1* hSEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kTRUE, cent9Min, cent9Max);
+    TH1* hSER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kTRUE, cent9Min, cent9Max);
+    TH1* hMEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kFALSE, cent9Min, cent9Max);
+    TH1* hMER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kFALSE, cent9Min, cent9Max);
     hSEsb = combineSidebandScaledAverage(hSEL, hSER, alphaL, alphaR);
     hMEsb = combineSidebandScaledAverage(hMEL, hMER, alphaL, alphaR);
     delete hSEL;
@@ -629,11 +692,11 @@ static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sl
     delete hMEL;
     delete hMER;
     alphaApply = 1.0;
-  } else if (sbChannel == "phi_proton_leftSB") {
+  } else if (sbChannel == "phi_he4_leftSB") {
     hSEsb = getSliceProjectedSeMe(fin, sbChannel, kTRUE, cent9Min, cent9Max);
     hMEsb = getSliceProjectedSeMe(fin, sbChannel, kFALSE, cent9Min, cent9Max);
     alphaApply = alphaL;
-  } else if (sbChannel == "phi_proton_rightSB") {
+  } else if (sbChannel == "phi_he4_rightSB") {
     hSEsb = getSliceProjectedSeMe(fin, sbChannel, kTRUE, cent9Min, cent9Max);
     hMEsb = getSliceProjectedSeMe(fin, sbChannel, kFALSE, cent9Min, cent9Max);
     alphaApply = alphaR;
@@ -650,7 +713,7 @@ static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sl
   delete hMEsb;
   TString logTag = Form("%s %s cent9 %d-%d alphaL=%.4f alphaR=%.4f apply=%.4f", sliceId.c_str(), subTag,
                         cent9Min, cent9Max, alphaL, alphaR, alphaApply);
-  TGraphErrors* gCF = computeCfAndCache("phi_proton_signal", cacheKey, hSEcorr, hMEcorr, normQMin, normQMax,
+  TGraphErrors* gCF = computeCfAndCache("phi_he4_signal", cacheKey, hSEcorr, hMEcorr, normQMin, normQMax,
                                         cfCache, logTag.Data());
   delete hSEcorr;
   delete hMEcorr;
@@ -659,8 +722,8 @@ static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sl
 
 static void populateCfSliceCaches(TFile* fin, std::map<std::string, TGraphErrors*>& cfCache) {
   const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSliceList();
-  const Double_t normQMin = channelNormQMin("phi_proton_signal");
-  const Double_t normQMax = channelNormQMax("phi_proton_signal");
+  const Double_t normQMin = channelNormQMin("phi_he4_signal");
+  const Double_t normQMax = channelNormQMax("phi_he4_signal");
   for (size_t is = 0; is < slices.size(); ++is) {
     const FemtoConfig::CfCentSlice& sl = slices[is];
     for (Int_t ic = 0; kSidebandSliceChannels[ic]; ++ic) {
@@ -669,9 +732,9 @@ static void populateCfSliceCaches(TFile* fin, std::map<std::string, TGraphErrors
                                  channelNormQMax(channel), cfCache);
     }
     getOrComputeSliceSblrCf(fin, sl.id, sl.cent9Min, sl.cent9Max, normQMin, normQMax, cfCache);
-    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_proton_leftSB", "CF_sig_sub_SBL",
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_he4_leftSB", "CF_sig_sub_SBL",
                               normQMin, normQMax, cfCache);
-    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_proton_rightSB", "CF_sig_sub_SBR",
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_he4_rightSB", "CF_sig_sub_SBR",
                               normQMin, normQMax, cfCache);
     getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "SBLR", "CF_sig_sub_SBLR", normQMin,
                               normQMax, cfCache);
@@ -695,14 +758,14 @@ static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig
   canvas->Clear();
   const Int_t nRows = drawSubCfRow ? 4 : 3;
   canvas->Divide(4, nRows);
-  const char* colTags[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "SBLR"};
+  const char* colTags[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "SBLR"};
   for (Int_t ic = 0; ic < 4; ++ic) {
     const std::string tag(colTags[ic]);
     if (tag == "SBLR") {
-      TH1* hSEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kTRUE, slice.cent9Min, slice.cent9Max);
-      TH1* hSER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kTRUE, slice.cent9Min, slice.cent9Max);
-      TH1* hMEL = getSliceProjectedSeMe(fin, "phi_proton_leftSB", kFALSE, slice.cent9Min, slice.cent9Max);
-      TH1* hMER = getSliceProjectedSeMe(fin, "phi_proton_rightSB", kFALSE, slice.cent9Min, slice.cent9Max);
+      TH1* hSEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kTRUE, slice.cent9Min, slice.cent9Max);
+      TH1* hSER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kTRUE, slice.cent9Min, slice.cent9Max);
+      TH1* hMEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kFALSE, slice.cent9Min, slice.cent9Max);
+      TH1* hMER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kFALSE, slice.cent9Min, slice.cent9Max);
       TH1* hSE = combineSidebandLR(hSEL, hSER);
       TH1* hME = combineSidebandLR(hMEL, hMER);
       // Do not delete hSEL/hSER/hMEL/hMER: same ProjectionX objects as ic=1/2 (SB-L/R SE/ME panels).
@@ -719,7 +782,7 @@ static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig
         centProjKeepAlive.push_back(hME);
       }
       getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max,
-                              channelNormQMin("phi_proton_signal"), channelNormQMax("phi_proton_signal"),
+                              channelNormQMin("phi_he4_signal"), channelNormQMax("phi_he4_signal"),
                               cfCache);
       drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, "SBLR", cfCache);
     } else {
@@ -742,11 +805,11 @@ static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig
   }
   if (drawSubCfRow) {
     const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
-    const char* subSb[] = {"phi_proton_leftSB", "phi_proton_rightSB", "SBLR"};
-    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 3), slice.id, "phi_proton_signal", cfCache);
+    const char* subSb[] = {"phi_he4_leftSB", "phi_he4_rightSB", "SBLR"};
+    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 3), slice.id, "phi_he4_signal", cfCache);
     for (Int_t isb = 0; isb < 3; ++isb) {
       getOrComputeSliceSigSubCf(fin, slice.id, slice.cent9Min, slice.cent9Max, subSb[isb], subTags[isb],
-                                channelNormQMin("phi_proton_signal"), channelNormQMax("phi_proton_signal"),
+                                channelNormQMin("phi_he4_signal"), channelNormQMax("phi_he4_signal"),
                                 cfCache);
       drawSliceCfGraph(canvas, sidebandSliceLayoutPad(isb + 1, 3), slice.id, subTags[isb], cfCache);
     }
@@ -783,8 +846,8 @@ static void printCfSliceConsoleSummary(const std::map<std::string, TGraphErrors*
   std::cout << "=============================================================\n\n";
 }
 
-void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
-                                const Char_t* anaNameArg = "auau3p85fxt_anaFemtoPhiProton",
+void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
+                                const Char_t* anaNameArg = "auau3p85fxt_anaFemtoPhi4He",
                                 const Char_t* mainconfPath = 0)
 {
   gROOT->SetBatch(kTRUE);
@@ -841,11 +904,11 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
       gConfigLoaded = kTRUE;
       if (!ConfigManager::GetInstance().GetPhiCuts().FinalizeRapidityFrame(
               ConfigManager::GetInstance().GetCentralityCuts())) {
-        std::cerr << "[checkHistAnaFemtoPhiProton] WARNING: FinalizeRapidityFrame failed; PDF note may be incomplete."
+        std::cerr << "[checkHistAnaFemtoPhi4He] WARNING: FinalizeRapidityFrame failed; PDF note may be incomplete."
                   << std::endl;
       }
     } else if (mainconfPath && strlen(mainconfPath) > 0) {
-      std::cerr << "[checkHistAnaFemtoPhiProton] WARNING: Failed to load config " << mainconf.Data() << "; cut lines skipped." << std::endl;
+      std::cerr << "[checkHistAnaFemtoPhi4He] WARNING: Failed to load config " << mainconf.Data() << "; cut lines skipped." << std::endl;
     }
   }
 
@@ -856,10 +919,10 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
     gSystem->mkdir(outDir, kTRUE);
   }
 
-  TString pdfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhiProton";
+  TString pdfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhi4He";
   if (jobid.Length()) pdfName += "_" + jobid;
   pdfName += ".pdf";
-  TString pdfCfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhiProton_CF";
+  TString pdfCfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhi4He_CF";
   if (jobid.Length()) pdfCfName += "_" + jobid;
   pdfCfName += ".pdf";
   std::cout << "Output QA PDF: " << pdfName.Data() << std::endl;
@@ -870,14 +933,14 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   std::vector<std::string> inputs;
   inputs.push_back((const char*)inputRootFile);
 
-  TString note = "Check histograms from run_anaFemtoPhiProton.C (StFemtoMaker output).\n";
-  note += "Phi candidates built via ResonanceBuilder (KK); proton candidates via TrackPidBuilder.\n";
+  TString note = "Check histograms from run_anaFemtoPhi4He.C (StFemtoMaker output).\n";
+  note += "Phi candidates built via ResonanceBuilder (KK); 4He candidates via TrackPidBuilder (StNuclearIdHelper).\n";
   note += "Pair QA stage0 / strict TOF histograms mirror anaPhi hPhiPair_* naming.\n";
   const Double_t nEvtAll = getHistEntries(fin, "hVz");
   const Double_t nEvtAfter = getHistEntries(fin, "hVz_After");
   const Double_t nPhiCand = getHistEntries(fin, "hPhi_NCand");
-  const Double_t nProtonCand = getHistEntries(fin, "hP_NCand");
-  const Double_t nKstarSE = getHistEntries(fin, "hKstarSE_phi_proton");
+  const Double_t nHe4Cand = getHistEntries(fin, "hHe4_NCand");
+  const Double_t nKstarSE = getHistEntries(fin, "hKstarSE_phi_he4");
   if (nEvtAll >= 0.0) {
     note += Form("Total statistics (input ROOT): events(all) = %.0f", nEvtAll);
     if (nEvtAfter >= 0.0) {
@@ -886,8 +949,8 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
     if (nPhiCand >= 0.0) {
       note += Form(", phi cand fills = %.0f", nPhiCand);
     }
-    if (nProtonCand >= 0.0) {
-      note += Form(", proton cand fills = %.0f", nProtonCand);
+    if (nHe4Cand >= 0.0) {
+      note += Form(", 4He cand fills = %.0f", nHe4Cand);
     }
     if (nKstarSE >= 0.0) {
       note += Form(", k* SE pairs = %.0f", nKstarSE);
@@ -904,7 +967,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
     note += ConfigManager::GetInstance().GetPhiCuts().GetRapidityFrameSummary().c_str();
     note += "\n";
   }
-  note += "QA layout: pre-cut page immediately followed by post-cut page (Event, Track, Proton, Phi).\n";
+  note += "QA layout: pre-cut page immediately followed by post-cut page (Event, Track, 4He, Phi).\n";
   note += "Phi QA: (A) KK pair Raw/AfterCuts + y-pT; (B) femto candidate pre/post. Kaon PID: before/after on Page 9.\n";
   note += Form("CF computed in checkHist from merged SE/ME (TGraphErrors, Poisson stat errors); cfRebinFactor=%d; norm region from maker YAML.\n",
                getCfRebinFactor());
@@ -921,7 +984,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
                    centCfg.cent9MaxRefMultCorrBin, centCfg.cent9MaxRefMultCorr);
     }
   }
-  note += "phi_proton legacy channel has no hKstar*VsCent 2D; cent-slice CF pages skip it.\n";
+  note += "phi_he4 legacy channel has no hKstar*VsCent 2D; cent-slice CF pages skip it.\n";
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
   std::map<std::string, TGraphErrors*> cfCache;
@@ -930,7 +993,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   populateCfCentCache(fin, cfCache);
   populateCfSliceCaches(fin, cfCache);
 
-  PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoPhiProton.C", inputs, note.Data(), true, anaName);
+  PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoPhi4He.C", inputs, note.Data(), true, anaName);
 
   TCanvas* c1 = new TCanvas("c1", "canvas", 1200, 800);
   TH1* h1 = 0;
@@ -1008,7 +1071,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlus_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonMinus_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(7); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNPhiPairs_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(8); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNProton_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(8); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNHe4_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(9); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRawMult_vs_RefMultCorr"); if (h2) h2->Draw("colz");
   drawCent9ConventionNote();
   c1->Print(pdfName);
@@ -1382,106 +1445,177 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   }
   c1->Print(pdfName);
 
-  // Page 10: K+ and K- multiplicity (per event) and correlation
+  // Page 10: K multiplicity + 4He n#sigma vs p (ID-cut vs all tracks)
   c1->Clear();
-  c1->Divide(2, 2);
+  c1->Divide(2, 3);
   c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlusVsNKaonMinus"); if (h2) h2->Draw("colz");
   c1->cd(2); h1 = (TH1*)fin->Get("hNKaonPlus"); if (h1) h1->Draw();
   c1->cd(3); h1 = (TH1*)fin->Get("hNKaonMinus"); if (h1) h1->Draw();
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsPt"); if (h2) h2->Draw("colz");
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaHe4VsP"); if (h2) {
+    prepareHe4Hist(h2, "hNSigmaHe4VsP");
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+      drawCutLine2DH(h2, -femtoCfg.he4MaxAbsNSigma);
+      drawCutLine2DH(h2, femtoCfg.he4MaxAbsNSigma);
+    }
+  }
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaHe4VsP_All"); if (h2) {
+    prepareHe4Hist(h2, "hNSigmaHe4VsP_All");
+    h2->Draw("colz");
+  }
   c1->Print(pdfName);
 
-  // Page 11a: Proton QA 1D (pre-femto cut)
+  // Page 11a: 4He QA 1D (pre-femto cut)
   c1->Clear();
   c1->Divide(3, 2);
   if (gConfigLoaded) {
     const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Pt_PreFemtoCut"); if (h1) {
+    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Pt_PreFemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_Pt_PreFemtoCut");
       h1->Draw();
-      drawCutLine1D(h1, femtoCfg.protonMinPtPre);
-      drawCutLine1D(h1, femtoCfg.protonMinPtPair);
-      drawCutLine1D(h1, femtoCfg.protonMaxPtPair);
+      drawCutLine1D(h1, femtoCfg.he4MinPtPre);
+      drawCutLine1D(h1, femtoCfg.he4MaxPtPre);
+      drawCutLine1D(h1, femtoCfg.he4MinPtPair);
+      drawCutLine1D(h1, femtoCfg.he4MaxPtPair);
     }
-    c1->cd(2); h1 = (TH1*)fin->Get("hP_Eta_PreFemtoCut"); if (h1) {
+    c1->cd(2); h1 = (TH1*)fin->Get("hHe4_Eta_PreFemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_Eta_PreFemtoCut");
       h1->Draw();
-      drawCutLines1D(h1, -femtoCfg.protonMaxAbsEta, femtoCfg.protonMaxAbsEta);
+      drawCutLines1D(h1, -femtoCfg.he4MaxAbsEta, femtoCfg.he4MaxAbsEta);
     }
-    c1->cd(3); h1 = (TH1*)fin->Get("hP_NSigmaProton_PreFemtoCut"); if (h1) {
+    c1->cd(3); h1 = (TH1*)fin->Get("hHe4_NSigmaHe4_PreFemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_NSigmaHe4_PreFemtoCut");
       h1->Draw();
-      drawCutLines1D(h1, -femtoCfg.protonMaxAbsNSigma, femtoCfg.protonMaxAbsNSigma);
+      drawCutLines1D(h1, -femtoCfg.he4MaxAbsNSigma, femtoCfg.he4MaxAbsNSigma);
     }
-    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Mass2_PreFemtoCut"); if (h1) {
+    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Mass2_PreFemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_Mass2_PreFemtoCut");
       h1->Draw();
-      drawCutLines1D(h1, femtoCfg.protonMinMass2, femtoCfg.protonMaxMass2);
+      drawCutLines1D(h1, femtoCfg.he4MinMass2, femtoCfg.he4MaxMass2);
     }
-    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_DCA_PreFemtoCut"); if (h1) {
+    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_DCA_PreFemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_DCA_PreFemtoCut");
       h1->Draw();
-      drawCutLine1D(h1, femtoCfg.protonMaxDca);
+      drawCutLine1D(h1, femtoCfg.he4MaxDca);
     }
     c1->cd(6); /* spare */;
   } else {
-    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Pt_PreFemtoCut"); if (h1) h1->Draw();
-    c1->cd(2); h1 = (TH1*)fin->Get("hP_Eta_PreFemtoCut"); if (h1) h1->Draw();
-    c1->cd(3); h1 = (TH1*)fin->Get("hP_NSigmaProton_PreFemtoCut"); if (h1) h1->Draw();
-    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Mass2_PreFemtoCut"); if (h1) h1->Draw();
-    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_DCA_PreFemtoCut"); if (h1) h1->Draw();
+    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Pt_PreFemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_Pt_PreFemtoCut"); h1->Draw(); }
+    c1->cd(2); h1 = (TH1*)fin->Get("hHe4_Eta_PreFemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_Eta_PreFemtoCut"); h1->Draw(); }
+    c1->cd(3); h1 = (TH1*)fin->Get("hHe4_NSigmaHe4_PreFemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_NSigmaHe4_PreFemtoCut"); h1->Draw(); }
+    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Mass2_PreFemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_Mass2_PreFemtoCut"); h1->Draw(); }
+    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_DCA_PreFemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_DCA_PreFemtoCut"); h1->Draw(); }
     c1->cd(6); /* spare */;
   }
   c1->Print(pdfName);
 
-  // Page 11b: Proton QA 1D (post-femto cut)
+  // Page 11b: 4He QA 1D (post-femto cut)
   c1->Clear();
   c1->Divide(3, 2);
-  c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Pt"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hP_Eta"); if (h1) h1->Draw();
-  c1->cd(3); h1 = (TH1*)fin->Get("hP_Phi"); if (h1) h1->Draw();
-  c1->cd(4); h1 = (TH1*)fin->Get("hP_NSigmaProton"); if (h1) h1->Draw();
-  c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_Mass2"); if (h1) h1->Draw();
-  c1->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get("hP_DCA"); if (h1) h1->Draw();
+  c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Pt");
+  if (h1) { prepareHe4Hist(h1, "hHe4_Pt"); h1->Draw(); }
+  c1->cd(2); h1 = (TH1*)fin->Get("hHe4_Eta");
+  if (h1) { prepareHe4Hist(h1, "hHe4_Eta"); h1->Draw(); }
+  c1->cd(3); h1 = (TH1*)fin->Get("hHe4_Phi");
+  if (h1) { prepareHe4Hist(h1, "hHe4_Phi"); h1->Draw(); }
+  c1->cd(4); h1 = (TH1*)fin->Get("hHe4_NSigmaHe4");
+  if (h1) { prepareHe4Hist(h1, "hHe4_NSigmaHe4"); h1->Draw(); }
+  c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Mass2");
+  if (h1) { prepareHe4Hist(h1, "hHe4_Mass2"); h1->Draw(); }
+  c1->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_DCA");
+  if (h1) { prepareHe4Hist(h1, "hHe4_DCA"); h1->Draw(); }
   c1->Print(pdfName);
 
-  // Page 12a: Proton y & y-pT (pre-femto cut)
+  // Page 12a: 4He y & y-pT (pre-femto cut)
   c1->Clear();
   c1->Divide(2, 1);
   if (gConfigLoaded) {
     const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_PreFemtoCut"); if (h1) {
+    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_PreFemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_Y_PreFemtoCut");
       h1->Draw();
-      drawCutLines1D(h1, femtoCfg.protonMinRapidityCm, femtoCfg.protonMaxRapidityCm);
+      drawCutLines1D(h1, femtoCfg.he4MinRapidityCm, femtoCfg.he4MaxRapidityCm);
     }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_PreFemtoCut"); if (h2) {
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_PreFemtoCut"); if (h2) {
+      prepareHe4Hist(h2, "hHe4_PtVsY_PreFemtoCut");
       h2->Draw("colz");
-      drawCutLine2DH(h2, femtoCfg.protonMinRapidityCm);
-      drawCutLine2DH(h2, femtoCfg.protonMaxRapidityCm);
+      drawCutLine2DH(h2, femtoCfg.he4MinRapidityCm);
+      drawCutLine2DH(h2, femtoCfg.he4MaxRapidityCm);
     }
   } else {
-    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_PreFemtoCut"); if (h1) h1->Draw();
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_PreFemtoCut"); if (h2) h2->Draw("colz");
+    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_PreFemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_Y_PreFemtoCut"); h1->Draw(); }
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_PreFemtoCut");
+    if (h2) { prepareHe4Hist(h2, "hHe4_PtVsY_PreFemtoCut"); h2->Draw("colz"); }
   }
   c1->Print(pdfName);
 
-  // Page 12b: Proton y & y-pT (post-femto cut)
+  // Page 12b: 4He y & y-pT (post-femto cut)
   c1->Clear();
   c1->Divide(3, 2);
   if (gConfigLoaded) {
     const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_FemtoCut"); if (h1) {
+    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_FemtoCut"); if (h1) {
+      prepareHe4Hist(h1, "hHe4_Y_FemtoCut");
       h1->Draw();
-      drawCutLines1D(h1, femtoCfg.protonMinRapidityCm, femtoCfg.protonMaxRapidityCm);
+      drawCutLines1D(h1, femtoCfg.he4MinRapidityCm, femtoCfg.he4MaxRapidityCm);
     }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_FemtoCut"); if (h2) {
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_FemtoCut"); if (h2) {
+      prepareHe4Hist(h2, "hHe4_PtVsY_FemtoCut");
       h2->Draw("colz");
-      drawCutLine2DH(h2, femtoCfg.protonMinRapidityCm);
-      drawCutLine2DH(h2, femtoCfg.protonMaxRapidityCm);
+      drawCutLine2DH(h2, femtoCfg.he4MinRapidityCm);
+      drawCutLine2DH(h2, femtoCfg.he4MaxRapidityCm);
     }
   } else {
-    c1->cd(1); h1 = (TH1*)fin->Get("hP_Y_FemtoCut"); if (h1) h1->Draw();
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_PtVsY_FemtoCut"); if (h2) h2->Draw("colz");
+    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_FemtoCut");
+    if (h1) { prepareHe4Hist(h1, "hHe4_Y_FemtoCut"); h1->Draw(); }
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_FemtoCut");
+    if (h2) { prepareHe4Hist(h2, "hHe4_PtVsY_FemtoCut"); h2->Draw("colz"); }
   }
-  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hP_Mass2VsP"); if (h2) h2->Draw("colz");
-  c1->cd(4); h1 = (TH1*)fin->Get("hP_NHitsRatio_FemtoCut"); if (h1) h1->Draw();
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP"); if (h2) {
+    prepareHe4Hist(h2, "hHe4_Mass2VsP");
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+      drawCutLine2DH(h2, femtoCfg.he4MinMass2);
+      drawCutLine2DH(h2, femtoCfg.he4MaxMass2);
+    }
+  }
+  c1->cd(4); h1 = (TH1*)fin->Get("hHe4_NHitsRatio_FemtoCut");
+  if (h1) { prepareHe4Hist(h1, "hHe4_NHitsRatio_FemtoCut"); h1->Draw(); }
   c1->cd(5); /* spare */;
   c1->cd(6); /* spare */;
+  c1->Print(pdfName);
+
+  // Page 12c: 4He TOF m2 vs p (wide 0-20)
+  c1->Clear();
+  c1->Divide(2, 1);
+  if (gConfigLoaded) {
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_PreFemtoCut_wide"); if (h2) {
+      prepareHe4Hist(h2, "hHe4_Mass2VsP_PreFemtoCut_wide");
+      h2->Draw("colz");
+      drawCutLine2DH(h2, femtoCfg.he4MinPMom);
+      drawCutLine2DH(h2, femtoCfg.he4MaxPMom);
+    }
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_wide"); if (h2) {
+      prepareHe4Hist(h2, "hHe4_Mass2VsP_wide");
+      h2->Draw("colz");
+      drawCutLine2DH(h2, femtoCfg.he4MinPMom);
+      drawCutLine2DH(h2, femtoCfg.he4MaxPMom);
+    }
+  } else {
+    c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_PreFemtoCut_wide");
+    if (h2) { prepareHe4Hist(h2, "hHe4_Mass2VsP_PreFemtoCut_wide"); h2->Draw("colz"); }
+    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_wide");
+    if (h2) { prepareHe4Hist(h2, "hHe4_Mass2VsP_wide"); h2->Draw("colz"); }
+  }
   c1->Print(pdfName);
 
   // Page 13a: Phi candidate QA (pre-cut)
@@ -1540,14 +1674,15 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   }
   c1->Print(pdfName);
 
-  // Page 15: Femto k* (legacy phi-proton channel)
+  // Page 15: Femto k* (legacy phi-4He channel)
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_he4"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_he4"); if (h1) h1->Draw();
   c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_proton", channelNormQMin("phi_proton"), channelNormQMax("phi_proton"), cfCache);
-  c1->cd(4); h1 = (TH1*)fin->Get("hP_NCand"); if (h1) h1->Draw();
+  drawComputedCf(c1, 3, fin, "phi_he4", channelNormQMin("phi_he4"), channelNormQMax("phi_he4"), cfCache);
+  c1->cd(4); h1 = (TH1*)fin->Get("hHe4_NCand");
+  if (h1) { prepareHe4Hist(h1, "hHe4_NCand"); h1->Draw(); }
   c1->Print(pdfName);
 
   // Page 16: Phi mass windows / sidebands / rotation
@@ -1564,38 +1699,38 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   // Page 17: k* SE/ME/CF — signal channel
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_signal"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_signal"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_he4_signal"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_he4_signal"); if (h1) h1->Draw();
   c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_proton_signal", channelNormQMin("phi_proton_signal"),
-                 channelNormQMax("phi_proton_signal"), cfCache);
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_proton_signal"); if (h2) h2->Draw("colz");
+  drawComputedCf(c1, 3, fin, "phi_he4_signal", channelNormQMin("phi_he4_signal"),
+                 channelNormQMax("phi_he4_signal"), cfCache);
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_he4_signal"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
   // Page 18: k* SE/ME/CF — sideband channels
   c1->Clear();
   c1->Divide(2, 3);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_leftSB"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_leftSB"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_he4_leftSB"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_he4_leftSB"); if (h1) h1->Draw();
   c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_proton_leftSB", channelNormQMin("phi_proton_leftSB"),
-                 channelNormQMax("phi_proton_leftSB"), cfCache);
-  c1->cd(4); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_rightSB"); if (h1) h1->Draw();
-  c1->cd(5); h1 = (TH1*)fin->Get("hKstarME_phi_proton_rightSB"); if (h1) h1->Draw();
+  drawComputedCf(c1, 3, fin, "phi_he4_leftSB", channelNormQMin("phi_he4_leftSB"),
+                 channelNormQMax("phi_he4_leftSB"), cfCache);
+  c1->cd(4); h1 = (TH1*)fin->Get("hKstarSE_phi_he4_rightSB"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hKstarME_phi_he4_rightSB"); if (h1) h1->Draw();
   c1->cd(6);
-  drawComputedCf(c1, 6, fin, "phi_proton_rightSB", channelNormQMin("phi_proton_rightSB"),
-                 channelNormQMax("phi_proton_rightSB"), cfCache);
+  drawComputedCf(c1, 6, fin, "phi_he4_rightSB", channelNormQMin("phi_he4_rightSB"),
+                 channelNormQMax("phi_he4_rightSB"), cfCache);
   c1->Print(pdfName);
 
   // Page 19: k* SE/ME/CF — rotation background channel
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_proton"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_rot_proton"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_he4"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_rot_he4"); if (h1) h1->Draw();
   c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_rot_proton", channelNormQMin("phi_rot_proton"),
-                 channelNormQMax("phi_rot_proton"), cfCache);
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_rot_proton"); if (h2) h2->Draw("colz");
+  drawComputedCf(c1, 3, fin, "phi_rot_he4", channelNormQMin("phi_rot_he4"),
+                 channelNormQMax("phi_rot_he4"), cfCache);
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_rot_he4"); if (h2) h2->Draw("colz");
   c1->Print(pdfName);
 
   // Page 20: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), 3x4 (rows SE/ME/CF, cols per channel)
@@ -1623,7 +1758,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
 
   // CF PDF: remaining centrality slices (SE/ME k* + raw/sub CF)
   {
-    TString cfNote = "Multi-slice CF PDF from checkHistAnaFemtoPhiProton.C.\n";
+    TString cfNote = "Multi-slice CF PDF from checkHistAnaFemtoPhi4He.C.\n";
     Double_t cfAlphaL = 0.0;
     Double_t cfAlphaR = 0.0;
     getSidebandWidthAlphas(cfAlphaL, cfAlphaR);
@@ -1635,7 +1770,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
       cfNote += "Slices in cfCentSlicesQaPdfInclude are excluded (no duplicate with QA PDF).\n";
     }
     PdfHeader::OpenPdf(pdfCfName);
-    PdfHeader::MakePdfHeaderPage(pdfCfName, "checkHistAnaFemtoPhiProton.C", inputs, cfNote.Data(), true, anaName);
+    PdfHeader::MakePdfHeaderPage(pdfCfName, "checkHistAnaFemtoPhi4He.C", inputs, cfNote.Data(), true, anaName);
     const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
     c1->SetCanvasSize(1800, 1200);
     for (size_t is = 0; is < allSlices.size(); ++is) {
@@ -1649,7 +1784,7 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
 
   // Console: verify key histograms exist and have entries
   {
-    std::cout << "\n=== checkHistAnaFemtoPhiProton: key histogram entries ===\n";
+    std::cout << "\n=== checkHistAnaFemtoPhi4He: key histogram entries ===\n";
     const char* keys[] = {"hVz",
                            "hVz_After",
                            "hCentrality",
@@ -1670,24 +1805,30 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
                            "hPhi_MKK_rot",
                            "hPhiRot_MKK",
                            "hPhi_NCand",
-                           "hP_Pt_PreFemtoCut",
-                           "hP_Pt",
-                           "hP_Y_PreFemtoCut",
-                           "hP_Y_FemtoCut",
-                           "hP_PtVsY_PreFemtoCut",
-                           "hP_PtVsY_FemtoCut",
-                           "hP_NCand",
-                           "hKstarSE_phi_proton",
-                           "hKstarME_phi_proton",
-                           "hKstarSE_phi_proton_signal",
-                           "hKstarME_phi_proton_signal",
-                           "hKstarSE_phi_proton_leftSB",
-                           "hKstarME_phi_proton_leftSB",
-                           "hKstarSE_phi_proton_rightSB",
-                           "hKstarME_phi_proton_rightSB",
-                           "hKstarSE_phi_rot_proton",
-                           "hKstarME_phi_rot_proton",
-                           "hNProton_vs_Cent9",
+                           "hHe4_Pt_PreFemtoCut",
+                           "hHe4_Pt",
+                           "hHe4_Y_PreFemtoCut",
+                           "hHe4_Y_FemtoCut",
+                           "hHe4_PtVsY_PreFemtoCut",
+                           "hHe4_PtVsY_FemtoCut",
+                           "hHe4_NCand",
+                           "hHe4_Mass2VsP_PreFemtoCut_wide",
+                           "hHe4_Mass2VsP_wide",
+                           "hNSigmaHe4VsP_All",
+                           "hMass2VsPt_TpcKaon",
+                           "hDCAKK_All",
+                           "hDCAKK_Pass",
+                           "hKstarSE_phi_he4",
+                           "hKstarME_phi_he4",
+                           "hKstarSE_phi_he4_signal",
+                           "hKstarME_phi_he4_signal",
+                           "hKstarSE_phi_he4_leftSB",
+                           "hKstarME_phi_he4_leftSB",
+                           "hKstarSE_phi_he4_rightSB",
+                           "hKstarME_phi_he4_rightSB",
+                           "hKstarSE_phi_rot_he4",
+                           "hKstarME_phi_rot_he4",
+                           "hNHe4_vs_Cent9",
                            0};
     for (Int_t i = 0; keys[i]; ++i) {
       TObject* o = fin->Get(keys[i]);
@@ -1706,17 +1847,17 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
         std::cout << "  " << keys[i] << ": unexpected class " << o->ClassName() << "\n";
       }
     }
-    const char* cfKeys[] = {"hCF_phi_proton",         "hCF_phi_proton_signal", "hCF_phi_proton_leftSB",
-                            "hCF_phi_proton_rightSB", "hCF_phi_rot_proton",    0};
-    const char* cfChannels[] = {"phi_proton", "phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB",
-                                "phi_rot_proton", 0};
+    const char* cfKeys[] = {"hCF_phi_he4",         "hCF_phi_he4_signal", "hCF_phi_he4_leftSB",
+                            "hCF_phi_he4_rightSB", "hCF_phi_rot_he4",    0};
+    const char* cfChannels[] = {"phi_he4", "phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB",
+                                "phi_rot_he4", 0};
     for (Int_t i = 0; cfKeys[i]; ++i) {
       Int_t nPts = getCachedCfPointCount(cfCache, cfChannels[i]);
       std::cout << "  " << cfKeys[i] << " (computed): nPoints=" << nPts;
       if (nPts < 1) std::cout << "  [empty — check SE/ME or norm region]";
       std::cout << "\n";
     }
-    const char* cfCentChannels[] = {"phi_proton_signal", "phi_proton_leftSB", "phi_proton_rightSB", "phi_rot_proton",
+    const char* cfCentChannels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "phi_rot_he4",
                                      0};
     std::cout << Form("  CF cent slice (cent9 %d-%d, projected):\n", cfCent9Min, cfCent9Max);
     for (Int_t i = 0; cfCentChannels[i]; ++i) {

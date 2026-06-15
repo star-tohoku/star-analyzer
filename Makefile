@@ -141,7 +141,8 @@ OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o $(LIB_DIR)/CentralityHelper.o
 STFEMTO_DIR := StMaker/StFemtoMaker
 LIB_FEMTO_NAME := libStFemtoMaker.so
 SRC_FEMTO := $(STFEMTO_DIR)/StFemtoMaker.cxx
-OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o
+NUCLEAR_ID_HELPER_SRC := $(COMMON_DIR)/StNuclearIdHelper.cxx
+OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o $(LIB_DIR)/StNuclearIdHelper.o
 
 # --- libStLambdaNuclearMixMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
 STMIX_DIR := StMaker/StLambdaNuclearMixMaker
@@ -234,6 +235,9 @@ $(LIB_DIR)/$(LIB_FEMTO_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RM
 
 $(LIB_DIR)/StFemtoMaker.o: $(SRC_FEMTO) $(STFEMTO_DIR)/StFemtoMaker.h include/HistManager.h include/FemtoCandidate.h
 	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_FEMTO) -o $@
+
+$(LIB_DIR)/StNuclearIdHelper.o: $(NUCLEAR_ID_HELPER_SRC) $(COMMON_DIR)/StNuclearIdHelper.h $(COMMON_DIR)/NuclearIdDeDxVsMom.h
+	$(CXX) $(CXXFLAGS_MAKER) -c $(NUCLEAR_ID_HELPER_SRC) -o $@
 
 # libStNuclearIdMaker.so
 $(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_NUCLEARID)

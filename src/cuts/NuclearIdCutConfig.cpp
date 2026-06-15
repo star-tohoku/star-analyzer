@@ -26,6 +26,8 @@ void NuclearIdCutConfig::SetDefaults() {
   minM2_M2cut = 0.01;
   maxM2_M2cut = 10.0;
   maxPOverQ = 2.5;       // GeV/c, raw TPC rigidity upper limit (p/q < 2.5)
+  requireBestSpecies = kTRUE;
+  minNHitsDedxNuclear = 15;
 
   // Lambda selection defaults
   MeanLambda = 1.11596;
@@ -71,6 +73,12 @@ Bool_t NuclearIdCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("maxPOverQ") != values.end()) {
     maxPOverQ = YamlParser::ToDouble(values["maxPOverQ"], maxPOverQ);
+  }
+  if (values.find("requireBestSpecies") != values.end()) {
+    requireBestSpecies = YamlParser::ToBool(values["requireBestSpecies"], requireBestSpecies);
+  }
+  if (values.find("minNHitsDedxNuclear") != values.end()) {
+    minNHitsDedxNuclear = YamlParser::ToInt(values["minNHitsDedxNuclear"], minNHitsDedxNuclear);
   }
   if (values.find("MeanLambda") != values.end()) {
     MeanLambda = YamlParser::ToDouble(values["MeanLambda"], MeanLambda);

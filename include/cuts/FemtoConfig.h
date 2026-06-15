@@ -51,6 +51,24 @@ class FemtoConfig {
   Double_t protonMinRapidityCm;
   Double_t protonMaxRapidityCm;
 
+  // 4He bachelor cuts for femto pairing.
+  Double_t he4MaxDca;
+  Double_t he4MinPMom;
+  Double_t he4MaxPMom;
+  Double_t he4MinPtPre;
+  Double_t he4MaxPtPre;
+  Double_t he4MinPtPair;
+  Double_t he4MaxPtPair;
+  Double_t he4MaxAbsEta;
+  Double_t he4MaxAbsNSigma;
+  Short_t he4MinNHitsFit;
+  Double_t he4MinNHitsRatio;
+  Double_t he4TofMomentumThreshold;
+  Double_t he4MinMass2;
+  Double_t he4MaxMass2;
+  Double_t he4MinRapidityCm;
+  Double_t he4MaxRapidityCm;
+
   // Rotation background (phi_rot species).
   Bool_t rotationEnabled;
   std::string rotationSpeciesKey;

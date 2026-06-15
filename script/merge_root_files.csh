@@ -1,6 +1,6 @@
 #!/bin/tcsh
 # Script to merge ROOT files with the same JOBID
-# Usage: merge_root_files.csh [-q|--no-progress] <path_to_root_file>
+# Usage: merge_root_files.csh [-q|--no-progress] [--exclude-list FILE] [--skip-bad-scan] <path_to_root_file>
 # Example: merge_root_files.csh /path/to/output_phi_analysis_12345_0.root
 # Progress bar is on by default; disable with -q/--no-progress or MERGE_ROOT_PROGRESS=0
 # This will merge all files matching: /path/to/output_phi_analysis_12345_*.root

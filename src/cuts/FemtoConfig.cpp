@@ -64,6 +64,23 @@ void FemtoConfig::SetDefaults() {
   protonMinRapidityCm = -0.5;
   protonMaxRapidityCm = 0.0;
 
+  he4MaxDca = 1.0;
+  he4MinPMom = 0.0;
+  he4MaxPMom = 99.0;
+  he4MinPtPre = 0.2;
+  he4MaxPtPre = 99.0;
+  he4MinPtPair = 0.4;
+  he4MaxPtPair = 2.0;
+  he4MaxAbsEta = 2.0;
+  he4MaxAbsNSigma = 2.0;
+  he4MinNHitsFit = 15;
+  he4MinNHitsRatio = 0.52;
+  he4TofMomentumThreshold = 2.0;
+  he4MinMass2 = 0.01;
+  he4MaxMass2 = 10.0;
+  he4MinRapidityCm = -1.0;
+  he4MaxRapidityCm = 0.0;
+
   rotationEnabled = kFALSE;
   rotationSpeciesKey = "phi_rot";
   rotationParticleKey = "phi_rotation";
@@ -149,6 +166,25 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   if (values.find("protonMaxMass2") != values.end()) protonMaxMass2 = YamlParser::ToDouble(values.at("protonMaxMass2"), protonMaxMass2);
   if (values.find("protonMinRapidityCm") != values.end()) protonMinRapidityCm = YamlParser::ToDouble(values.at("protonMinRapidityCm"), protonMinRapidityCm);
   if (values.find("protonMaxRapidityCm") != values.end()) protonMaxRapidityCm = YamlParser::ToDouble(values.at("protonMaxRapidityCm"), protonMaxRapidityCm);
+
+  if (values.find("he4MaxDca") != values.end()) he4MaxDca = YamlParser::ToDouble(values.at("he4MaxDca"), he4MaxDca);
+  if (values.find("he4MinPMom") != values.end()) he4MinPMom = YamlParser::ToDouble(values.at("he4MinPMom"), he4MinPMom);
+  if (values.find("he4MaxPMom") != values.end()) he4MaxPMom = YamlParser::ToDouble(values.at("he4MaxPMom"), he4MaxPMom);
+  if (values.find("he4MinPtPre") != values.end()) he4MinPtPre = YamlParser::ToDouble(values.at("he4MinPtPre"), he4MinPtPre);
+  if (values.find("he4MaxPtPre") != values.end()) he4MaxPtPre = YamlParser::ToDouble(values.at("he4MaxPtPre"), he4MaxPtPre);
+  if (values.find("he4MinPtPair") != values.end()) he4MinPtPair = YamlParser::ToDouble(values.at("he4MinPtPair"), he4MinPtPair);
+  if (values.find("he4MaxPtPair") != values.end()) he4MaxPtPair = YamlParser::ToDouble(values.at("he4MaxPtPair"), he4MaxPtPair);
+  if (values.find("he4MaxAbsEta") != values.end()) he4MaxAbsEta = YamlParser::ToDouble(values.at("he4MaxAbsEta"), he4MaxAbsEta);
+  if (values.find("he4MaxAbsNSigma") != values.end()) he4MaxAbsNSigma = YamlParser::ToDouble(values.at("he4MaxAbsNSigma"), he4MaxAbsNSigma);
+  if (values.find("he4MinNHitsFit") != values.end()) he4MinNHitsFit = YamlParser::ToInt(values.at("he4MinNHitsFit"), he4MinNHitsFit);
+  if (values.find("he4MinNHitsRatio") != values.end()) he4MinNHitsRatio = YamlParser::ToDouble(values.at("he4MinNHitsRatio"), he4MinNHitsRatio);
+  if (values.find("he4TofMomentumThreshold") != values.end()) {
+    he4TofMomentumThreshold = YamlParser::ToDouble(values.at("he4TofMomentumThreshold"), he4TofMomentumThreshold);
+  }
+  if (values.find("he4MinMass2") != values.end()) he4MinMass2 = YamlParser::ToDouble(values.at("he4MinMass2"), he4MinMass2);
+  if (values.find("he4MaxMass2") != values.end()) he4MaxMass2 = YamlParser::ToDouble(values.at("he4MaxMass2"), he4MaxMass2);
+  if (values.find("he4MinRapidityCm") != values.end()) he4MinRapidityCm = YamlParser::ToDouble(values.at("he4MinRapidityCm"), he4MinRapidityCm);
+  if (values.find("he4MaxRapidityCm") != values.end()) he4MaxRapidityCm = YamlParser::ToDouble(values.at("he4MaxRapidityCm"), he4MaxRapidityCm);
 
   if (values.find("rotationEnabled") != values.end()) rotationEnabled = YamlParser::ToBool(values.at("rotationEnabled"), rotationEnabled);
   if (values.find("rotationSpeciesKey") != values.end()) rotationSpeciesKey = values.at("rotationSpeciesKey");

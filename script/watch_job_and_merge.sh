@@ -38,6 +38,7 @@ Options:
   --timeout-hours N        Give up after N hours (default 72, or WATCH_MERGE_TIMEOUT_SEC)
   --allow-partial          Merge when some subjob ROOT files exist (found > 0, found < N)
   --force-merge            Re-run merge even if *_merge.root already exists
+  --exclude-bad-roots LIST Pass --exclude-list to merge_root_files.csh (after scan)
   -h, --help               Show this help
 EOF
 }
