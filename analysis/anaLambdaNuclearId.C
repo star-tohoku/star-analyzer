@@ -281,23 +281,31 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
   std::cout << "******************************************" << std::endl;
   chain->Finish();
 
-  // Create single combined ROOT file and write histograms from both makers
+  // Create single combined ROOT file and write histograms from all makers.
+  // NOTE: nuclearidMaker and mixMaker both load from the same YAML, so they share
+  // histogram names (e.g. hKstar_d). To avoid ROOT cycle-overwriting the true-event
+  // histograms with the mix maker's 0-entry copies, each maker writes to its own
+  // TDirectory subdirectory.
   if (outputFile && strlen(outputFile) > 0) {
     // Ensure parent directories exist
     gSystem->mkdir(gSystem->DirName(outputFile), kTRUE);
     TFile* fout = new TFile(outputFile, "RECREATE");
     if (fout && !fout->IsZombie()) {
-      fout->cd();
       if (lambdaMaker) {
         std::cout << "Writing Lambda histograms..." << std::endl;
+        fout->cd();
         lambdaMaker->WriteHistograms();
       }
       if (nuclearidMaker) {
         std::cout << "Writing NuclearId histograms..." << std::endl;
+        TDirectory* dirNuc = fout->mkdir("nuclearid");
+        dirNuc->cd();
         nuclearidMaker->WriteHistograms();
       }
       if (mixMaker) {
         std::cout << "Writing Mix histograms..." << std::endl;
+        TDirectory* dirMix = fout->mkdir("mix");
+        dirMix->cd();
         mixMaker->WriteHistograms();
       }
 
