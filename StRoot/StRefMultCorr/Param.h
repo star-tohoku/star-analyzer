@@ -602,7 +602,8 @@ const string mParamStr_ref5[nID_ref5][nSet_ref5] = {
   // mParameterIndex = 7
   // Run 20 Au+Au 13.5 GeV (sqrt(s_NN)=5.2 GeV), Trigger ID = 750000
   {
-    "2020:13.5:21033026,21034013:198,202",         // Year, energy, run start end, Vz range
+    //"2020:13.5:21033026,21034013:198,202",         // Year, energy, run start end, Vz range
+    "2020:13.5:21033026,23034013:198,202",         // Year, energy, run start end, Vz range
     "7,11,15,21,28,37,47,60,76,94,114,138,166,197,233,277",  // Multiplicity values for the centrality classes
     "166",                        // Normalization start (of Glauber to the data)
     "0.,0.,0.,0.,0.,0.,0.,0.",    // Vz correction parameters (switched to new scheme, parameters defined near the shape corrections)
