@@ -18,6 +18,9 @@ struct TrackExtra {
   Float_t nSigmaProton;
   Float_t nSigmaKaon;
   Float_t nSigmaHe4;
+  Float_t nSigmaDeuteron;
+  Float_t nSigmaTriton;
+  Float_t nSigmaHe3;
   Float_t mass2;
   Float_t dca;
   Short_t nHitsFit;
@@ -27,6 +30,9 @@ struct TrackExtra {
       : nSigmaProton(0.0f),
         nSigmaKaon(0.0f),
         nSigmaHe4(0.0f),
+        nSigmaDeuteron(0.0f),
+        nSigmaTriton(0.0f),
+        nSigmaHe3(0.0f),
         mass2(-999.0f),
         dca(0.0f),
         nHitsFit(0),

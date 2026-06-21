@@ -57,12 +57,27 @@ cd job/run
 ./submit.sh --watch-merge ../joblist/joblist_auau3p85fxt_anaFemtoPhiProton.xml
 ```
 
+Unified phi femto (all bachelors in one pass):
+
+```bash
+./submit.sh --watch-merge ../joblist/joblist_auau3p85fxt_anaFemtoPhi.xml
+```
+
+After merge, QA PDF:
+
+```bash
+./script/singularity_checkHistAnaFemtoPhi.sh \
+  rootfile/auau3p85fxt_anaFemtoPhi/auau3p85fxt_anaFemtoPhi_<jobid>_merge.root \
+  config/mainconf/main_auau3p85fxt_anaFemtoPhi.yaml
+```
+
 - **`--watch-merge`**: after a successful submit, starts `script/watch_job_and_merge.sh` in the background (`nohup`).
 - **`--watch-merge-foreground`**: same watcher, but blocks until merge finishes (debug).
 - **Log**: `job/run/watchmerge/watchmerge_<anaName>_<jobid>.log`
 - **Completion rule**: count subjob ROOT files under `rootfile/<anaName>/` (excluding `*_merge.root`) until it matches the number of SUMS `{anaName}{jobid}_*.list` files in `job/run/`; requires two consecutive polls with the same count (GPFS settle). Default poll interval: 300 s (`WATCH_MERGE_POLL_SEC`). Default timeout: 72 h (`WATCH_MERGE_TIMEOUT_SEC` or `--timeout-hours` on the watch script).
 - **runmeta update**: on finish, `runmeta_<anaName>_<jobid>.json` gets a `postProcess.watchMerge` block (`status`, paths, counts).
 - **Skip**: if `*_merge.root` already exists, the watcher exits without re-merging (use `watch_job_and_merge.sh --force-merge` to override).
+- **Bad-root exclusion (manual list)**: `watch_job_and_merge.sh --exclude-bad-roots <list.txt>` forwards to `merge_root_files.csh --exclude-list=<list.txt>`.
 - **QA PDF**: not run automatically; after merge, run the usual `singularity_checkHistAna*` script on `*_merge.root` manually.
 
 Manual re-run (e.g. after a timeout):
@@ -70,6 +85,36 @@ Manual re-run (e.g. after a timeout):
 ```bash
 ./script/watch_job_and_merge.sh --runmeta job/run/runmeta/runmeta_<anaName>_<jobid>.json
 ```
+
+Manual re-run with exclusion list:
+
+```bash
+./script/watch_job_and_merge.sh \
+  --runmeta job/run/runmeta/runmeta_<anaName>_<jobid>.json \
+  --force-merge \
+  --exclude-bad-roots /tmp/bad_subjob_roots_<anaName>_<jobid>.txt
+```
+
+## Manual bad-root scan and re-merge
+
+Use this when `*_merge.root` looks suspiciously small or `hadd` failed due to bad subjob ROOT files.
+
+```bash
+# 1) Build exclusion list from a sample subjob file
+./script/scan_bad_subjob_roots.sh \
+  --sample rootfile/<anaName>/<anaName>_<jobid>_0.root \
+  --output /tmp/bad_subjob_roots_<anaName>_<jobid>.txt
+
+# 2) Re-merge with exclusions (auto-overwrites *_merge.root)
+./script/merge_root_files.csh \
+  --exclude-list=/tmp/bad_subjob_roots_<anaName>_<jobid>.txt \
+  rootfile/<anaName>/<anaName>_<jobid>_0.root
+```
+
+Notes:
+- `merge_root_files.csh` now runs `scan_bad_subjob_roots.sh` automatically by default.
+- Use `--skip-bad-scan` to disable automatic scan.
+- Use `--exclude-list=<file>` to force a specific exclusion list.
 
 ## Quick Check
 
@@ -98,6 +143,7 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 - Batch runtime now copies `analysis/`, `config/`, `lib/`, `include/`, `StMaker/`, `StRoot/`, and optional build artifacts into a scratch-local runtime bundle before `singularity exec`, so moved or symlinked repositories do not break macro lookup inside the container.
 - Current `auau19_anaLambda` joblists run `root4star` via `singularity exec ... star-bnl/star-sw:latest` with `-B /star/nfs4/AFS`, `-B /home/starlib:/home/starlib`, and inherited `LD_LIBRARY_PATH` to satisfy `libgfortran.so.3`.
 - The same container strategy is available for local Phi QA via `script/singularity_checkHistAnaPhi.sh` when host `root4star` cannot start due to missing runtime libraries.
+- For local LL/KP CF fitting on AL9, use `script/singularity_run_fitCorrelation.sh <root_file> <mainconf> [hist_name]` (compiled `fit_correlation` binary inside Singularity; input must be a TH1D CF histogram, not raw maker merge ROOT).
 - Spack `root-config` / batch `root4star` builds here omit `Netx`/`RFIO` plugins, so `root://` and `rfio://` URLs in the SUMS `.list` cannot be opened. The test joblist rewrites the list to POSIX paths (`sed` strips `root://host:port//` and `rfio://`) before `root4star`, then reads `/home/starlib/...` as local files inside the container.
 
 ## root4star exit abort (`corrupted size vs. prev_size`)

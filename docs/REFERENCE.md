@@ -21,7 +21,7 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, `snapshot_runmeta.sh`, generated/copied files). On successful submit, `submit.sh` saves `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`, `job/run/configlog/config_<anaName>_<jobid>.txt`, and `job/run/runmeta/runmeta_<anaName>_<jobid>.json` plus sidecars (`gitstatus`, `gitdiff`, `gitsubmodules`, `runtime_bundle`, `sums_artifacts`, `submit_stdout`). Files under `job/run/*.xml` and generated job artifacts are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`, `StFemtoMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. Femto naming rules: `StMaker/StFemtoMaker/README.md`. |
-| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `run_anaFemtoPhiProton.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh`, `singularity_run_anaFemtoPhiProton.sh` (local analysis via the same singularity runtime), `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh` (QA PDF from Maker output ROOT), `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, `singularity_checkHistAnaFemtoPhiProton.sh` (QA PDF via the same singularity runtime; **recommended on AL9**), `merge_root_files.csh` (hadd merge of subjob ROOT by jobid), `watch_job_and_merge.sh` (poll batch output and auto-merge; started by `submit.sh --watch-merge`), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction, watch-merge path helpers), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
+| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `run_anaFemtoPhiProton.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh`, `singularity_run_anaFemtoPhiProton.sh` (local analysis via the same singularity runtime), `run_fitCorrelation.sh` (runs `share/femtocalc/fitCorrelation.C+` with safe quoting for ROOT file and histogram name), `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh` (QA PDF from Maker output ROOT), `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, `singularity_checkHistAnaFemtoPhiProton.sh` (QA PDF via the same singularity runtime; **recommended on AL9**), `merge_root_files.csh` (hadd merge of subjob ROOT by jobid), `watch_job_and_merge.sh` (poll batch output and auto-merge; started by `submit.sh --watch-merge`), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction, watch-merge path helpers), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
 
 ## Prerequisites and setup
 
@@ -190,6 +190,32 @@ root4star -b -q "analysis/run_anaLambda.C(\"$INPUT\",\"$OUTPUT\",\"$JOBID\",$NEV
 
 `run_anaLambda.C` loads STAR libs, `libStarAnaConfig.so`, and `libStLambdaMaker.so`, compiles `anaLambda.C+`, and calls `anaLambda(...)`.
 
+### Local LL/KP correlation fit helper
+
+`share/` is often a symlink (e.g. to `sharelocal` on GPFS). On **AL9**, use the Singularity wrapper so `root4star` runs in an SL7-like runtime and macro paths are resolved with `readlink -f`:
+
+```bash
+./script/singularity_run_fitCorrelation.sh <root_file> <mainconf_path> [hist_name]
+```
+
+Example:
+
+```bash
+./script/singularity_run_fitCorrelation.sh \
+  rootfile/auau3p85fxt_anaFemtoPhi4He/auau3p85fxt_anaFemtoPhi4He_<jobid>_merge.root \
+  config/mainconf/main_auau3p85fxt_anaFemtoPhi4He.yaml \
+  hCF
+```
+
+On SL7 (or when host `root` ACLiC works), the plain wrapper avoids quoting mistakes:
+
+```bash
+./script/run_fitCorrelation.sh <root_file> [hist_name]
+```
+
+This calls `root -b -q "share/femtocalc/fitCorrelation.C+(...)"` and defaults `hist_name` to `hCF`.
+Set `STAR_ANA_FIT_ROOT_CMD` to override (example: `STAR_ANA_FIT_ROOT_CMD=root`).
+
 ### Local with Singularity (batch-like runtime)
 
 On some login or dev nodes (for example AL9), host `root4star` may fail before the analysis macro runs (missing `libgfortran.so.3`, mixed 32-bit ROOT plugins for `root://`, and similar linker issues). Batch jobs already run `root4star` inside `singularity exec ... star-bnl/star-sw:latest`; use the matching **`singularity_*` wrappers** for local builds and runs on those hosts instead of calling host `root4star` or host `make` directly.
@@ -198,8 +224,13 @@ On some login or dev nodes (for example AL9), host `root4star` may fail before t
 - **Lambda:** `./script/singularity_run_anaLambda.sh` — same arguments as `run_anaLambda.sh`.
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi-p femto:** `./script/singularity_run_anaFemtoPhiProton.sh` — same arguments as `run_anaFemtoPhiProton.sh`; uses `StFemtoMaker` (`libStFemtoMaker.so`). Mainconf key **`maker:`** → `config/maker/maker_<anaName>.yaml` (φ builder + femto species/channels in one file).
+- **Unified phi femto (p, d, t, ³He, ⁴He):** `./script/singularity_run_anaFemtoPhi.sh` — one pass, 21 channels; mainconf `config/mainconf/main_auau3p85fxt_anaFemtoPhi.yaml`.
+- **Phi-4He femto:** `./script/singularity_run_anaFemtoPhi4He.sh` — same pattern as phi-p; species `he4`, channels `phi_he4_*`.
+- **Phi-deuteron femto:** `./script/singularity_run_anaFemtoPhiDeuteron.sh` — same pattern; species `deuteron`, channels `phi_deuteron_*`.
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
 - **Phi-p femto QA:** `./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>`. Writes QA PDF plus `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` (15 centrality slices: SE/ME k*, raw CF, sideband-subtracted CF). Maker YAML (`FemtoConfig`): `cfCentSlices`, `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`, `negativeBinPolicy`. Mixing YAML: `mixingMode` (`randomSample`|`bufferAll`), `maxMixedPairsPerEvent`, `mixBothDirections`, `bufferSize`. See `StMaker/StFemtoMaker/README.md` and `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md`.
+- **Unified phi femto QA:** `./script/singularity_checkHistAnaFemtoPhi.sh <root_file> <mainconf_path>` — single QA PDF only (representative cent slices × all channel bases; no `*_CF_*.pdf`).
+- **Phi-4He / phi-deuteron femto QA:** `./script/singularity_checkHistAnaFemtoPhi4He.sh` or `./script/singularity_checkHistAnaFemtoPhiDeuteron.sh` — same CF/QA PDF layout as phi-p femto (Pages 1–20 + separate CF PDF).
 
 Example (build):
 
@@ -277,6 +308,24 @@ Example:
 
 Writes **two** PDFs under `share/figure/<anaName>/`: QA (`..._checkHistAnaFemtoPhiProton_<jobid>.pdf`) and multi-centrality CF (`..._checkHistAnaFemtoPhiProton_CF_<jobid>.pdf`). CF is computed from merged SE/ME in the macro (not stored in ROOT). Plan record: `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md`.
 
+### Result QA (Phi-deuteron femto): checkHistAnaFemtoPhiDeuteron.sh
+
+After merging batch output for `auau3p85fxt_anaFemtoPhiDeuteron`:
+
+```bash
+./script/singularity_checkHistAnaFemtoPhiDeuteron.sh <merge.root> <mainconf_path>
+```
+
+Example:
+
+```bash
+./script/singularity_checkHistAnaFemtoPhiDeuteron.sh \
+  rootfile/auau3p85fxt_anaFemtoPhiDeuteron/auau3p85fxt_anaFemtoPhiDeuteron_<jobid>_merge.root \
+  config/mainconf/main_auau3p85fxt_anaFemtoPhiDeuteron.yaml
+```
+
+Initial validation joblist (10 files): `job/joblist/joblist_auau3p85fxt_anaFemtoPhiDeuteron_test10.xml`.
+
 ### StRoot vendoring
 
 - **When to vendor:** prefer `$STAR/lib` and `StMaker/` first; copy into `StRoot/<Package>/` only when STAR or past-analysis source must ship with the repo. Agent procedure: `docs/ai/skills/reuse-star-stroot.md`.
@@ -350,6 +399,25 @@ First-time flow (after git clone): customize analysis info → setup → build �
    ```
 
    This starts `script/watch_job_and_merge.sh` in the background. It polls until subjob ROOT file count matches the SUMS `.list` count, then runs `merge_root_files.csh`. Log: `job/run/watchmerge/watchmerge_<anaName>_<jobid>.log`. Completion is recorded in runmeta `postProcess.watchMerge`. Use `--watch-merge-foreground` to block until merge finishes. Environment: `WATCH_MERGE_POLL_SEC` (default 300), `WATCH_MERGE_TIMEOUT_SEC` (default 259200). Re-run manually: `./script/watch_job_and_merge.sh --runmeta job/run/runmeta/runmeta_<anaName>_<jobid>.json`.
+
+   For bad subjob ROOT exclusion, pass a prepared exclusion list:
+   ```bash
+   ./script/watch_job_and_merge.sh \
+     --runmeta job/run/runmeta/runmeta_<anaName>_<jobid>.json \
+     --force-merge \
+     --exclude-bad-roots /tmp/bad_subjob_roots_<anaName>_<jobid>.txt
+   ```
+
+   `merge_root_files.csh` supports:
+   - `--exclude-list=<file>`: merge after excluding listed subjob ROOT paths
+   - `--skip-bad-scan`: disable automatic scan
+
+   `scan_bad_subjob_roots.sh` builds exclusion lists from a sample subjob output:
+   ```bash
+   ./script/scan_bad_subjob_roots.sh \
+     --sample rootfile/<anaName>/<anaName>_<jobid>_0.root \
+     --output /tmp/bad_subjob_roots_<anaName>_<jobid>.txt
+   ```
 
   On successful submit, `submit.sh` now records a per-`jobid` reproducibility set:
   - **job/run/configlog/config_<anaName>_<jobid>.txt** — embedded mainconf plus all referenced config YAMLs

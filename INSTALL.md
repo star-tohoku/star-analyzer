@@ -145,6 +145,22 @@ Example (Lambda via Singularity, first 100 events; same arguments as above):
 
 The run scripts set **`LD_LIBRARY_PATH`** (and related env) before `root4star`. If you invoke `root4star` by hand, you must reproduce that environment or linking may fail.
 
+For LL/KP femto CF fits, use the Singularity wrapper on **AL9** (compiles `fit_correlation` with `g++` inside the SL7-like container; no ACLiC):
+
+```bash
+./script/singularity_run_fitCorrelation.sh <root_file> <mainconf_path> [hist_name]
+```
+
+The input ROOT file must contain a **TH1D correlation function** (default name `hCF`). Batch merge output from `StFemtoMaker` does not include CF histograms; build or export CF first (e.g. from checkHist), then fit.
+
+List keys in a ROOT file:
+
+```bash
+$(readlink -f share/femtocalc)/fit_correlation --list <root_file>
+```
+
+(rebuild via `singularity_run_fitCorrelation.sh` if the binary is missing).
+
 ---
 
 ## Optional: Histogram QA (Lambda)

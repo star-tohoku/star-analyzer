@@ -81,6 +81,57 @@ void FemtoConfig::SetDefaults() {
   he4MinRapidityCm = -1.0;
   he4MaxRapidityCm = 0.0;
 
+  deuteronMaxDca = 1.0;
+  deuteronMinPMom = 0.0;
+  deuteronMaxPMom = 99.0;
+  deuteronMinPtPre = 0.2;
+  deuteronMaxPtPre = 99.0;
+  deuteronMinPtPair = 0.4;
+  deuteronMaxPtPair = 2.0;
+  deuteronMaxAbsEta = 2.0;
+  deuteronMaxAbsNSigma = 2.0;
+  deuteronMinNHitsFit = 15;
+  deuteronMinNHitsRatio = 0.52;
+  deuteronTofMomentumThreshold = 2.0;
+  deuteronMinMass2 = 0.01;
+  deuteronMaxMass2 = 10.0;
+  deuteronMinRapidityCm = -1.0;
+  deuteronMaxRapidityCm = 0.0;
+
+  tritonMaxDca = 1.0;
+  tritonMinPMom = 0.0;
+  tritonMaxPMom = 99.0;
+  tritonMinPtPre = 0.2;
+  tritonMaxPtPre = 99.0;
+  tritonMinPtPair = 0.4;
+  tritonMaxPtPair = 2.0;
+  tritonMaxAbsEta = 2.0;
+  tritonMaxAbsNSigma = 2.0;
+  tritonMinNHitsFit = 15;
+  tritonMinNHitsRatio = 0.52;
+  tritonTofMomentumThreshold = 99.0;
+  tritonMinMass2 = 0.01;
+  tritonMaxMass2 = 10.0;
+  tritonMinRapidityCm = -1.0;
+  tritonMaxRapidityCm = 0.0;
+
+  he3MaxDca = 1.0;
+  he3MinPMom = 0.0;
+  he3MaxPMom = 99.0;
+  he3MinPtPre = 0.2;
+  he3MaxPtPre = 99.0;
+  he3MinPtPair = 0.4;
+  he3MaxPtPair = 2.0;
+  he3MaxAbsEta = 2.0;
+  he3MaxAbsNSigma = 2.0;
+  he3MinNHitsFit = 15;
+  he3MinNHitsRatio = 0.52;
+  he3TofMomentumThreshold = 99.0;
+  he3MinMass2 = 0.01;
+  he3MaxMass2 = 10.0;
+  he3MinRapidityCm = -1.0;
+  he3MaxRapidityCm = 0.0;
+
   rotationEnabled = kFALSE;
   rotationSpeciesKey = "phi_rot";
   rotationParticleKey = "phi_rotation";
@@ -185,6 +236,155 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   if (values.find("he4MaxMass2") != values.end()) he4MaxMass2 = YamlParser::ToDouble(values.at("he4MaxMass2"), he4MaxMass2);
   if (values.find("he4MinRapidityCm") != values.end()) he4MinRapidityCm = YamlParser::ToDouble(values.at("he4MinRapidityCm"), he4MinRapidityCm);
   if (values.find("he4MaxRapidityCm") != values.end()) he4MaxRapidityCm = YamlParser::ToDouble(values.at("he4MaxRapidityCm"), he4MaxRapidityCm);
+
+  if (values.find("deuteronMaxDca") != values.end()) {
+    deuteronMaxDca = YamlParser::ToDouble(values.at("deuteronMaxDca"), deuteronMaxDca);
+  }
+  if (values.find("deuteronMinPMom") != values.end()) {
+    deuteronMinPMom = YamlParser::ToDouble(values.at("deuteronMinPMom"), deuteronMinPMom);
+  }
+  if (values.find("deuteronMaxPMom") != values.end()) {
+    deuteronMaxPMom = YamlParser::ToDouble(values.at("deuteronMaxPMom"), deuteronMaxPMom);
+  }
+  if (values.find("deuteronMinPtPre") != values.end()) {
+    deuteronMinPtPre = YamlParser::ToDouble(values.at("deuteronMinPtPre"), deuteronMinPtPre);
+  }
+  if (values.find("deuteronMaxPtPre") != values.end()) {
+    deuteronMaxPtPre = YamlParser::ToDouble(values.at("deuteronMaxPtPre"), deuteronMaxPtPre);
+  }
+  if (values.find("deuteronMinPtPair") != values.end()) {
+    deuteronMinPtPair = YamlParser::ToDouble(values.at("deuteronMinPtPair"), deuteronMinPtPair);
+  }
+  if (values.find("deuteronMaxPtPair") != values.end()) {
+    deuteronMaxPtPair = YamlParser::ToDouble(values.at("deuteronMaxPtPair"), deuteronMaxPtPair);
+  }
+  if (values.find("deuteronMaxAbsEta") != values.end()) {
+    deuteronMaxAbsEta = YamlParser::ToDouble(values.at("deuteronMaxAbsEta"), deuteronMaxAbsEta);
+  }
+  if (values.find("deuteronMaxAbsNSigma") != values.end()) {
+    deuteronMaxAbsNSigma = YamlParser::ToDouble(values.at("deuteronMaxAbsNSigma"), deuteronMaxAbsNSigma);
+  }
+  if (values.find("deuteronMinNHitsFit") != values.end()) {
+    deuteronMinNHitsFit = YamlParser::ToInt(values.at("deuteronMinNHitsFit"), deuteronMinNHitsFit);
+  }
+  if (values.find("deuteronMinNHitsRatio") != values.end()) {
+    deuteronMinNHitsRatio = YamlParser::ToDouble(values.at("deuteronMinNHitsRatio"), deuteronMinNHitsRatio);
+  }
+  if (values.find("deuteronTofMomentumThreshold") != values.end()) {
+    deuteronTofMomentumThreshold =
+        YamlParser::ToDouble(values.at("deuteronTofMomentumThreshold"), deuteronTofMomentumThreshold);
+  }
+  if (values.find("deuteronMinMass2") != values.end()) {
+    deuteronMinMass2 = YamlParser::ToDouble(values.at("deuteronMinMass2"), deuteronMinMass2);
+  }
+  if (values.find("deuteronMaxMass2") != values.end()) {
+    deuteronMaxMass2 = YamlParser::ToDouble(values.at("deuteronMaxMass2"), deuteronMaxMass2);
+  }
+  if (values.find("deuteronMinRapidityCm") != values.end()) {
+    deuteronMinRapidityCm = YamlParser::ToDouble(values.at("deuteronMinRapidityCm"), deuteronMinRapidityCm);
+  }
+  if (values.find("deuteronMaxRapidityCm") != values.end()) {
+    deuteronMaxRapidityCm = YamlParser::ToDouble(values.at("deuteronMaxRapidityCm"), deuteronMaxRapidityCm);
+  }
+
+  if (values.find("tritonMaxDca") != values.end()) {
+    tritonMaxDca = YamlParser::ToDouble(values.at("tritonMaxDca"), tritonMaxDca);
+  }
+  if (values.find("tritonMinPMom") != values.end()) {
+    tritonMinPMom = YamlParser::ToDouble(values.at("tritonMinPMom"), tritonMinPMom);
+  }
+  if (values.find("tritonMaxPMom") != values.end()) {
+    tritonMaxPMom = YamlParser::ToDouble(values.at("tritonMaxPMom"), tritonMaxPMom);
+  }
+  if (values.find("tritonMinPtPre") != values.end()) {
+    tritonMinPtPre = YamlParser::ToDouble(values.at("tritonMinPtPre"), tritonMinPtPre);
+  }
+  if (values.find("tritonMaxPtPre") != values.end()) {
+    tritonMaxPtPre = YamlParser::ToDouble(values.at("tritonMaxPtPre"), tritonMaxPtPre);
+  }
+  if (values.find("tritonMinPtPair") != values.end()) {
+    tritonMinPtPair = YamlParser::ToDouble(values.at("tritonMinPtPair"), tritonMinPtPair);
+  }
+  if (values.find("tritonMaxPtPair") != values.end()) {
+    tritonMaxPtPair = YamlParser::ToDouble(values.at("tritonMaxPtPair"), tritonMaxPtPair);
+  }
+  if (values.find("tritonMaxAbsEta") != values.end()) {
+    tritonMaxAbsEta = YamlParser::ToDouble(values.at("tritonMaxAbsEta"), tritonMaxAbsEta);
+  }
+  if (values.find("tritonMaxAbsNSigma") != values.end()) {
+    tritonMaxAbsNSigma = YamlParser::ToDouble(values.at("tritonMaxAbsNSigma"), tritonMaxAbsNSigma);
+  }
+  if (values.find("tritonMinNHitsFit") != values.end()) {
+    tritonMinNHitsFit = YamlParser::ToInt(values.at("tritonMinNHitsFit"), tritonMinNHitsFit);
+  }
+  if (values.find("tritonMinNHitsRatio") != values.end()) {
+    tritonMinNHitsRatio = YamlParser::ToDouble(values.at("tritonMinNHitsRatio"), tritonMinNHitsRatio);
+  }
+  if (values.find("tritonTofMomentumThreshold") != values.end()) {
+    tritonTofMomentumThreshold =
+        YamlParser::ToDouble(values.at("tritonTofMomentumThreshold"), tritonTofMomentumThreshold);
+  }
+  if (values.find("tritonMinMass2") != values.end()) {
+    tritonMinMass2 = YamlParser::ToDouble(values.at("tritonMinMass2"), tritonMinMass2);
+  }
+  if (values.find("tritonMaxMass2") != values.end()) {
+    tritonMaxMass2 = YamlParser::ToDouble(values.at("tritonMaxMass2"), tritonMaxMass2);
+  }
+  if (values.find("tritonMinRapidityCm") != values.end()) {
+    tritonMinRapidityCm = YamlParser::ToDouble(values.at("tritonMinRapidityCm"), tritonMinRapidityCm);
+  }
+  if (values.find("tritonMaxRapidityCm") != values.end()) {
+    tritonMaxRapidityCm = YamlParser::ToDouble(values.at("tritonMaxRapidityCm"), tritonMaxRapidityCm);
+  }
+
+  if (values.find("he3MaxDca") != values.end()) {
+    he3MaxDca = YamlParser::ToDouble(values.at("he3MaxDca"), he3MaxDca);
+  }
+  if (values.find("he3MinPMom") != values.end()) {
+    he3MinPMom = YamlParser::ToDouble(values.at("he3MinPMom"), he3MinPMom);
+  }
+  if (values.find("he3MaxPMom") != values.end()) {
+    he3MaxPMom = YamlParser::ToDouble(values.at("he3MaxPMom"), he3MaxPMom);
+  }
+  if (values.find("he3MinPtPre") != values.end()) {
+    he3MinPtPre = YamlParser::ToDouble(values.at("he3MinPtPre"), he3MinPtPre);
+  }
+  if (values.find("he3MaxPtPre") != values.end()) {
+    he3MaxPtPre = YamlParser::ToDouble(values.at("he3MaxPtPre"), he3MaxPtPre);
+  }
+  if (values.find("he3MinPtPair") != values.end()) {
+    he3MinPtPair = YamlParser::ToDouble(values.at("he3MinPtPair"), he3MinPtPair);
+  }
+  if (values.find("he3MaxPtPair") != values.end()) {
+    he3MaxPtPair = YamlParser::ToDouble(values.at("he3MaxPtPair"), he3MaxPtPair);
+  }
+  if (values.find("he3MaxAbsEta") != values.end()) {
+    he3MaxAbsEta = YamlParser::ToDouble(values.at("he3MaxAbsEta"), he3MaxAbsEta);
+  }
+  if (values.find("he3MaxAbsNSigma") != values.end()) {
+    he3MaxAbsNSigma = YamlParser::ToDouble(values.at("he3MaxAbsNSigma"), he3MaxAbsNSigma);
+  }
+  if (values.find("he3MinNHitsFit") != values.end()) {
+    he3MinNHitsFit = YamlParser::ToInt(values.at("he3MinNHitsFit"), he3MinNHitsFit);
+  }
+  if (values.find("he3MinNHitsRatio") != values.end()) {
+    he3MinNHitsRatio = YamlParser::ToDouble(values.at("he3MinNHitsRatio"), he3MinNHitsRatio);
+  }
+  if (values.find("he3TofMomentumThreshold") != values.end()) {
+    he3TofMomentumThreshold = YamlParser::ToDouble(values.at("he3TofMomentumThreshold"), he3TofMomentumThreshold);
+  }
+  if (values.find("he3MinMass2") != values.end()) {
+    he3MinMass2 = YamlParser::ToDouble(values.at("he3MinMass2"), he3MinMass2);
+  }
+  if (values.find("he3MaxMass2") != values.end()) {
+    he3MaxMass2 = YamlParser::ToDouble(values.at("he3MaxMass2"), he3MaxMass2);
+  }
+  if (values.find("he3MinRapidityCm") != values.end()) {
+    he3MinRapidityCm = YamlParser::ToDouble(values.at("he3MinRapidityCm"), he3MinRapidityCm);
+  }
+  if (values.find("he3MaxRapidityCm") != values.end()) {
+    he3MaxRapidityCm = YamlParser::ToDouble(values.at("he3MaxRapidityCm"), he3MaxRapidityCm);
+  }
 
   if (values.find("rotationEnabled") != values.end()) rotationEnabled = YamlParser::ToBool(values.at("rotationEnabled"), rotationEnabled);
   if (values.find("rotationSpeciesKey") != values.end()) rotationSpeciesKey = values.at("rotationSpeciesKey");

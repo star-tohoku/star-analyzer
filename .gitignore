@@ -29,6 +29,13 @@ err
 output
 share
 
+# femto fit shared libs (built locally)
+common/macro/etc/libFemtoFit.so
+common/macro/etc/libCfExtractPhi4He.so
+common/macro/etc/libFitHistPhi4He.so
+common/macro/etc/fitHistPhi4He
+common/macro/etc/*_C.*
+
 # editor setting
 .vscode
 
@@ -104,3 +111,6 @@ script/getfile/
 
 # Current mainconf persistence
 .current_mainconf
+
+# Local femto CF fit macros (experimental; source in share/femtocalc)
+common/macro/etc/

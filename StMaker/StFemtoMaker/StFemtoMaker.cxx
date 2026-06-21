@@ -225,14 +225,23 @@ Int_t StFemtoMaker::Make() {
   std::vector<TrackState> kaonsMinus;
   std::vector<TrackState> protons;
   std::vector<He4TrackState> he4Tracks;
+  std::vector<DeuteronTrackState> deuteronTracks;
+  std::vector<TritonTrackState> tritonTracks;
+  std::vector<He3TrackState> he3Tracks;
   kaonsPlus.reserve(500);
   kaonsMinus.reserve(500);
   protons.reserve(500);
   he4Tracks.reserve(100);
+  deuteronTracks.reserve(100);
+  tritonTracks.reserve(100);
+  he3Tracks.reserve(100);
 
   const FemtoConfig& femtoCfgSpecies = ConfigManager::GetInstance().GetFemtoConfig();
   const Bool_t needProton = (femtoCfgSpecies.FindSpecies("proton") != nullptr);
   const Bool_t needHe4 = (femtoCfgSpecies.FindSpecies("he4") != nullptr);
+  const Bool_t needDeuteron = (femtoCfgSpecies.FindSpecies("deuteron") != nullptr);
+  const Bool_t needTriton = (femtoCfgSpecies.FindSpecies("triton") != nullptr);
+  const Bool_t needHe3 = (femtoCfgSpecies.FindSpecies("he3") != nullptr);
   const NuclearIdCutConfig& nucIdCfg = ConfigManager::GetInstance().GetNuclearIdCuts();
 
   Double_t Qx = 0.0, Qy = 0.0;
@@ -394,6 +403,95 @@ Int_t StFemtoMaker::Make() {
         }
       }
     }
+
+    if (needDeuteron && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
+      NuclearTrackState nucState;
+      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+      if (nucState.dedx > 0 && m_histManager) {
+        m_histManager->Fill("hNSigmaDeuteronVsP_All", pMom.Mag(),
+                            StNuclearIdHelper::GetNSigma(kNucDeuteron, nucState.pMag, nucState.dedx));
+      }
+      if (StNuclearIdHelper::IsDeuteron(nucState)) {
+        TrackState dTrack;
+        BuildTrackState(dTrack, trk, event, pVtx, itrk);
+        FillTofInfo(dTrack, trk, pMom, btofIndex);
+        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+        DeuteronTrackState dState;
+        dState.trk = dTrack;
+        dState.nSigmaDeuteron =
+            (Float_t)StNuclearIdHelper::GetNSigma(kNucDeuteron, nucState.pMag, nucState.dedx);
+        if (m_histManager) {
+          m_histManager->Fill("hNSigmaDeuteronVsP", pMom.Mag(), dState.nSigmaDeuteron);
+        }
+        const Double_t dPmom = pMom.Mag();
+        if (dPmom < femtoCfg.deuteronMinPMom || dPmom > femtoCfg.deuteronMaxPMom) continue;
+        if (dState.trk.pT < femtoCfg.deuteronMinPtPre || dState.trk.pT > femtoCfg.deuteronMaxPtPre) continue;
+        FillDeuteronPreFemtoQa(dState.trk, dState.nSigmaDeuteron);
+        if (PassFemtoDeuteronCuts(dState) && (Int_t)deuteronTracks.size() < kMaxTracks) {
+          FillDeuteronFemtoQa(dState.trk);
+          deuteronTracks.push_back(dState);
+        }
+      }
+    }
+
+    if (needTriton && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
+      NuclearTrackState nucState;
+      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+      if (nucState.dedx > 0 && m_histManager) {
+        m_histManager->Fill("hNSigmaTritonVsP_All", pMom.Mag(),
+                            StNuclearIdHelper::GetNSigma(kNucTriton, nucState.pMag, nucState.dedx));
+      }
+      if (StNuclearIdHelper::IsTriton(nucState)) {
+        TrackState tTrack;
+        BuildTrackState(tTrack, trk, event, pVtx, itrk);
+        FillTofInfo(tTrack, trk, pMom, btofIndex);
+        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+        TritonTrackState tState;
+        tState.trk = tTrack;
+        tState.nSigmaTriton =
+            (Float_t)StNuclearIdHelper::GetNSigma(kNucTriton, nucState.pMag, nucState.dedx);
+        if (m_histManager) {
+          m_histManager->Fill("hNSigmaTritonVsP", pMom.Mag(), tState.nSigmaTriton);
+        }
+        const Double_t tPmom = pMom.Mag();
+        if (tPmom < femtoCfg.tritonMinPMom || tPmom > femtoCfg.tritonMaxPMom) continue;
+        if (tState.trk.pT < femtoCfg.tritonMinPtPre || tState.trk.pT > femtoCfg.tritonMaxPtPre) continue;
+        FillTritonPreFemtoQa(tState.trk, tState.nSigmaTriton);
+        if (PassFemtoTritonCuts(tState) && (Int_t)tritonTracks.size() < kMaxTracks) {
+          FillTritonFemtoQa(tState.trk);
+          tritonTracks.push_back(tState);
+        }
+      }
+    }
+
+    if (needHe3 && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
+      NuclearTrackState nucState;
+      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+      if (nucState.dedx > 0 && m_histManager) {
+        m_histManager->Fill("hNSigmaHe3VsP_All", pMom.Mag(),
+                            StNuclearIdHelper::GetNSigma(kNucHe3, nucState.pMag, nucState.dedx));
+      }
+      if (StNuclearIdHelper::IsHe3(nucState)) {
+        TrackState h3Track;
+        BuildTrackState(h3Track, trk, event, pVtx, itrk);
+        FillTofInfo(h3Track, trk, pMom, btofIndex);
+        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+        He3TrackState h3State;
+        h3State.trk = h3Track;
+        h3State.nSigmaHe3 = (Float_t)StNuclearIdHelper::GetNSigma(kNucHe3, nucState.pMag, nucState.dedx);
+        if (m_histManager) {
+          m_histManager->Fill("hNSigmaHe3VsP", pMom.Mag(), h3State.nSigmaHe3);
+        }
+        const Double_t h3Pmom = pMom.Mag();
+        if (h3Pmom < femtoCfg.he3MinPMom || h3Pmom > femtoCfg.he3MaxPMom) continue;
+        if (h3State.trk.pT < femtoCfg.he3MinPtPre || h3State.trk.pT > femtoCfg.he3MaxPtPre) continue;
+        FillHe3PreFemtoQa(h3State.trk, h3State.nSigmaHe3);
+        if (PassFemtoHe3Cuts(h3State) && (Int_t)he3Tracks.size() < kMaxTracks) {
+          FillHe3FemtoQa(h3State.trk);
+          he3Tracks.push_back(h3State);
+        }
+      }
+    }
   }
 
   if (m_histManager) {
@@ -414,7 +512,8 @@ Int_t StFemtoMaker::Make() {
        it != femtoCfg.species.end(); ++it) {
     const FemtoConfig::SpeciesDef& sp = it->second;
     if (sp.builderType == "track") {
-      BuildTrackPidCandidates(sp.key, sp.particleKey, protons, he4Tracks, mEventCounter);
+      BuildTrackPidCandidates(sp.key, sp.particleKey, protons, he4Tracks, deuteronTracks, tritonTracks, he3Tracks,
+                              mEventCounter);
     } else if (sp.builderType == "resonance") {
       if (sp.particleKey == femtoCfg.rotationParticleKey) {
         BuildRotatedPhiCandidates(sp.key, kaonsPlus, kaonsMinus, mEventCounter);
@@ -441,7 +540,8 @@ Int_t StFemtoMaker::Make() {
 
   if (m_histManager && centCfg.fillCentralityQA && m_cent9 >= 0) {
     FillCentralityEventQA(m_cent9, rawMult, m_refMultCorr, nTracks, nBTOFMatch, (Int_t)kaonsPlus.size(),
-                          (Int_t)kaonsMinus.size(), nPhiCandidates, (Int_t)protons.size(), (Int_t)he4Tracks.size());
+                          (Int_t)kaonsMinus.size(), nPhiCandidates, (Int_t)protons.size(), (Int_t)he4Tracks.size(),
+                          (Int_t)deuteronTracks.size(), (Int_t)tritonTracks.size(), (Int_t)he3Tracks.size());
   }
 
   if (m_histManager) {
@@ -736,6 +836,204 @@ Bool_t StFemtoMaker::PassFemtoHe4Cuts(const He4TrackState& h4) const {
   return kTRUE;
 }
 
+Double_t StFemtoMaker::DeuteronRapidityCm(const TrackState& trk) const {
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector lv = StNuclearIdHelper::NuclearP4(p, kNucDeuteron);
+  return ApplyRapidityFrame(lv.Rapidity());
+}
+
+void StFemtoMaker::FillDeuteronPreFemtoQa(const TrackState& trk, Float_t nSigmaDeuteron) {
+  if (!m_histManager) return;
+  Double_t yCm = DeuteronRapidityCm(trk);
+  m_histManager->Fill("hDeuteron_Y_PreFemtoCut", yCm);
+  m_histManager->Fill("hDeuteron_PtVsY_PreFemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hDeuteron_Pt_PreFemtoCut", trk.pT);
+  m_histManager->Fill("hDeuteron_Eta_PreFemtoCut", trk.eta);
+  m_histManager->Fill("hDeuteron_NSigmaDeuteron_PreFemtoCut", nSigmaDeuteron);
+  m_histManager->Fill("hDeuteron_DCA_PreFemtoCut", trk.DCA);
+  if (trk.tofMatch) {
+    m_histManager->Fill("hDeuteron_Mass2_PreFemtoCut", trk.mass2);
+    TVector3 p = TrackMomentum(trk);
+    m_histManager->Fill("hDeuteron_Mass2VsP_PreFemtoCut_wide", p.Mag(), trk.mass2);
+  }
+}
+
+void StFemtoMaker::FillDeuteronFemtoQa(const TrackState& trk) {
+  if (!m_histManager) return;
+  Double_t yCm = DeuteronRapidityCm(trk);
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  m_histManager->Fill("hDeuteron_Y_FemtoCut", yCm);
+  m_histManager->Fill("hDeuteron_PtVsY_FemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hDeuteron_Mass2VsP", pmom, trk.mass2);
+  if (trk.tofMatch) m_histManager->Fill("hDeuteron_Mass2VsP_wide", pmom, trk.mass2);
+  m_histManager->Fill("hDeuteron_TofMatchVsP", pmom, trk.tofMatch ? 1.0 : 0.0);
+  m_histManager->Fill("hDeuteron_NHitsFit_FemtoCut", trk.nHitsFit);
+  if (trk.nHitsMax > 0) {
+    m_histManager->Fill("hDeuteron_NHitsRatio_FemtoCut", (Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax);
+  }
+  if (trk.tofMatch) m_histManager->Fill("hDeuteron_Mass2", trk.mass2);
+}
+
+Bool_t StFemtoMaker::PassFemtoDeuteronCuts(const DeuteronTrackState& dState) const {
+  const TrackState& trk = dState.trk;
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  if (trk.charge <= 0) return kFALSE;
+  if (trk.DCA >= fc.deuteronMaxDca) return kFALSE;
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  if (pmom < fc.deuteronMinPMom || pmom > fc.deuteronMaxPMom) return kFALSE;
+  if (trk.pT < fc.deuteronMinPtPre || trk.pT > fc.deuteronMaxPtPre) return kFALSE;
+  if (TMath::Abs(trk.eta) >= fc.deuteronMaxAbsEta) return kFALSE;
+  if (TMath::Abs(dState.nSigmaDeuteron) >= fc.deuteronMaxAbsNSigma) return kFALSE;
+  if (trk.nHitsFit < fc.deuteronMinNHitsFit) return kFALSE;
+  if (trk.nHitsMax <= 0) return kFALSE;
+  if ((Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax < fc.deuteronMinNHitsRatio) return kFALSE;
+
+  const Bool_t passTofRule =
+      (pmom < fc.deuteronTofMomentumThreshold) ||
+      (pmom > fc.deuteronTofMomentumThreshold && trk.tofMatch && trk.mass2 >= fc.deuteronMinMass2 &&
+       trk.mass2 <= fc.deuteronMaxMass2);
+  if (!passTofRule) return kFALSE;
+
+  if (trk.pT < fc.deuteronMinPtPair || trk.pT > fc.deuteronMaxPtPair) return kFALSE;
+  Double_t yCm = DeuteronRapidityCm(trk);
+  if (yCm < fc.deuteronMinRapidityCm || yCm > fc.deuteronMaxRapidityCm) return kFALSE;
+  return kTRUE;
+}
+
+Double_t StFemtoMaker::TritonRapidityCm(const TrackState& trk) const {
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector lv = StNuclearIdHelper::NuclearP4(p, kNucTriton);
+  return ApplyRapidityFrame(lv.Rapidity());
+}
+
+Double_t StFemtoMaker::He3RapidityCm(const TrackState& trk) const {
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector lv = StNuclearIdHelper::NuclearP4(p, kNucHe3);
+  return ApplyRapidityFrame(lv.Rapidity());
+}
+
+void StFemtoMaker::FillTritonPreFemtoQa(const TrackState& trk, Float_t nSigmaTriton) {
+  if (!m_histManager) return;
+  Double_t yCm = TritonRapidityCm(trk);
+  m_histManager->Fill("hTriton_Y_PreFemtoCut", yCm);
+  m_histManager->Fill("hTriton_PtVsY_PreFemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hTriton_Pt_PreFemtoCut", trk.pT);
+  m_histManager->Fill("hTriton_Eta_PreFemtoCut", trk.eta);
+  m_histManager->Fill("hTriton_NSigmaTriton_PreFemtoCut", nSigmaTriton);
+  m_histManager->Fill("hTriton_DCA_PreFemtoCut", trk.DCA);
+  if (trk.tofMatch) {
+    m_histManager->Fill("hTriton_Mass2_PreFemtoCut", trk.mass2);
+    TVector3 p = TrackMomentum(trk);
+    m_histManager->Fill("hTriton_Mass2VsP_PreFemtoCut_wide", p.Mag(), trk.mass2);
+  }
+}
+
+void StFemtoMaker::FillTritonFemtoQa(const TrackState& trk) {
+  if (!m_histManager) return;
+  Double_t yCm = TritonRapidityCm(trk);
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  m_histManager->Fill("hTriton_Y_FemtoCut", yCm);
+  m_histManager->Fill("hTriton_PtVsY_FemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hTriton_Mass2VsP", pmom, trk.mass2);
+  if (trk.tofMatch) m_histManager->Fill("hTriton_Mass2VsP_wide", pmom, trk.mass2);
+  m_histManager->Fill("hTriton_TofMatchVsP", pmom, trk.tofMatch ? 1.0 : 0.0);
+  m_histManager->Fill("hTriton_NHitsFit_FemtoCut", trk.nHitsFit);
+  if (trk.nHitsMax > 0) {
+    m_histManager->Fill("hTriton_NHitsRatio_FemtoCut", (Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax);
+  }
+  if (trk.tofMatch) m_histManager->Fill("hTriton_Mass2", trk.mass2);
+}
+
+Bool_t StFemtoMaker::PassFemtoTritonCuts(const TritonTrackState& tState) const {
+  const TrackState& trk = tState.trk;
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  if (trk.charge <= 0) return kFALSE;
+  if (trk.DCA >= fc.tritonMaxDca) return kFALSE;
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  if (pmom < fc.tritonMinPMom || pmom > fc.tritonMaxPMom) return kFALSE;
+  if (trk.pT < fc.tritonMinPtPre || trk.pT > fc.tritonMaxPtPre) return kFALSE;
+  if (TMath::Abs(trk.eta) >= fc.tritonMaxAbsEta) return kFALSE;
+  if (TMath::Abs(tState.nSigmaTriton) >= fc.tritonMaxAbsNSigma) return kFALSE;
+  if (trk.nHitsFit < fc.tritonMinNHitsFit) return kFALSE;
+  if (trk.nHitsMax <= 0) return kFALSE;
+  if ((Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax < fc.tritonMinNHitsRatio) return kFALSE;
+
+  const Bool_t passTofRule =
+      (pmom < fc.tritonTofMomentumThreshold) ||
+      (pmom > fc.tritonTofMomentumThreshold && trk.tofMatch && trk.mass2 >= fc.tritonMinMass2 &&
+       trk.mass2 <= fc.tritonMaxMass2);
+  if (!passTofRule) return kFALSE;
+
+  if (trk.pT < fc.tritonMinPtPair || trk.pT > fc.tritonMaxPtPair) return kFALSE;
+  Double_t yCm = TritonRapidityCm(trk);
+  if (yCm < fc.tritonMinRapidityCm || yCm > fc.tritonMaxRapidityCm) return kFALSE;
+  return kTRUE;
+}
+
+void StFemtoMaker::FillHe3PreFemtoQa(const TrackState& trk, Float_t nSigmaHe3) {
+  if (!m_histManager) return;
+  Double_t yCm = He3RapidityCm(trk);
+  m_histManager->Fill("hHe3_Y_PreFemtoCut", yCm);
+  m_histManager->Fill("hHe3_PtVsY_PreFemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hHe3_Pt_PreFemtoCut", trk.pT);
+  m_histManager->Fill("hHe3_Eta_PreFemtoCut", trk.eta);
+  m_histManager->Fill("hHe3_NSigmaHe3_PreFemtoCut", nSigmaHe3);
+  m_histManager->Fill("hHe3_DCA_PreFemtoCut", trk.DCA);
+  if (trk.tofMatch) {
+    m_histManager->Fill("hHe3_Mass2_PreFemtoCut", trk.mass2);
+    TVector3 p = TrackMomentum(trk);
+    m_histManager->Fill("hHe3_Mass2VsP_PreFemtoCut_wide", p.Mag(), trk.mass2);
+  }
+}
+
+void StFemtoMaker::FillHe3FemtoQa(const TrackState& trk) {
+  if (!m_histManager) return;
+  Double_t yCm = He3RapidityCm(trk);
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  m_histManager->Fill("hHe3_Y_FemtoCut", yCm);
+  m_histManager->Fill("hHe3_PtVsY_FemtoCut", yCm, trk.pT);
+  m_histManager->Fill("hHe3_Mass2VsP", pmom, trk.mass2);
+  if (trk.tofMatch) m_histManager->Fill("hHe3_Mass2VsP_wide", pmom, trk.mass2);
+  m_histManager->Fill("hHe3_TofMatchVsP", pmom, trk.tofMatch ? 1.0 : 0.0);
+  m_histManager->Fill("hHe3_NHitsFit_FemtoCut", trk.nHitsFit);
+  if (trk.nHitsMax > 0) {
+    m_histManager->Fill("hHe3_NHitsRatio_FemtoCut", (Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax);
+  }
+  if (trk.tofMatch) m_histManager->Fill("hHe3_Mass2", trk.mass2);
+}
+
+Bool_t StFemtoMaker::PassFemtoHe3Cuts(const He3TrackState& h3State) const {
+  const TrackState& trk = h3State.trk;
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  if (trk.charge <= 0) return kFALSE;
+  if (trk.DCA >= fc.he3MaxDca) return kFALSE;
+  TVector3 p = TrackMomentum(trk);
+  Double_t pmom = p.Mag();
+  if (pmom < fc.he3MinPMom || pmom > fc.he3MaxPMom) return kFALSE;
+  if (trk.pT < fc.he3MinPtPre || trk.pT > fc.he3MaxPtPre) return kFALSE;
+  if (TMath::Abs(trk.eta) >= fc.he3MaxAbsEta) return kFALSE;
+  if (TMath::Abs(h3State.nSigmaHe3) >= fc.he3MaxAbsNSigma) return kFALSE;
+  if (trk.nHitsFit < fc.he3MinNHitsFit) return kFALSE;
+  if (trk.nHitsMax <= 0) return kFALSE;
+  if ((Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax < fc.he3MinNHitsRatio) return kFALSE;
+
+  const Bool_t passTofRule =
+      (pmom < fc.he3TofMomentumThreshold) ||
+      (pmom > fc.he3TofMomentumThreshold && trk.tofMatch && trk.mass2 >= fc.he3MinMass2 &&
+       trk.mass2 <= fc.he3MaxMass2);
+  if (!passTofRule) return kFALSE;
+
+  if (trk.pT < fc.he3MinPtPair || trk.pT > fc.he3MaxPtPair) return kFALSE;
+  Double_t yCm = He3RapidityCm(trk);
+  if (yCm < fc.he3MinRapidityCm || yCm > fc.he3MaxRapidityCm) return kFALSE;
+  return kTRUE;
+}
+
 Bool_t StFemtoMaker::PassFemtoProtonCuts(const TrackState& trk) const {
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   if (fc.protonChargeMode == "positive" && trk.charge <= 0) return kFALSE;
@@ -836,6 +1134,66 @@ FemtoCandidate StFemtoMaker::MakeHe4Candidate(const He4TrackState& h4, Int_t eve
   return cand;
 }
 
+FemtoCandidate StFemtoMaker::MakeDeuteronCandidate(const DeuteronTrackState& dState, Int_t eventIndex,
+                                                   const std::string& speciesKey) const {
+  FemtoCandidate cand;
+  const TrackState& trk = dState.trk;
+  cand.eventIndex = eventIndex;
+  cand.source = kFemtoCandTrack;
+  cand.speciesKey = speciesKey;
+  cand.charge = trk.charge;
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector p4 = StNuclearIdHelper::NuclearP4(p, kNucDeuteron);
+  cand.SetP4(p4);
+  cand.trk.trackIndex = trk.trackIndex;
+  cand.trk.nSigmaDeuteron = dState.nSigmaDeuteron;
+  cand.trk.nSigmaKaon = trk.nSigmaKaon;
+  cand.trk.mass2 = trk.mass2;
+  cand.trk.dca = trk.DCA;
+  cand.trk.nHitsFit = trk.nHitsFit;
+  return cand;
+}
+
+FemtoCandidate StFemtoMaker::MakeTritonCandidate(const TritonTrackState& tState, Int_t eventIndex,
+                                                 const std::string& speciesKey) const {
+  FemtoCandidate cand;
+  const TrackState& trk = tState.trk;
+  cand.eventIndex = eventIndex;
+  cand.source = kFemtoCandTrack;
+  cand.speciesKey = speciesKey;
+  cand.charge = trk.charge;
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector p4 = StNuclearIdHelper::NuclearP4(p, kNucTriton);
+  cand.SetP4(p4);
+  cand.trk.trackIndex = trk.trackIndex;
+  cand.trk.nSigmaTriton = tState.nSigmaTriton;
+  cand.trk.nSigmaKaon = trk.nSigmaKaon;
+  cand.trk.mass2 = trk.mass2;
+  cand.trk.dca = trk.DCA;
+  cand.trk.nHitsFit = trk.nHitsFit;
+  return cand;
+}
+
+FemtoCandidate StFemtoMaker::MakeHe3Candidate(const He3TrackState& h3State, Int_t eventIndex,
+                                              const std::string& speciesKey) const {
+  FemtoCandidate cand;
+  const TrackState& trk = h3State.trk;
+  cand.eventIndex = eventIndex;
+  cand.source = kFemtoCandTrack;
+  cand.speciesKey = speciesKey;
+  cand.charge = trk.charge;
+  TVector3 p = TrackMomentum(trk);
+  TLorentzVector p4 = StNuclearIdHelper::NuclearP4(p, kNucHe3);
+  cand.SetP4(p4);
+  cand.trk.trackIndex = trk.trackIndex;
+  cand.trk.nSigmaHe3 = h3State.nSigmaHe3;
+  cand.trk.nSigmaKaon = trk.nSigmaKaon;
+  cand.trk.mass2 = trk.mass2;
+  cand.trk.dca = trk.DCA;
+  cand.trk.nHitsFit = trk.nHitsFit;
+  return cand;
+}
+
 FemtoCandidate StFemtoMaker::MakePhiCandidate(const TrackState& kPlus, const TrackState& kMinus, Double_t invMass,
                                               const TVector3& phiMom, Double_t openingAngle, Double_t pairRapidity,
                                               Double_t dcaKK, Int_t eventIndex, const std::string& speciesKey) const {
@@ -858,7 +1216,10 @@ FemtoCandidate StFemtoMaker::MakePhiCandidate(const TrackState& kPlus, const Tra
 
 void StFemtoMaker::BuildTrackPidCandidates(const std::string& speciesKey, const std::string& particleKey,
                                            const std::vector<TrackState>& protonTracks,
-                                           const std::vector<He4TrackState>& he4Tracks, Int_t eventIndex) {
+                                           const std::vector<He4TrackState>& he4Tracks,
+                                           const std::vector<DeuteronTrackState>& deuteronTracks,
+                                           const std::vector<TritonTrackState>& tritonTracks,
+                                           const std::vector<He3TrackState>& he3Tracks, Int_t eventIndex) {
   std::vector<FemtoCandidate>& out = m_eventCandidates[speciesKey];
   if (particleKey == "proton") {
     for (size_t i = 0; i < protonTracks.size(); i++) {
@@ -869,6 +1230,24 @@ void StFemtoMaker::BuildTrackPidCandidates(const std::string& speciesKey, const 
   if (particleKey == "he4") {
     for (size_t i = 0; i < he4Tracks.size(); i++) {
       out.push_back(MakeHe4Candidate(he4Tracks[i], eventIndex, speciesKey));
+    }
+    return;
+  }
+  if (particleKey == "deuteron") {
+    for (size_t i = 0; i < deuteronTracks.size(); i++) {
+      out.push_back(MakeDeuteronCandidate(deuteronTracks[i], eventIndex, speciesKey));
+    }
+    return;
+  }
+  if (particleKey == "triton") {
+    for (size_t i = 0; i < tritonTracks.size(); i++) {
+      out.push_back(MakeTritonCandidate(tritonTracks[i], eventIndex, speciesKey));
+    }
+    return;
+  }
+  if (particleKey == "he3") {
+    for (size_t i = 0; i < he3Tracks.size(); i++) {
+      out.push_back(MakeHe3Candidate(he3Tracks[i], eventIndex, speciesKey));
     }
     return;
   }
@@ -1034,7 +1413,7 @@ void StFemtoMaker::BuildRotatedPhiCandidates(const std::string& speciesKey, cons
 
 void StFemtoMaker::FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t refMultCorr, Int_t nTracks,
                                          Int_t nBTOFMatch, Int_t nKaonPlus, Int_t nKaonMinus, Int_t nPhiCandidates,
-                                         Int_t nProtons, Int_t nHe4) {
+                                         Int_t nProtons, Int_t nHe4, Int_t nDeuteron, Int_t nTriton, Int_t nHe3) {
   if (!m_histManager || cent9 < 0) return;
   const Double_t centX = (Double_t)cent9;
   m_histManager->Fill("hRawMult_vs_Cent9", centX, (Double_t)rawMult);
@@ -1052,6 +1431,15 @@ void StFemtoMaker::FillCentralityEventQA(Int_t cent9, Int_t rawMult, Double_t re
   }
   if (m_histManager->Get("hNHe4_vs_Cent9")) {
     m_histManager->Fill("hNHe4_vs_Cent9", centX, (Double_t)nHe4);
+  }
+  if (m_histManager->Get("hNDeuteron_vs_Cent9")) {
+    m_histManager->Fill("hNDeuteron_vs_Cent9", centX, (Double_t)nDeuteron);
+  }
+  if (m_histManager->Get("hNTriton_vs_Cent9")) {
+    m_histManager->Fill("hNTriton_vs_Cent9", centX, (Double_t)nTriton);
+  }
+  if (m_histManager->Get("hNHe3_vs_Cent9")) {
+    m_histManager->Fill("hNHe3_vs_Cent9", centX, (Double_t)nHe3);
   }
 }
 
@@ -1253,6 +1641,48 @@ void StFemtoMaker::FillCandidateQA() {
       if (c.trk.mass2 > -900) m_histManager->Fill("hHe4_Mass2", c.trk.mass2);
     }
     m_histManager->Fill("hHe4_NCand", (Double_t)itH->second.size());
+  }
+
+  FemtoCandidateStore::const_iterator itD = m_eventCandidates.find("deuteron");
+  if (itD != m_eventCandidates.end()) {
+    for (size_t i = 0; i < itD->second.size(); i++) {
+      const FemtoCandidate& c = itD->second[i];
+      m_histManager->Fill("hDeuteron_Pt", c.pt);
+      m_histManager->Fill("hDeuteron_Eta", c.eta);
+      m_histManager->Fill("hDeuteron_Phi", c.phi);
+      m_histManager->Fill("hDeuteron_NSigmaDeuteron", c.trk.nSigmaDeuteron);
+      m_histManager->Fill("hDeuteron_DCA", c.trk.dca);
+      if (c.trk.mass2 > -900) m_histManager->Fill("hDeuteron_Mass2", c.trk.mass2);
+    }
+    m_histManager->Fill("hDeuteron_NCand", (Double_t)itD->second.size());
+  }
+
+  FemtoCandidateStore::const_iterator itT = m_eventCandidates.find("triton");
+  if (itT != m_eventCandidates.end()) {
+    for (size_t i = 0; i < itT->second.size(); i++) {
+      const FemtoCandidate& c = itT->second[i];
+      m_histManager->Fill("hTriton_Pt", c.pt);
+      m_histManager->Fill("hTriton_Eta", c.eta);
+      m_histManager->Fill("hTriton_Phi", c.phi);
+      m_histManager->Fill("hTriton_NSigmaTriton", c.trk.nSigmaTriton);
+      m_histManager->Fill("hTriton_DCA", c.trk.dca);
+      if (c.trk.mass2 > -900) m_histManager->Fill("hTriton_Mass2", c.trk.mass2);
+    }
+    m_histManager->Fill("hTriton_NCand", (Double_t)itT->second.size());
+  }
+
+  FemtoCandidateStore::const_iterator itH3 = m_eventCandidates.find("he3");
+  if (itH3 != m_eventCandidates.end()) {
+    for (size_t i = 0; i < itH3->second.size(); i++) {
+      const FemtoCandidate& c = itH3->second[i];
+      m_histManager->Fill("hHe3_Pt", c.pt);
+      m_histManager->Fill("hHe3_Eta", c.eta);
+      m_histManager->Fill("hHe3_Phi", c.phi);
+      m_histManager->Fill("hHe3_NSigmaHe3", c.trk.nSigmaHe3);
+      m_histManager->Fill("hHe3_DCA", c.trk.dca);
+      if (c.trk.mass2 > -900) m_histManager->Fill("hHe3_Mass2", c.trk.mass2);
+    }
+    m_histManager->Fill("hHe3_NCand", (Double_t)itH3->second.size());
   }
 
   const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();

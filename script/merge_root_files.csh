@@ -71,6 +71,7 @@ if ( "$MRF_MAIN" !~ /* ) set MRF_MAIN = "`pwd`/${MRF_MAIN}"
 set MRF_SCRIPTDIR = `dirname "$MRF_MAIN"`
 set MRF_HADD_HELPER = "${MRF_SCRIPTDIR}/merge_root_hadd_from_list.csh"
 set MRF_PROGRESS_HELPER = "${MRF_SCRIPTDIR}/merge_root_print_progress.csh"
+set MRF_BADSCAN_HELPER = "${MRF_SCRIPTDIR}/scan_bad_subjob_roots.sh"
 foreach mrf_helper ( $MRF_HADD_HELPER $MRF_PROGRESS_HELPER )
     if ( ! -x "$mrf_helper" ) then
         if ( -f "$mrf_helper" ) then
@@ -84,25 +85,35 @@ end
 
 # Parse flags and input .root path
 set INPUT_FILE = ""
+set EXCLUDE_LIST = ""
+set SKIP_BAD_SCAN = 0
 foreach mrf_arg ( $argv )
     if ( "$mrf_arg" == "-q" || "$mrf_arg" == "--no-progress" ) then
         set MRF_SHOW_PROGRESS = 0
+    else if ( "$mrf_arg" == "--skip-bad-scan" ) then
+        set SKIP_BAD_SCAN = 1
+    else if ( "$mrf_arg" == "--exclude-list" ) then
+        echo "ERROR: --exclude-list requires a file path (use: --exclude-list=FILE)"
+        echo "Usage: merge_root_files.csh [-q|--no-progress] [--exclude-list=FILE] [--skip-bad-scan] <path_to_root_file>"
+        exit 1
+    else if ( "$mrf_arg" =~ --exclude-list=* ) then
+        set EXCLUDE_LIST = `echo "$mrf_arg" | sed 's/^--exclude-list=//'`
     else if ( "$mrf_arg" =~ -* ) then
         echo "ERROR: Unknown option: $mrf_arg"
-        echo "Usage: merge_root_files.csh [-q|--no-progress] <path_to_root_file>"
+        echo "Usage: merge_root_files.csh [-q|--no-progress] [--exclude-list=FILE] [--skip-bad-scan] <path_to_root_file>"
         exit 1
     else if ( "$INPUT_FILE" == "" ) then
         set INPUT_FILE = "$mrf_arg"
     else
         echo "ERROR: Unexpected extra argument: $mrf_arg"
-        echo "Usage: merge_root_files.csh [-q|--no-progress] <path_to_root_file>"
+        echo "Usage: merge_root_files.csh [-q|--no-progress] [--exclude-list=FILE] [--skip-bad-scan] <path_to_root_file>"
         exit 1
     endif
 end
 
 if ( "$INPUT_FILE" == "" ) then
     echo "ERROR: No input file specified"
-    echo "Usage: merge_root_files.csh [-q|--no-progress] <path_to_root_file>"
+    echo "Usage: merge_root_files.csh [-q|--no-progress] [--exclude-list=FILE] [--skip-bad-scan] <path_to_root_file>"
     echo "Example: merge_root_files.csh /path/to/X_prefix_Y_JOBID_SUBID.root"
     exit 1
 endif
@@ -174,11 +185,47 @@ endif
 onintr cleanup_interrupt
 
 # Exclude previous merge product so re-runs do not pull in *_merge.root
-find "$FILE_DIR" -maxdepth 1 -name "$SEARCH_PATTERN" -type f ! -name "$MERGE_NAME" | sort > "$WORKDIR/list_r0.txt"
+find "$FILE_DIR" -maxdepth 1 -name "$SEARCH_PATTERN" -type f ! -name "$MERGE_NAME" | sort > "$WORKDIR/list_r0_all.txt"
+
+if ( "$EXCLUDE_LIST" == "" && $SKIP_BAD_SCAN == 0 ) then
+    if ( ! -x "$MRF_BADSCAN_HELPER" ) then
+        if ( -f "$MRF_BADSCAN_HELPER" ) then
+            chmod +x "$MRF_BADSCAN_HELPER"
+        else
+            echo "ERROR: helper not found: $MRF_BADSCAN_HELPER"
+            goto cleanup_fail
+        endif
+    endif
+    set AUTO_EXCLUDE = "${WORKDIR}/auto_exclude.txt"
+    echo "Running bad-root scan helper: $MRF_BADSCAN_HELPER"
+    "$MRF_BADSCAN_HELPER" --sample "$INPUT_FILE" --output "$AUTO_EXCLUDE"
+    if ( $status != 0 ) then
+        echo "ERROR: bad-root scan failed"
+        goto cleanup_fail
+    endif
+    set EXCLUDE_LIST = "$AUTO_EXCLUDE"
+endif
+
+if ( "$EXCLUDE_LIST" != "" ) then
+    if ( ! -f "$EXCLUDE_LIST" ) then
+        echo "ERROR: Exclude list not found: $EXCLUDE_LIST"
+        goto cleanup_fail
+    endif
+    awk 'NF{print $0}' "$EXCLUDE_LIST" | sort -u >! "${WORKDIR}/exclude_norm.txt"
+    set EXCLUDE_COUNT = `wc -l < "${WORKDIR}/exclude_norm.txt" | awk '{print $1}'`
+    echo "Applying exclude list: $EXCLUDE_LIST (entries: $EXCLUDE_COUNT)"
+    if ( $EXCLUDE_COUNT > 0 ) then
+        grep -F -x -v -f "${WORKDIR}/exclude_norm.txt" "${WORKDIR}/list_r0_all.txt" >! "$WORKDIR/list_r0.txt"
+    else
+        cp -f "${WORKDIR}/list_r0_all.txt" "$WORKDIR/list_r0.txt"
+    endif
+else
+    cp -f "${WORKDIR}/list_r0_all.txt" "$WORKDIR/list_r0.txt"
+endif
 
 set FILE_COUNT = `wc -l < "$WORKDIR/list_r0.txt" | awk '{print $1}'`
 if ( "$FILE_COUNT" == "" || $FILE_COUNT < 1 ) then
-    echo "ERROR: No files found matching pattern: ${FILE_DIR}/${SEARCH_PATTERN}"
+    echo "ERROR: No files left to merge after exclusions: ${FILE_DIR}/${SEARCH_PATTERN}"
     goto cleanup_fail
 endif
 

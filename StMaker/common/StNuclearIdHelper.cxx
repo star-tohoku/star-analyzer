@@ -109,6 +109,159 @@ Bool_t StNuclearIdHelper::PassTof(NuclearSpecies sp, const NuclearTrackState& st
   }
 }
 
+Bool_t StNuclearIdHelper::IsDeuteron(const NuclearTrackState& state) {
+  const NuclearIdCutConfig& cuts = ConfigManager::GetInstance().GetNuclearIdCuts();
+  if (state.dedx <= 0) return kFALSE;
+  if (state.pMag < 0.1) return kFALSE;
+
+  const Double_t nSigma_d = GetNSigma(kNucDeuteron, state.pMag, state.dedx);
+  const Double_t nSigma_t = GetNSigma(kNucTriton, state.pMag, state.dedx);
+  const Double_t nSigma_3He = GetNSigma(kNucHe3, state.pMag, state.dedx);
+  const Double_t nSigma_4He = GetNSigma(kNucHe4, state.pMag, state.dedx);
+
+  Bool_t is_d = PassTpc(kNucDeuteron, state);
+  Bool_t is_t = PassTpc(kNucTriton, state);
+  Bool_t is_3He = PassTpc(kNucHe3, state);
+  Bool_t is_4He = PassTpc(kNucHe4, state);
+
+  if (cuts.m2_selection) {
+    if (!state.tofMatch || state.mass2 < -900.0f) {
+      is_d = is_t = is_3He = is_4He = kFALSE;
+    } else {
+      is_d = is_d && PassTof(kNucDeuteron, state);
+      is_t = is_t && PassTof(kNucTriton, state);
+      is_3He = is_3He && PassTof(kNucHe3, state);
+      is_4He = is_4He && PassTof(kNucHe4, state);
+    }
+  }
+
+  if (!is_d) return kFALSE;
+
+  if (!cuts.requireBestSpecies) return kTRUE;
+
+  Double_t minNSigma = 999.0;
+  Int_t bestType = -1;
+  if (is_d && TMath::Abs(nSigma_d) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_d);
+    bestType = 0;
+  }
+  if (is_t && TMath::Abs(nSigma_t) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_t);
+    bestType = 1;
+  }
+  if (is_3He && TMath::Abs(nSigma_3He) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_3He);
+    bestType = 2;
+  }
+  if (is_4He && TMath::Abs(nSigma_4He) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_4He);
+    bestType = 3;
+  }
+  return (bestType == 0);
+}
+
+Bool_t StNuclearIdHelper::IsTriton(const NuclearTrackState& state) {
+  const NuclearIdCutConfig& cuts = ConfigManager::GetInstance().GetNuclearIdCuts();
+  if (state.dedx <= 0) return kFALSE;
+  if (state.pMag < 0.1) return kFALSE;
+
+  const Double_t nSigma_d = GetNSigma(kNucDeuteron, state.pMag, state.dedx);
+  const Double_t nSigma_t = GetNSigma(kNucTriton, state.pMag, state.dedx);
+  const Double_t nSigma_3He = GetNSigma(kNucHe3, state.pMag, state.dedx);
+  const Double_t nSigma_4He = GetNSigma(kNucHe4, state.pMag, state.dedx);
+
+  Bool_t is_d = PassTpc(kNucDeuteron, state);
+  Bool_t is_t = PassTpc(kNucTriton, state);
+  Bool_t is_3He = PassTpc(kNucHe3, state);
+  Bool_t is_4He = PassTpc(kNucHe4, state);
+
+  if (cuts.m2_selection) {
+    if (!state.tofMatch || state.mass2 < -900.0f) {
+      is_d = is_t = is_3He = is_4He = kFALSE;
+    } else {
+      is_d = is_d && PassTof(kNucDeuteron, state);
+      is_t = is_t && PassTof(kNucTriton, state);
+      is_3He = is_3He && PassTof(kNucHe3, state);
+      is_4He = is_4He && PassTof(kNucHe4, state);
+    }
+  }
+
+  if (!is_t) return kFALSE;
+
+  if (!cuts.requireBestSpecies) return kTRUE;
+
+  Double_t minNSigma = 999.0;
+  Int_t bestType = -1;
+  if (is_d && TMath::Abs(nSigma_d) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_d);
+    bestType = 0;
+  }
+  if (is_t && TMath::Abs(nSigma_t) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_t);
+    bestType = 1;
+  }
+  if (is_3He && TMath::Abs(nSigma_3He) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_3He);
+    bestType = 2;
+  }
+  if (is_4He && TMath::Abs(nSigma_4He) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_4He);
+    bestType = 3;
+  }
+  return (bestType == 1);
+}
+
+Bool_t StNuclearIdHelper::IsHe3(const NuclearTrackState& state) {
+  const NuclearIdCutConfig& cuts = ConfigManager::GetInstance().GetNuclearIdCuts();
+  if (state.dedx <= 0) return kFALSE;
+  if (state.pMag < 0.1) return kFALSE;
+
+  const Double_t nSigma_d = GetNSigma(kNucDeuteron, state.pMag, state.dedx);
+  const Double_t nSigma_t = GetNSigma(kNucTriton, state.pMag, state.dedx);
+  const Double_t nSigma_3He = GetNSigma(kNucHe3, state.pMag, state.dedx);
+  const Double_t nSigma_4He = GetNSigma(kNucHe4, state.pMag, state.dedx);
+
+  Bool_t is_d = PassTpc(kNucDeuteron, state);
+  Bool_t is_t = PassTpc(kNucTriton, state);
+  Bool_t is_3He = PassTpc(kNucHe3, state);
+  Bool_t is_4He = PassTpc(kNucHe4, state);
+
+  if (cuts.m2_selection) {
+    if (!state.tofMatch || state.mass2 < -900.0f) {
+      is_d = is_t = is_3He = is_4He = kFALSE;
+    } else {
+      is_d = is_d && PassTof(kNucDeuteron, state);
+      is_t = is_t && PassTof(kNucTriton, state);
+      is_3He = is_3He && PassTof(kNucHe3, state);
+      is_4He = is_4He && PassTof(kNucHe4, state);
+    }
+  }
+
+  if (!is_3He) return kFALSE;
+
+  if (!cuts.requireBestSpecies) return kTRUE;
+
+  Double_t minNSigma = 999.0;
+  Int_t bestType = -1;
+  if (is_d && TMath::Abs(nSigma_d) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_d);
+    bestType = 0;
+  }
+  if (is_t && TMath::Abs(nSigma_t) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_t);
+    bestType = 1;
+  }
+  if (is_3He && TMath::Abs(nSigma_3He) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_3He);
+    bestType = 2;
+  }
+  if (is_4He && TMath::Abs(nSigma_4He) < minNSigma) {
+    minNSigma = TMath::Abs(nSigma_4He);
+    bestType = 3;
+  }
+  return (bestType == 2);
+}
+
 Bool_t StNuclearIdHelper::IsHe4(const NuclearTrackState& state) {
   const NuclearIdCutConfig& cuts = ConfigManager::GetInstance().GetNuclearIdCuts();
   if (state.dedx <= 0) return kFALSE;

@@ -71,14 +71,13 @@ if [[ ${#bundle_entries[@]} -gt 0 ]]; then
   )
 fi
 
-sums_entries=()
-while IFS= read -r path; do
-  sums_entries+=("$(basename "$path")")
-done < <(find "$SCRIPT_DIR" -maxdepth 1 -type f -name "${PREFIX}*" | sort)
-
-if [[ ${#sums_entries[@]} -gt 0 ]]; then
-  tar -czf "$sums_artifacts_path" -C "$SCRIPT_DIR" "${sums_entries[@]}"
+# --files-from avoids "Argument list too long" when many runs create many PREFIX* files.
+sums_list="$(mktemp)"
+find "$SCRIPT_DIR" -maxdepth 1 -type f -name "${PREFIX}*" -printf '%f\n' | sort > "$sums_list"
+if [[ -s "$sums_list" ]]; then
+  tar -czf "$sums_artifacts_path" -C "$SCRIPT_DIR" --files-from="$sums_list"
 fi
+rm -f "$sums_list"
 
 analysis_info_rel="$("$PYTHON" - "$mainconf_path" <<'PY'
 import re

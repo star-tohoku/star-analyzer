@@ -69,6 +69,60 @@ class FemtoConfig {
   Double_t he4MinRapidityCm;
   Double_t he4MaxRapidityCm;
 
+  // Deuteron bachelor cuts for femto pairing.
+  Double_t deuteronMaxDca;
+  Double_t deuteronMinPMom;
+  Double_t deuteronMaxPMom;
+  Double_t deuteronMinPtPre;
+  Double_t deuteronMaxPtPre;
+  Double_t deuteronMinPtPair;
+  Double_t deuteronMaxPtPair;
+  Double_t deuteronMaxAbsEta;
+  Double_t deuteronMaxAbsNSigma;
+  Short_t deuteronMinNHitsFit;
+  Double_t deuteronMinNHitsRatio;
+  Double_t deuteronTofMomentumThreshold;
+  Double_t deuteronMinMass2;
+  Double_t deuteronMaxMass2;
+  Double_t deuteronMinRapidityCm;
+  Double_t deuteronMaxRapidityCm;
+
+  // Triton bachelor cuts for femto pairing.
+  Double_t tritonMaxDca;
+  Double_t tritonMinPMom;
+  Double_t tritonMaxPMom;
+  Double_t tritonMinPtPre;
+  Double_t tritonMaxPtPre;
+  Double_t tritonMinPtPair;
+  Double_t tritonMaxPtPair;
+  Double_t tritonMaxAbsEta;
+  Double_t tritonMaxAbsNSigma;
+  Short_t tritonMinNHitsFit;
+  Double_t tritonMinNHitsRatio;
+  Double_t tritonTofMomentumThreshold;
+  Double_t tritonMinMass2;
+  Double_t tritonMaxMass2;
+  Double_t tritonMinRapidityCm;
+  Double_t tritonMaxRapidityCm;
+
+  // 3He bachelor cuts for femto pairing.
+  Double_t he3MaxDca;
+  Double_t he3MinPMom;
+  Double_t he3MaxPMom;
+  Double_t he3MinPtPre;
+  Double_t he3MaxPtPre;
+  Double_t he3MinPtPair;
+  Double_t he3MaxPtPair;
+  Double_t he3MaxAbsEta;
+  Double_t he3MaxAbsNSigma;
+  Short_t he3MinNHitsFit;
+  Double_t he3MinNHitsRatio;
+  Double_t he3TofMomentumThreshold;
+  Double_t he3MinMass2;
+  Double_t he3MaxMass2;
+  Double_t he3MinRapidityCm;
+  Double_t he3MaxRapidityCm;
+
   // Rotation background (phi_rot species).
   Bool_t rotationEnabled;
   std::string rotationSpeciesKey;

@@ -1,7 +1,7 @@
-// checkHistAnaFemtoPhi4He.C - Draw histograms from run_anaFemtoPhi4He.C output and write PDF.
-// Invoke via: ./script/singularity_checkHistAnaFemtoPhi4He.sh <root_file> <mainconf_path>
-// Or: root4star -b -q 'analysis/run_checkHistAnaFemtoPhi4He.C("rootfile/...","anaName","config/mainconf/...")'
-// If input is anaName_jobid_merge.root, jobid (32 hex) is parsed and PDF becomes anaName_checkHistAnaFemtoPhi4He_jobid.pdf.
+// checkHistAnaFemtoPhi.C - Draw histograms from run_anaFemtoPhi.C output and write PDF.
+// Invoke via: ./script/singularity_checkHistAnaFemtoPhi.sh <root_file> <mainconf_path>
+// Or: root4star -b -q 'analysis/run_checkHistAnaFemtoPhi.C("rootfile/...","anaName","config/mainconf/...")'
+// If input is anaName_jobid_merge.root, jobid (32 hex) is parsed and PDF becomes anaName_checkHistAnaFemtoPhi_jobid.pdf.
 // With config loaded, cut regions are overlaid on pre-cut histograms.
 
 #include <TROOT.h>
@@ -32,10 +32,40 @@
 #include "cuts/PIDCutConfig.h"
 #include "cuts/FemtoConfig.h"
 #include <map>
+#include <cstring>
 
 static Bool_t gConfigLoaded = kFALSE;
 
-static void setHe4Mass2AxisRange(TH1* h, Double_t ymax = 16.0) {
+
+struct BachelorQaSpec {
+  const char* histPrefix;
+  const char* channelBase;
+  const char* cutPrefix;
+  const char* nCandKey;
+  const char* nSigmaVsPKey;
+  const char* nSigmaVsPAllKey;
+  const char* nVsCentKey;
+  const char* rotChannel;  // nullptr if no rotation channel
+  const char* label;
+};
+
+static const BachelorQaSpec kBachelorQaSpecs[] = {
+    {"hP_", "phi_proton", "proton", "hP_NCand", "hNSigmaProtonVsP", nullptr, "hNProton_vs_Cent9",
+     "phi_rot_proton", "p"},
+    {"hDeuteron_", "phi_deuteron", "deuteron", "hDeuteron_NCand", "hNSigmaDeuteronVsP",
+     "hNSigmaDeuteronVsP_All", "hNDeuteron_vs_Cent9", nullptr, "d"},
+    {"hTriton_", "phi_triton", "triton", "hTriton_NCand", "hNSigmaTritonVsP", "hNSigmaTritonVsP_All",
+     "hNTriton_vs_Cent9", nullptr, "t"},
+    {"hHe3_", "phi_he3", "he3", "hHe3_NCand", "hNSigmaHe3VsP", "hNSigmaHe3VsP_All", "hNHe3_vs_Cent9",
+     nullptr, "^{3}He"},
+    {"hHe4_", "phi_he4", "he4", "hHe4_NCand", "hNSigmaHe4VsP", "hNSigmaHe4VsP_All", "hNHe4_vs_Cent9",
+     nullptr, "^{4}He"},
+};
+static const Int_t kNBachelorQaSpecs = sizeof(kBachelorQaSpecs) / sizeof(kBachelorQaSpecs[0]);
+
+static const char* kChannelBases[] = {"phi_proton", "phi_deuteron", "phi_triton", "phi_he3", "phi_he4", nullptr};
+
+static void setBachelorMass2AxisRange(TH1* h, Double_t ymax = 16.0) {
   if (!h) return;
   if (h->InheritsFrom("TH2")) {
     ((TH2*)h)->GetYaxis()->SetRangeUser(0.0, ymax);
@@ -44,59 +74,188 @@ static void setHe4Mass2AxisRange(TH1* h, Double_t ymax = 16.0) {
   }
 }
 
-// ROOT files booked before hist YAML relabel still carry proton fork titles; fix at draw time.
-static void prepareHe4Hist(TH1* h, const char* key) {
+struct BachelorCuts {
+  Double_t maxDca;
+  Double_t minPMom;
+  Double_t maxPMom;
+  Double_t minPtPre;
+  Double_t maxPtPre;
+  Double_t minPtPair;
+  Double_t maxPtPair;
+  Double_t maxAbsEta;
+  Double_t maxAbsNSigma;
+  Double_t minMass2;
+  Double_t maxMass2;
+  Double_t minRapidityCm;
+  Double_t maxRapidityCm;
+  Bool_t hasPMomWindow;
+  Bool_t hasMaxPtPre;
+};
+
+static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix) {
+  BachelorCuts c;
+  c.maxDca = 0.0;
+  c.minPMom = 0.0;
+  c.maxPMom = 0.0;
+  c.minPtPre = 0.0;
+  c.maxPtPre = 0.0;
+  c.minPtPair = 0.0;
+  c.maxPtPair = 0.0;
+  c.maxAbsEta = 0.0;
+  c.maxAbsNSigma = 0.0;
+  c.minMass2 = 0.0;
+  c.maxMass2 = 0.0;
+  c.minRapidityCm = 0.0;
+  c.maxRapidityCm = 0.0;
+  c.hasPMomWindow = kFALSE;
+  c.hasMaxPtPre = kFALSE;
+  if (!cutPrefix) return c;
+  if (strcmp(cutPrefix, "proton") == 0) {
+    c.maxDca = fc.protonMaxDca;
+    c.minPtPre = fc.protonMinPtPre;
+    c.minPtPair = fc.protonMinPtPair;
+    c.maxPtPair = fc.protonMaxPtPair;
+    c.maxAbsEta = fc.protonMaxAbsEta;
+    c.maxAbsNSigma = fc.protonMaxAbsNSigma;
+    c.minMass2 = fc.protonMinMass2;
+    c.maxMass2 = fc.protonMaxMass2;
+    c.minRapidityCm = fc.protonMinRapidityCm;
+    c.maxRapidityCm = fc.protonMaxRapidityCm;
+  } else if (strcmp(cutPrefix, "deuteron") == 0) {
+    c.maxDca = fc.deuteronMaxDca;
+    c.minPMom = fc.deuteronMinPMom;
+    c.maxPMom = fc.deuteronMaxPMom;
+    c.minPtPre = fc.deuteronMinPtPre;
+    c.maxPtPre = fc.deuteronMaxPtPre;
+    c.minPtPair = fc.deuteronMinPtPair;
+    c.maxPtPair = fc.deuteronMaxPtPair;
+    c.maxAbsEta = fc.deuteronMaxAbsEta;
+    c.maxAbsNSigma = fc.deuteronMaxAbsNSigma;
+    c.minMass2 = fc.deuteronMinMass2;
+    c.maxMass2 = fc.deuteronMaxMass2;
+    c.minRapidityCm = fc.deuteronMinRapidityCm;
+    c.maxRapidityCm = fc.deuteronMaxRapidityCm;
+    c.hasPMomWindow = kTRUE;
+    c.hasMaxPtPre = kTRUE;
+  } else if (strcmp(cutPrefix, "triton") == 0) {
+    c.maxDca = fc.tritonMaxDca;
+    c.minPMom = fc.tritonMinPMom;
+    c.maxPMom = fc.tritonMaxPMom;
+    c.minPtPre = fc.tritonMinPtPre;
+    c.maxPtPre = fc.tritonMaxPtPre;
+    c.minPtPair = fc.tritonMinPtPair;
+    c.maxPtPair = fc.tritonMaxPtPair;
+    c.maxAbsEta = fc.tritonMaxAbsEta;
+    c.maxAbsNSigma = fc.tritonMaxAbsNSigma;
+    c.minMass2 = fc.tritonMinMass2;
+    c.maxMass2 = fc.tritonMaxMass2;
+    c.minRapidityCm = fc.tritonMinRapidityCm;
+    c.maxRapidityCm = fc.tritonMaxRapidityCm;
+    c.hasPMomWindow = kTRUE;
+    c.hasMaxPtPre = kTRUE;
+  } else if (strcmp(cutPrefix, "he3") == 0) {
+    c.maxDca = fc.he3MaxDca;
+    c.minPMom = fc.he3MinPMom;
+    c.maxPMom = fc.he3MaxPMom;
+    c.minPtPre = fc.he3MinPtPre;
+    c.maxPtPre = fc.he3MaxPtPre;
+    c.minPtPair = fc.he3MinPtPair;
+    c.maxPtPair = fc.he3MaxPtPair;
+    c.maxAbsEta = fc.he3MaxAbsEta;
+    c.maxAbsNSigma = fc.he3MaxAbsNSigma;
+    c.minMass2 = fc.he3MinMass2;
+    c.maxMass2 = fc.he3MaxMass2;
+    c.minRapidityCm = fc.he3MinRapidityCm;
+    c.maxRapidityCm = fc.he3MaxRapidityCm;
+    c.hasPMomWindow = kTRUE;
+    c.hasMaxPtPre = kTRUE;
+  } else if (strcmp(cutPrefix, "he4") == 0) {
+    c.maxDca = fc.he4MaxDca;
+    c.minPMom = fc.he4MinPMom;
+    c.maxPMom = fc.he4MaxPMom;
+    c.minPtPre = fc.he4MinPtPre;
+    c.maxPtPre = fc.he4MaxPtPre;
+    c.minPtPair = fc.he4MinPtPair;
+    c.maxPtPair = fc.he4MaxPtPair;
+    c.maxAbsEta = fc.he4MaxAbsEta;
+    c.maxAbsNSigma = fc.he4MaxAbsNSigma;
+    c.minMass2 = fc.he4MinMass2;
+    c.maxMass2 = fc.he4MaxMass2;
+    c.minRapidityCm = fc.he4MinRapidityCm;
+    c.maxRapidityCm = fc.he4MaxRapidityCm;
+    c.hasPMomWindow = kTRUE;
+    c.hasMaxPtPre = kTRUE;
+  }
+  return c;
+}
+
+static TString bachelorHistKey(const BachelorQaSpec& spec, const char* suffix) {
+  return TString(spec.histPrefix) + suffix;
+}
+
+// ROOT files booked before hist YAML relabel still carry fork titles; fix at draw time.
+static void prepareBachelorHist(TH1* h, const char* key, const BachelorQaSpec& spec) {
   if (!h || !key) return;
   TString k(key);
-  if (k == "hHe4_Pt_PreFemtoCut")
-    h->SetTitle("^{4}He p_{T} pre-femto cut;p_{T} [GeV/c];Counts");
-  else if (k == "hHe4_Eta_PreFemtoCut")
-    h->SetTitle("^{4}He #eta pre-femto cut;#eta;Counts");
-  else if (k == "hHe4_NSigmaHe4_PreFemtoCut")
-    h->SetTitle("^{4}He n#sigma_{^{4}He} pre-femto cut;n#sigma_{^{4}He};Counts");
-  else if (k == "hHe4_Mass2_PreFemtoCut")
-    h->SetTitle("^{4}He TOF m^{2} pre-femto cut;m^{2} [(GeV/c^{2})^{2}];Counts");
-  else if (k == "hHe4_DCA_PreFemtoCut")
-    h->SetTitle("^{4}He DCA pre-femto cut;DCA [cm];Counts");
-  else if (k == "hHe4_Pt")
-    h->SetTitle("^{4}He p_{T};p_{T} [GeV/c];Counts");
-  else if (k == "hHe4_Eta")
-    h->SetTitle("^{4}He #eta;#eta;Counts");
-  else if (k == "hHe4_Phi")
-    h->SetTitle("^{4}He #phi;#phi [rad];Counts");
-  else if (k == "hHe4_NSigmaHe4")
-    h->SetTitle("^{4}He n#sigma_{^{4}He};n#sigma_{^{4}He};Counts");
-  else if (k == "hHe4_Mass2")
-    h->SetTitle("^{4}He TOF m^{2};m^{2} [(GeV/c^{2})^{2}];Counts");
-  else if (k == "hHe4_DCA")
-    h->SetTitle("^{4}He DCA;DCA [cm];Counts");
-  else if (k == "hHe4_Y_PreFemtoCut")
-    h->SetTitle("^{4}He y_{cm} pre-femto cut;y_{cm};Counts");
-  else if (k == "hHe4_PtVsY_PreFemtoCut")
-    h->SetTitle("^{4}He p_{T} vs y_{cm} pre-femto;y_{cm};p_{T} [GeV/c]");
-  else if (k == "hHe4_Y_FemtoCut")
-    h->SetTitle("^{4}He y_{cm} after femto cut;y_{cm};Counts");
-  else if (k == "hHe4_PtVsY_FemtoCut")
-    h->SetTitle("^{4}He p_{T} vs y_{cm} femto cut;y_{cm};p_{T} [GeV/c]");
-  else if (k == "hHe4_Mass2VsP")
-    h->SetTitle("^{4}He TOF m^{2} vs p;p [GeV/c];m^{2}");
-  else if (k == "hHe4_Mass2VsP_PreFemtoCut_wide")
-    h->SetTitle("^{4}He TOF m^{2} vs p pre-femto (wide);p [GeV/c];m^{2}");
-  else if (k == "hHe4_Mass2VsP_wide")
-    h->SetTitle("^{4}He TOF m^{2} vs p femto cut (wide);p [GeV/c];m^{2}");
-  else if (k == "hHe4_NHitsRatio_FemtoCut")
-    h->SetTitle("^{4}He nHitsFit/nHitsMax (femto cut);ratio;Counts");
-  else if (k == "hHe4_NCand")
-    h->SetTitle("^{4}He candidates per event;N_{^{4}He};Counts");
-  else if (k == "hNSigmaHe4VsP")
-    h->SetTitle("n#sigma_{^{4}He} vs p (after ID cut);p [GeV/c];n#sigma_{^{4}He}");
-  else if (k == "hNSigmaHe4VsP_All")
-    h->SetTitle("n#sigma_{^{4}He} vs p (all tracks, no ID cut);p [GeV/c];n#sigma_{^{4}He}");
+  const char* L = spec.label;
+  if (k.EndsWith("_Pt_PreFemtoCut"))
+    h->SetTitle(Form("%s p_{T} pre-femto cut;p_{T} [GeV/c];Counts", L));
+  else if (k.EndsWith("_Eta_PreFemtoCut"))
+    h->SetTitle(Form("%s #eta pre-femto cut;#eta;Counts", L));
+  else if (k.Contains("NSigma") && k.Contains("_PreFemtoCut"))
+    h->SetTitle(Form("%s n#sigma pre-femto cut;n#sigma;Counts", L));
+  else if (k.EndsWith("_Mass2_PreFemtoCut"))
+    h->SetTitle(Form("%s TOF m^{2} pre-femto cut;m^{2} [(GeV/c^{2})^{2}];Counts", L));
+  else if (k.EndsWith("_DCA_PreFemtoCut"))
+    h->SetTitle(Form("%s DCA pre-femto cut;DCA [cm];Counts", L));
+  else if (k.EndsWith("_Pt") && !k.Contains("Vs"))
+    h->SetTitle(Form("%s p_{T};p_{T} [GeV/c];Counts", L));
+  else if (k.EndsWith("_Eta"))
+    h->SetTitle(Form("%s #eta;#eta;Counts", L));
+  else if (k.EndsWith("_Phi"))
+    h->SetTitle(Form("%s #phi;#phi [rad];Counts", L));
+  else if (k.Contains("NSigma") && !k.Contains("Vs") && !k.Contains("PreFemto"))
+    h->SetTitle(Form("%s n#sigma;n#sigma;Counts", L));
+  else if (k.EndsWith("_Mass2") && !k.Contains("Vs"))
+    h->SetTitle(Form("%s TOF m^{2};m^{2} [(GeV/c^{2})^{2}];Counts", L));
+  else if (k.EndsWith("_DCA"))
+    h->SetTitle(Form("%s DCA;DCA [cm];Counts", L));
+  else if (k.EndsWith("_Y_PreFemtoCut"))
+    h->SetTitle(Form("%s y_{cm} pre-femto cut;y_{cm};Counts", L));
+  else if (k.EndsWith("_PtVsY_PreFemtoCut"))
+    h->SetTitle(Form("%s p_{T} vs y_{cm} pre-femto;y_{cm};p_{T} [GeV/c]", L));
+  else if (k.EndsWith("_Y_FemtoCut"))
+    h->SetTitle(Form("%s y_{cm} after femto cut;y_{cm};Counts", L));
+  else if (k.EndsWith("_PtVsY_FemtoCut"))
+    h->SetTitle(Form("%s p_{T} vs y_{cm} femto cut;y_{cm};p_{T} [GeV/c]", L));
+  else if (k.EndsWith("_Mass2VsP") && !k.Contains("wide"))
+    h->SetTitle(Form("%s TOF m^{2} vs p;p [GeV/c];m^{2}", L));
+  else if (k.EndsWith("_Mass2VsP_PreFemtoCut_wide"))
+    h->SetTitle(Form("%s TOF m^{2} vs p pre-femto (wide);p [GeV/c];m^{2}", L));
+  else if (k.EndsWith("_Mass2VsP_wide"))
+    h->SetTitle(Form("%s TOF m^{2} vs p femto cut (wide);p [GeV/c];m^{2}", L));
+  else if (k.EndsWith("_NHitsRatio_FemtoCut"))
+    h->SetTitle(Form("%s nHitsFit/nHitsMax (femto cut);ratio;Counts", L));
+  else if (k.EndsWith("_NCand"))
+    h->SetTitle(Form("%s candidates per event;N;Counts", L));
   if (k.Contains("Mass2")) {
-    if (k.Contains("_wide")) setHe4Mass2AxisRange(h, 20.0);
-    else setHe4Mass2AxisRange(h, 16.0);
+    if (k.Contains("_wide")) setBachelorMass2AxisRange(h, 20.0);
+    else setBachelorMass2AxisRange(h, 16.0);
   }
 }
+
+static const BachelorQaSpec* findBachelorSpecByBase(const char* channelBase) {
+  if (!channelBase) return 0;
+  for (Int_t i = 0; i < kNBachelorQaSpecs; ++i) {
+    if (strcmp(kBachelorQaSpecs[i].channelBase, channelBase) == 0) return &kBachelorQaSpecs[i];
+  }
+  return 0;
+}
+
+static std::string channelSignal(const std::string& base) { return base + "_signal"; }
+static std::string channelLeftSb(const std::string& base) { return base + "_leftSB"; }
+static std::string channelRightSb(const std::string& base) { return base + "_rightSB"; }
+
 
 static TString resolveFigureRoot(const char* pwd) {
   const char* envFigureRoot = gSystem->Getenv("STAR_QA_FIGURE_ROOT");
@@ -244,7 +403,7 @@ static TH1* rebinHistCopy(TH1* h, Int_t factor, const char* cloneSuffix) {
   if (!h || factor <= 1) return 0;
   const Int_t nBins = h->GetNbinsX();
   if (nBins % factor != 0) {
-    std::cout << "[checkHistAnaFemtoPhi4He] WARNING: cannot rebin " << h->GetName() << " with factor "
+    std::cout << "[checkHistAnaFemtoPhi] WARNING: cannot rebin " << h->GetName() << " with factor "
               << factor << " (nbins=" << nBins << ")\n";
     return 0;
   }
@@ -299,7 +458,7 @@ static TGraphErrors* computeCfAndCache(const std::string& channel, const std::st
   if (cached != cfCache.end()) return cached->second;
 
   if (!hSE || !hME) {
-    std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str();
+    std::cout << "[checkHistAnaFemtoPhi] CF " << channel.c_str();
     if (logTag) std::cout << " (" << logTag << ")";
     std::cout << ": missing SE/ME histograms\n";
     cfCache[cacheKey] = 0;
@@ -319,7 +478,7 @@ static TGraphErrors* computeCfAndCache(const std::string& channel, const std::st
   Double_t seNorm = hSEForCf->Integral(binLo, binHi);
   Double_t meNorm = hMEForCf->Integral(binLo, binHi);
   Double_t aNorm = (seNorm > 0) ? meNorm / seNorm : 0.0;
-  std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str();
+  std::cout << "[checkHistAnaFemtoPhi] CF " << channel.c_str();
   if (logTag) std::cout << " (" << logTag << ")";
   std::cout << ": normQ=[" << normQMin << ", " << normQMax << "] GeV/c";
   if (cfRebinFactor > 1 && hSERebinned && hMERebinned) {
@@ -334,9 +493,9 @@ static TGraphErrors* computeCfAndCache(const std::string& channel, const std::st
   delete hSERebinned;
   delete hMERebinned;
   if (!gCF) {
-    std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str() << ": failed (empty norm integrals)\n";
+    std::cout << "[checkHistAnaFemtoPhi] CF " << channel.c_str() << ": failed (empty norm integrals)\n";
   } else {
-    std::cout << "[checkHistAnaFemtoPhi4He] CF " << channel.c_str() << ": " << gCF->GetN()
+    std::cout << "[checkHistAnaFemtoPhi] CF " << channel.c_str() << ": " << gCF->GetN()
               << " points with Poisson stat errors\n";
   }
   cfCache[cacheKey] = gCF;
@@ -402,8 +561,15 @@ static void populateCfCache(TFile* fin, std::map<std::string, TGraphErrors*>& cf
     }
     return;
   }
-  const char* fallbackChannels[] = {"phi_he4",         "phi_he4_signal", "phi_he4_leftSB",
-                                    "phi_he4_rightSB", "phi_rot_he4",    0};
+  const char* fallbackChannels[] = {"phi_proton", "phi_proton_signal", "phi_proton_leftSB",
+                                    "phi_proton_rightSB", "phi_rot_proton",
+                                    "phi_deuteron", "phi_deuteron_signal", "phi_deuteron_leftSB",
+                                    "phi_deuteron_rightSB",
+                                    "phi_triton", "phi_triton_signal", "phi_triton_leftSB",
+                                    "phi_triton_rightSB",
+                                    "phi_he3", "phi_he3_signal", "phi_he3_leftSB", "phi_he3_rightSB",
+                                    "phi_he4", "phi_he4_signal", "phi_he4_leftSB",
+                                    "phi_he4_rightSB", 0};
   for (Int_t i = 0; fallbackChannels[i]; ++i) {
     getOrComputeCf(fin, fallbackChannels[i], kFallbackNormQMin, kFallbackNormQMax, cfCache);
   }
@@ -413,11 +579,21 @@ static void populateCfCentCache(TFile* fin, std::map<std::string, TGraphErrors*>
   Int_t cent9Min = 0;
   Int_t cent9Max = 0;
   getCfCent9Range(cent9Min, cent9Max);
-  const char* centChannels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "phi_rot_he4", 0};
-  for (Int_t i = 0; centChannels[i]; ++i) {
-    const std::string channel(centChannels[i]);
-    getOrComputeCfCentSlice(fin, channel, channelNormQMin(channel), channelNormQMax(channel), cent9Min, cent9Max,
-                            cfCache);
+  for (Int_t ib = 0; kChannelBases[ib]; ++ib) {
+    const std::string base(kChannelBases[ib]);
+    const char* centChannels[] = {channelSignal(base).c_str(), channelLeftSb(base).c_str(),
+                                  channelRightSb(base).c_str(), 0};
+    const BachelorQaSpec* spec = findBachelorSpecByBase(base.c_str());
+    for (Int_t i = 0; centChannels[i]; ++i) {
+      const std::string channel(centChannels[i]);
+      getOrComputeCfCentSlice(fin, channel, channelNormQMin(channel), channelNormQMax(channel), cent9Min,
+                              cent9Max, cfCache);
+    }
+    if (spec && spec->rotChannel) {
+      const std::string rotCh(spec->rotChannel);
+      getOrComputeCfCentSlice(fin, rotCh, channelNormQMin(rotCh), channelNormQMax(rotCh), cent9Min, cent9Max,
+                              cfCache);
+    }
   }
 }
 
@@ -458,22 +634,36 @@ static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& chann
 }
 
 // Divide(4, 3): columns = channels, rows = SE / ME / CF.
-static Int_t centSliceLayoutPad(Int_t col, Int_t rowSeMeCf) { return col + rowSeMeCf * 4 + 1; }
+static Int_t centSliceLayoutPad(Int_t col, Int_t rowSeMeCf, Int_t nCols) { return col + rowSeMeCf * nCols + 1; }
 
-static void drawCentSlicePage(TCanvas* canvas, TFile* fin, Int_t cent9Min, Int_t cent9Max,
+static void drawCentSlicePageForBase(TCanvas* canvas, TFile* fin, const std::string& channelBase,
+                              const char* rotChannel, Int_t cent9Min, Int_t cent9Max,
                               std::vector<TH1*>& centProjKeepAlive,
                               std::map<std::string, TGraphErrors*>& cfCache) {
   if (!canvas) return;
   canvas->Clear();
-  canvas->Divide(4, 3);
-  const char* channels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "phi_rot_he4", 0};
-  for (Int_t ic = 0; channels[ic]; ++ic) {
+  const char* channels[5];
+  Int_t nCols = 3;
+  channels[0] = channelSignal(channelBase).c_str();
+  channels[1] = channelLeftSb(channelBase).c_str();
+  channels[2] = channelRightSb(channelBase).c_str();
+  channels[3] = rotChannel;
+  channels[4] = 0;
+  if (rotChannel && rotChannel[0] != '\0') nCols = 4;
+  canvas->Divide(nCols, 3);
+  for (Int_t ic = 0; ic < nCols; ++ic) {
     const std::string channel(channels[ic]);
-    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 0), fin, channel, kTRUE, cent9Min, cent9Max,
+    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 0, nCols), fin, channel, kTRUE, cent9Min, cent9Max,
                           centProjKeepAlive);
-    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 1), fin, channel, kFALSE, cent9Min, cent9Max,
+    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 1, nCols), fin, channel, kFALSE, cent9Min, cent9Max,
                           centProjKeepAlive);
-    drawCentSliceCf(canvas, centSliceLayoutPad(ic, 2), channel, cfCache);
+    drawCentSliceCf(canvas, centSliceLayoutPad(ic, 2, nCols), channel, cfCache);
+  }
+  if (gPad) {
+    TLatex* lat = new TLatex();
+    lat->SetNDC(kTRUE);
+    lat->SetTextSize(0.03);
+    lat->DrawLatex(0.02, 0.98, Form("%s cent slice (cent9 %d-%d)", channelBase.c_str(), cent9Min, cent9Max));
   }
 }
 
@@ -505,7 +695,6 @@ static void freeCentProjKeepAlive(std::vector<TH1*>& centProjKeepAlive) {
   centProjKeepAlive.clear();
 }
 
-static const char* kSidebandSliceChannels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", 0};
 
 static std::string cfSliceCacheKey(const std::string& sliceId, const std::string& tag) {
   return std::string("slice:") + sliceId + ":" + tag;
@@ -544,13 +733,6 @@ static Bool_t isSliceInQaPdf(const std::string& sliceId) {
   return ConfigManager::GetInstance().GetFemtoConfig().IsCfCentSliceInQaPdf(sliceId);
 }
 
-static Bool_t isSliceInCfPdf(const std::string& sliceId) {
-  if (!isSliceInQaPdf(sliceId)) return kTRUE;
-  if (!gConfigLoaded) return kFALSE;
-  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-  if (!femtoCfg.cfPdfExcludeQaSlices) return kTRUE;
-  return kFALSE;
-}
 
 static TH1* combineSidebandLR(TH1* left, TH1* right) {
   if (!left && !right) return 0;
@@ -571,15 +753,14 @@ static TH1* combineSidebandLR(TH1* left, TH1* right) {
 }
 
 // Sub-CF alpha from FemtoConfig channel mass-window widths: alpha = w_signal / w_sideband.
-static Bool_t getSidebandWidthAlphas(Double_t& alphaL, Double_t& alphaR) {
-  // Fallback matches default maker_auau3p85fxt_anaFemtoPhi4He.yaml windows.
+static Bool_t getSidebandWidthAlphas(const std::string& channelBase, Double_t& alphaL, Double_t& alphaR) {
   alphaL = 0.014 / 0.015;
   alphaR = 0.014 / 0.025;
   if (!gConfigLoaded) return kFALSE;
   const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-  const FemtoConfig::ChannelDef* chSig = femtoCfg.FindChannel("phi_he4_signal");
-  const FemtoConfig::ChannelDef* chL = femtoCfg.FindChannel("phi_he4_leftSB");
-  const FemtoConfig::ChannelDef* chR = femtoCfg.FindChannel("phi_he4_rightSB");
+  const FemtoConfig::ChannelDef* chSig = femtoCfg.FindChannel(channelSignal(channelBase));
+  const FemtoConfig::ChannelDef* chL = femtoCfg.FindChannel(channelLeftSb(channelBase));
+  const FemtoConfig::ChannelDef* chR = femtoCfg.FindChannel(channelRightSb(channelBase));
   if (!chSig || !chL || !chR) return kFALSE;
   const Double_t wSig = chSig->signalMax - chSig->signalMin;
   const Double_t wL = chL->signalMax - chL->signalMin;
@@ -658,51 +839,58 @@ static TGraphErrors* getOrComputeSliceChannelCf(TFile* fin, const std::string& s
 }
 
 static TGraphErrors* getOrComputeSliceSblrCf(TFile* fin, const std::string& sliceId, Int_t cent9Min,
-                                             Int_t cent9Max, Double_t normQMin, Double_t normQMax,
+                                             Int_t cent9Max, const std::string& channelBase,
+                                             Double_t normQMin, Double_t normQMax,
                                              std::map<std::string, TGraphErrors*>& cfCache) {
-  const std::string cacheKey = cfSliceCacheKey(sliceId, "SBLR");
+  const std::string cacheKey = cfSliceCacheKey(sliceId, channelBase + ":SBLR");
   std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
   if (cached != cfCache.end()) return cached->second;
 
-  TH1* hSEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kTRUE, cent9Min, cent9Max);
-  TH1* hSER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kTRUE, cent9Min, cent9Max);
-  TH1* hMEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kFALSE, cent9Min, cent9Max);
-  TH1* hMER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kFALSE, cent9Min, cent9Max);
+  const std::string chL = channelLeftSb(channelBase);
+  const std::string chR = channelRightSb(channelBase);
+  TH1* hSEL = getSliceProjectedSeMe(fin, chL, kTRUE, cent9Min, cent9Max);
+  TH1* hSER = getSliceProjectedSeMe(fin, chR, kTRUE, cent9Min, cent9Max);
+  TH1* hMEL = getSliceProjectedSeMe(fin, chL, kFALSE, cent9Min, cent9Max);
+  TH1* hMER = getSliceProjectedSeMe(fin, chR, kFALSE, cent9Min, cent9Max);
   TH1* hSE = combineSidebandLR(hSEL, hSER);
   TH1* hME = combineSidebandLR(hMEL, hMER);
   delete hSEL;
   delete hSER;
   delete hMEL;
   delete hMER;
-  TString logTag = Form("%s SBLR cent9 %d-%d", sliceId.c_str(), cent9Min, cent9Max);
-  TGraphErrors* gCF =
-      computeCfAndCache("phi_he4_SBLR", cacheKey, hSE, hME, normQMin, normQMax, cfCache, logTag.Data());
+  TString logTag = Form("%s %s SBLR cent9 %d-%d", sliceId.c_str(), channelBase.c_str(), cent9Min, cent9Max);
+  TGraphErrors* gCF = computeCfAndCache(channelBase + "_SBLR", cacheKey, hSE, hME, normQMin, normQMax, cfCache,
+                                        logTag.Data());
   delete hSE;
   delete hME;
   return gCF;
 }
 
 static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sliceId, Int_t cent9Min,
-                                               Int_t cent9Max, const std::string& sbChannel, const char* subTag,
+                                               Int_t cent9Max, const std::string& channelBase,
+                                               const std::string& sbChannel, const char* subTag,
                                                Double_t normQMin, Double_t normQMax,
                                                std::map<std::string, TGraphErrors*>& cfCache) {
-  const std::string cacheKey = cfSliceCacheKey(sliceId, subTag);
+  const std::string cacheKey = cfSliceCacheKey(sliceId, channelBase + ":" + subTag);
   std::map<std::string, TGraphErrors*>::const_iterator cached = cfCache.find(cacheKey);
   if (cached != cfCache.end()) return cached->second;
 
   Double_t alphaL = 0.0;
   Double_t alphaR = 0.0;
-  getSidebandWidthAlphas(alphaL, alphaR);
+  getSidebandWidthAlphas(channelBase, alphaL, alphaR);
   Double_t alphaApply = 1.0;
-  TH1* hSEsig = getSliceProjectedSeMe(fin, "phi_he4_signal", kTRUE, cent9Min, cent9Max);
-  TH1* hMEsig = getSliceProjectedSeMe(fin, "phi_he4_signal", kFALSE, cent9Min, cent9Max);
+  const std::string chSig = channelSignal(channelBase);
+  const std::string chL = channelLeftSb(channelBase);
+  const std::string chR = channelRightSb(channelBase);
+  TH1* hSEsig = getSliceProjectedSeMe(fin, chSig, kTRUE, cent9Min, cent9Max);
+  TH1* hMEsig = getSliceProjectedSeMe(fin, chSig, kFALSE, cent9Min, cent9Max);
   TH1* hSEsb = 0;
   TH1* hMEsb = 0;
   if (sbChannel == "SBLR") {
-    TH1* hSEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kTRUE, cent9Min, cent9Max);
-    TH1* hSER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kTRUE, cent9Min, cent9Max);
-    TH1* hMEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kFALSE, cent9Min, cent9Max);
-    TH1* hMER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kFALSE, cent9Min, cent9Max);
+    TH1* hSEL = getSliceProjectedSeMe(fin, chL, kTRUE, cent9Min, cent9Max);
+    TH1* hSER = getSliceProjectedSeMe(fin, chR, kTRUE, cent9Min, cent9Max);
+    TH1* hMEL = getSliceProjectedSeMe(fin, chL, kFALSE, cent9Min, cent9Max);
+    TH1* hMER = getSliceProjectedSeMe(fin, chR, kFALSE, cent9Min, cent9Max);
     hSEsb = combineSidebandScaledAverage(hSEL, hSER, alphaL, alphaR);
     hMEsb = combineSidebandScaledAverage(hMEL, hMER, alphaL, alphaR);
     delete hSEL;
@@ -710,11 +898,11 @@ static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sl
     delete hMEL;
     delete hMER;
     alphaApply = 1.0;
-  } else if (sbChannel == "phi_he4_leftSB") {
+  } else if (sbChannel == chL) {
     hSEsb = getSliceProjectedSeMe(fin, sbChannel, kTRUE, cent9Min, cent9Max);
     hMEsb = getSliceProjectedSeMe(fin, sbChannel, kFALSE, cent9Min, cent9Max);
     alphaApply = alphaL;
-  } else if (sbChannel == "phi_he4_rightSB") {
+  } else if (sbChannel == chR) {
     hSEsb = getSliceProjectedSeMe(fin, sbChannel, kTRUE, cent9Min, cent9Max);
     hMEsb = getSliceProjectedSeMe(fin, sbChannel, kFALSE, cent9Min, cent9Max);
     alphaApply = alphaR;
@@ -729,33 +917,43 @@ static TGraphErrors* getOrComputeSliceSigSubCf(TFile* fin, const std::string& sl
   delete hMEsig;
   delete hSEsb;
   delete hMEsb;
-  TString logTag = Form("%s %s cent9 %d-%d alphaL=%.4f alphaR=%.4f apply=%.4f", sliceId.c_str(), subTag,
-                        cent9Min, cent9Max, alphaL, alphaR, alphaApply);
-  TGraphErrors* gCF = computeCfAndCache("phi_he4_signal", cacheKey, hSEcorr, hMEcorr, normQMin, normQMax,
-                                        cfCache, logTag.Data());
+  TString logTag = Form("%s %s %s cent9 %d-%d alphaL=%.4f alphaR=%.4f apply=%.4f", sliceId.c_str(),
+                        channelBase.c_str(), subTag, cent9Min, cent9Max, alphaL, alphaR, alphaApply);
+  TGraphErrors* gCF = computeCfAndCache(chSig, cacheKey, hSEcorr, hMEcorr, normQMin, normQMax, cfCache,
+                                        logTag.Data());
   delete hSEcorr;
   delete hMEcorr;
   return gCF;
 }
 
-static void populateCfSliceCaches(TFile* fin, std::map<std::string, TGraphErrors*>& cfCache) {
+static void populateCfSliceCachesForBase(TFile* fin, const std::string& channelBase,
+                                           std::map<std::string, TGraphErrors*>& cfCache) {
   const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSliceList();
-  const Double_t normQMin = channelNormQMin("phi_he4_signal");
-  const Double_t normQMax = channelNormQMax("phi_he4_signal");
+  const std::string chSig = channelSignal(channelBase);
+  const Double_t normQMin = channelNormQMin(chSig);
+  const Double_t normQMax = channelNormQMax(chSig);
+  const char* sliceChannels[] = {chSig.c_str(), channelLeftSb(channelBase).c_str(),
+                                 channelRightSb(channelBase).c_str(), 0};
   for (size_t is = 0; is < slices.size(); ++is) {
     const FemtoConfig::CfCentSlice& sl = slices[is];
-    for (Int_t ic = 0; kSidebandSliceChannels[ic]; ++ic) {
-      const std::string channel(kSidebandSliceChannels[ic]);
+    for (Int_t ic = 0; sliceChannels[ic]; ++ic) {
+      const std::string channel(sliceChannels[ic]);
       getOrComputeSliceChannelCf(fin, sl.id, sl.cent9Min, sl.cent9Max, channel, channelNormQMin(channel),
                                  channelNormQMax(channel), cfCache);
     }
-    getOrComputeSliceSblrCf(fin, sl.id, sl.cent9Min, sl.cent9Max, normQMin, normQMax, cfCache);
-    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_he4_leftSB", "CF_sig_sub_SBL",
+    getOrComputeSliceSblrCf(fin, sl.id, sl.cent9Min, sl.cent9Max, channelBase, normQMin, normQMax, cfCache);
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, channelBase, channelLeftSb(channelBase),
+                              "CF_sig_sub_SBL", normQMin, normQMax, cfCache);
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, channelBase, channelRightSb(channelBase),
+                              "CF_sig_sub_SBR", normQMin, normQMax, cfCache);
+    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, channelBase, "SBLR", "CF_sig_sub_SBLR",
                               normQMin, normQMax, cfCache);
-    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "phi_he4_rightSB", "CF_sig_sub_SBR",
-                              normQMin, normQMax, cfCache);
-    getOrComputeSliceSigSubCf(fin, sl.id, sl.cent9Min, sl.cent9Max, "SBLR", "CF_sig_sub_SBLR", normQMin,
-                              normQMax, cfCache);
+  }
+}
+
+static void populateCfSliceCaches(TFile* fin, std::map<std::string, TGraphErrors*>& cfCache) {
+  for (Int_t ib = 0; kChannelBases[ib]; ++ib) {
+    populateCfSliceCachesForBase(fin, std::string(kChannelBases[ib]), cfCache);
   }
 }
 
@@ -769,40 +967,41 @@ static void drawSliceCfGraph(TCanvas* canvas, Int_t pad, const std::string& slic
   if (it != cfCache.end() && it->second) drawCfGraph(it->second);
 }
 
-static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig::CfCentSlice& slice,
-                                  std::vector<TH1*>& centProjKeepAlive,
-                                  std::map<std::string, TGraphErrors*>& cfCache, Bool_t drawSubCfRow) {
+static void drawSidebandSlicePageForBase(TCanvas* canvas, TFile* fin, const FemtoConfig::CfCentSlice& slice,
+                                           const std::string& channelBase, std::vector<TH1*>& centProjKeepAlive,
+                                           std::map<std::string, TGraphErrors*>& cfCache, Bool_t drawSubCfRow) {
   if (!canvas) return;
   canvas->Clear();
   const Int_t nRows = drawSubCfRow ? 4 : 3;
   canvas->Divide(4, nRows);
-  const char* colTags[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "SBLR"};
+  const std::string chSig = channelSignal(channelBase);
+  const std::string chL = channelLeftSb(channelBase);
+  const std::string chR = channelRightSb(channelBase);
+  const char* colTags[] = {chSig.c_str(), chL.c_str(), chR.c_str(), "SBLR"};
   for (Int_t ic = 0; ic < 4; ++ic) {
     const std::string tag(colTags[ic]);
     if (tag == "SBLR") {
-      TH1* hSEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kTRUE, slice.cent9Min, slice.cent9Max);
-      TH1* hSER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kTRUE, slice.cent9Min, slice.cent9Max);
-      TH1* hMEL = getSliceProjectedSeMe(fin, "phi_he4_leftSB", kFALSE, slice.cent9Min, slice.cent9Max);
-      TH1* hMER = getSliceProjectedSeMe(fin, "phi_he4_rightSB", kFALSE, slice.cent9Min, slice.cent9Max);
+      TH1* hSEL = getSliceProjectedSeMe(fin, chL, kTRUE, slice.cent9Min, slice.cent9Max);
+      TH1* hSER = getSliceProjectedSeMe(fin, chR, kTRUE, slice.cent9Min, slice.cent9Max);
+      TH1* hMEL = getSliceProjectedSeMe(fin, chL, kFALSE, slice.cent9Min, slice.cent9Max);
+      TH1* hMER = getSliceProjectedSeMe(fin, chR, kFALSE, slice.cent9Min, slice.cent9Max);
       TH1* hSE = combineSidebandLR(hSEL, hSER);
       TH1* hME = combineSidebandLR(hMEL, hMER);
-      // Do not delete hSEL/hSER/hMEL/hMER: same ProjectionX objects as ic=1/2 (SB-L/R SE/ME panels).
       canvas->cd(sidebandSliceLayoutPad(ic, 0));
       if (hSE) {
-        hSE->SetTitle(Form("SE SBLR %s", slice.id.c_str()));
+        hSE->SetTitle(Form("SE SBLR %s %s", channelBase.c_str(), slice.id.c_str()));
         drawKstarSeMeHist(hSE);
         centProjKeepAlive.push_back(hSE);
       }
       canvas->cd(sidebandSliceLayoutPad(ic, 1));
       if (hME) {
-        hME->SetTitle(Form("ME SBLR %s", slice.id.c_str()));
+        hME->SetTitle(Form("ME SBLR %s %s", channelBase.c_str(), slice.id.c_str()));
         drawKstarSeMeHist(hME);
         centProjKeepAlive.push_back(hME);
       }
-      getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max,
-                              channelNormQMin("phi_he4_signal"), channelNormQMax("phi_he4_signal"),
-                              cfCache);
-      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, "SBLR", cfCache);
+      getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max, channelBase,
+                              channelNormQMin(chSig), channelNormQMax(chSig), cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, channelBase + ":SBLR", cfCache);
     } else {
       canvas->cd(sidebandSliceLayoutPad(ic, 0));
       TH1* hSE = getSliceProjectedSeMe(fin, tag, kTRUE, slice.cent9Min, slice.cent9Max);
@@ -823,49 +1022,232 @@ static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig
   }
   if (drawSubCfRow) {
     const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
-    const char* subSb[] = {"phi_he4_leftSB", "phi_he4_rightSB", "SBLR"};
-    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 3), slice.id, "phi_he4_signal", cfCache);
+    const char* subSb[] = {chL.c_str(), chR.c_str(), "SBLR"};
+    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 3), slice.id, chSig, cfCache);
     for (Int_t isb = 0; isb < 3; ++isb) {
-      getOrComputeSliceSigSubCf(fin, slice.id, slice.cent9Min, slice.cent9Max, subSb[isb], subTags[isb],
-                                channelNormQMin("phi_he4_signal"), channelNormQMax("phi_he4_signal"),
-                                cfCache);
-      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(isb + 1, 3), slice.id, subTags[isb], cfCache);
+      getOrComputeSliceSigSubCf(fin, slice.id, slice.cent9Min, slice.cent9Max, channelBase, subSb[isb], subTags[isb],
+                                channelNormQMin(chSig), channelNormQMax(chSig), cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(isb + 1, 3), slice.id, channelBase + ":" + subTags[isb],
+                       cfCache);
     }
   }
   if (gPad) {
     TLatex* lat = new TLatex();
     lat->SetNDC(kTRUE);
     lat->SetTextSize(0.03);
-    lat->DrawLatex(0.02, 0.98, Form("%s (cent9 %d-%d)", slice.id.c_str(), slice.cent9Min, slice.cent9Max));
+    lat->DrawLatex(0.02, 0.98,
+                   Form("%s %s (cent9 %d-%d)", channelBase.c_str(), slice.id.c_str(), slice.cent9Min, slice.cent9Max));
   }
 }
 
 static void printCfSliceConsoleSummary(const std::map<std::string, TGraphErrors*>& cfCache) {
   const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSliceList();
-  std::cout << "\n=== CF cent slices (15 default) ===\n";
-  for (size_t is = 0; is < slices.size(); ++is) {
-    const FemtoConfig::CfCentSlice& sl = slices[is];
-    std::cout << "  slice " << sl.id << " cent9 [" << sl.cent9Min << "," << sl.cent9Max << "]:\n";
-    for (Int_t ic = 0; kSidebandSliceChannels[ic]; ++ic) {
-      const std::string channel(kSidebandSliceChannels[ic]);
-      Int_t nPts = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, channel).c_str());
-      TH1* hSE = 0;
-      std::cout << "    " << channel << " raw CF nPoints=" << nPts << "\n";
-      (void)hSE;
-    }
-    Int_t nSblr = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, "SBLR").c_str());
-    std::cout << "    SBLR raw CF nPoints=" << nSblr << "\n";
-    const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
-    for (Int_t it = 0; it < 3; ++it) {
-      Int_t nSub = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, subTags[it]).c_str());
-      std::cout << "    " << subTags[it] << " nPoints=" << nSub << "\n";
+  std::cout << "\n=== CF cent slices (all channel bases) ===\n";
+  for (Int_t ib = 0; kChannelBases[ib]; ++ib) {
+    const std::string channelBase(kChannelBases[ib]);
+    const std::string chSig = channelSignal(channelBase);
+    const std::string chL = channelLeftSb(channelBase);
+    const std::string chR = channelRightSb(channelBase);
+    std::cout << "  channel base " << channelBase << ":\n";
+    for (size_t is = 0; is < slices.size(); ++is) {
+      const FemtoConfig::CfCentSlice& sl = slices[is];
+      std::cout << "    slice " << sl.id << " cent9 [" << sl.cent9Min << "," << sl.cent9Max << "]:\n";
+      for (const std::string* pch : {&chSig, &chL, &chR}) {
+        Int_t nPts = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, *pch).c_str());
+        std::cout << "      " << *pch << " raw CF nPoints=" << nPts << "\n";
+      }
+      Int_t nSblr = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, channelBase + ":SBLR").c_str());
+      std::cout << "      SBLR raw CF nPoints=" << nSblr << "\n";
+      const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
+      for (Int_t it = 0; it < 3; ++it) {
+        Int_t nSub = getCachedCfPointCount(cfCache, cfSliceCacheKey(sl.id, channelBase + ":" + subTags[it]).c_str());
+        std::cout << "      " << subTags[it] << " nPoints=" << nSub << "\n";
+      }
     }
   }
   std::cout << "=============================================================\n\n";
 }
 
-void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
-                                const Char_t* anaNameArg = "auau3p85fxt_anaFemtoPhi4He",
+
+static void drawBachelorFemtoQaPages(TCanvas* canvas, TFile* fin, TString pdfName, const BachelorQaSpec& spec) {
+  if (!canvas || !fin) return;
+  TH1* h1 = 0;
+  TH2* h2 = 0;
+  BachelorCuts cuts;
+  if (gConfigLoaded) {
+    cuts = getBachelorCuts(ConfigManager::GetInstance().GetFemtoConfig(), spec.cutPrefix);
+  }
+
+  // Page 11a: bachelor QA 1D (pre-femto cut)
+  canvas->Clear();
+  canvas->Divide(3, 2);
+  TString kPtPre = bachelorHistKey(spec, "Pt_PreFemtoCut");
+  TString kEtaPre = bachelorHistKey(spec, "Eta_PreFemtoCut");
+  TString kNsPre;
+  if (strcmp(spec.cutPrefix, "proton") == 0) kNsPre = bachelorHistKey(spec, "NSigmaProton_PreFemtoCut");
+  else if (strcmp(spec.cutPrefix, "deuteron") == 0) kNsPre = bachelorHistKey(spec, "NSigmaDeuteron_PreFemtoCut");
+  else if (strcmp(spec.cutPrefix, "triton") == 0) kNsPre = bachelorHistKey(spec, "NSigmaTriton_PreFemtoCut");
+  else if (strcmp(spec.cutPrefix, "he3") == 0) kNsPre = bachelorHistKey(spec, "NSigmaHe3_PreFemtoCut");
+  else if (strcmp(spec.cutPrefix, "he4") == 0) kNsPre = bachelorHistKey(spec, "NSigmaHe4_PreFemtoCut");
+  TString kM2Pre = bachelorHistKey(spec, "Mass2_PreFemtoCut");
+  TString kDcaPre = bachelorHistKey(spec, "DCA_PreFemtoCut");
+  if (gConfigLoaded) {
+    canvas->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get(kPtPre); if (h1) {
+      prepareBachelorHist(h1, kPtPre, spec); h1->Draw();
+      drawCutLine1D(h1, cuts.minPtPre);
+      if (cuts.hasMaxPtPre) drawCutLine1D(h1, cuts.maxPtPre);
+      drawCutLine1D(h1, cuts.minPtPair);
+      drawCutLine1D(h1, cuts.maxPtPair);
+    }
+    canvas->cd(2); h1 = (TH1*)fin->Get(kEtaPre); if (h1) {
+      prepareBachelorHist(h1, kEtaPre, spec); h1->Draw();
+      drawCutLines1D(h1, -cuts.maxAbsEta, cuts.maxAbsEta);
+    }
+    canvas->cd(3); h1 = (TH1*)fin->Get(kNsPre); if (h1) {
+      prepareBachelorHist(h1, kNsPre, spec); h1->Draw();
+      drawCutLines1D(h1, -cuts.maxAbsNSigma, cuts.maxAbsNSigma);
+    }
+    canvas->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get(kM2Pre); if (h1) {
+      prepareBachelorHist(h1, kM2Pre, spec); h1->Draw();
+      drawCutLines1D(h1, cuts.minMass2, cuts.maxMass2);
+    }
+    canvas->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get(kDcaPre); if (h1) {
+      prepareBachelorHist(h1, kDcaPre, spec); h1->Draw();
+      drawCutLine1D(h1, cuts.maxDca);
+    }
+    canvas->cd(6);
+  } else {
+    canvas->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get(kPtPre);
+    if (h1) { prepareBachelorHist(h1, kPtPre, spec); h1->Draw(); }
+    canvas->cd(2); h1 = (TH1*)fin->Get(kEtaPre);
+    if (h1) { prepareBachelorHist(h1, kEtaPre, spec); h1->Draw(); }
+    canvas->cd(3); h1 = (TH1*)fin->Get(kNsPre);
+    if (h1) { prepareBachelorHist(h1, kNsPre, spec); h1->Draw(); }
+    canvas->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get(kM2Pre);
+    if (h1) { prepareBachelorHist(h1, kM2Pre, spec); h1->Draw(); }
+    canvas->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get(kDcaPre);
+    if (h1) { prepareBachelorHist(h1, kDcaPre, spec); h1->Draw(); }
+    canvas->cd(6);
+  }
+  if (gPad) {
+    TLatex* tag = new TLatex();
+    tag->SetNDC(kTRUE);
+    tag->SetTextSize(0.03);
+    tag->DrawLatex(0.02, 0.98, Form("%s bachelor pre-femto QA (%s)", spec.label, spec.channelBase));
+  }
+  canvas->Print(pdfName);
+
+  // Page 11b: post-femto 1D
+  canvas->Clear();
+  canvas->Divide(3, 2);
+  TString kPt = bachelorHistKey(spec, "Pt");
+  TString kEta = bachelorHistKey(spec, "Eta");
+  TString kPhi = bachelorHistKey(spec, "Phi");
+  TString kNs = kNsPre; kNs.ReplaceAll("_PreFemtoCut", "");
+  TString kM2 = bachelorHistKey(spec, "Mass2");
+  TString kDca = bachelorHistKey(spec, "DCA");
+  canvas->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get(kPt);
+  if (h1) { prepareBachelorHist(h1, kPt, spec); h1->Draw(); }
+  canvas->cd(2); h1 = (TH1*)fin->Get(kEta);
+  if (h1) { prepareBachelorHist(h1, kEta, spec); h1->Draw(); }
+  canvas->cd(3); h1 = (TH1*)fin->Get(kPhi);
+  if (h1) { prepareBachelorHist(h1, kPhi, spec); h1->Draw(); }
+  canvas->cd(4); h1 = (TH1*)fin->Get(kNs);
+  if (h1) { prepareBachelorHist(h1, kNs, spec); h1->Draw(); }
+  canvas->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get(kM2);
+  if (h1) { prepareBachelorHist(h1, kM2, spec); h1->Draw(); }
+  canvas->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get(kDca);
+  if (h1) { prepareBachelorHist(h1, kDca, spec); h1->Draw(); }
+  canvas->Print(pdfName);
+
+  // Page 12a: y & y-pT pre-femto
+  canvas->Clear();
+  canvas->Divide(2, 1);
+  TString kYPre = bachelorHistKey(spec, "Y_PreFemtoCut");
+  TString kPtYPre = bachelorHistKey(spec, "PtVsY_PreFemtoCut");
+  if (gConfigLoaded) {
+    canvas->cd(1); h1 = (TH1*)fin->Get(kYPre); if (h1) {
+      prepareBachelorHist(h1, kYPre, spec); h1->Draw();
+      drawCutLines1D(h1, cuts.minRapidityCm, cuts.maxRapidityCm);
+    }
+    canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kPtYPre); if (h2) {
+      prepareBachelorHist(h2, kPtYPre, spec); h2->Draw("colz");
+      drawCutLine2DH(h2, cuts.minRapidityCm);
+      drawCutLine2DH(h2, cuts.maxRapidityCm);
+    }
+  } else {
+    canvas->cd(1); h1 = (TH1*)fin->Get(kYPre);
+    if (h1) { prepareBachelorHist(h1, kYPre, spec); h1->Draw(); }
+    canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kPtYPre);
+    if (h2) { prepareBachelorHist(h2, kPtYPre, spec); h2->Draw("colz"); }
+  }
+  canvas->Print(pdfName);
+
+  // Page 12b: y & y-pT post-femto + mass2 vs p
+  canvas->Clear();
+  canvas->Divide(3, 2);
+  TString kY = bachelorHistKey(spec, "Y_FemtoCut");
+  TString kPtY = bachelorHistKey(spec, "PtVsY_FemtoCut");
+  TString kM2VsP = bachelorHistKey(spec, "Mass2VsP");
+  TString kNHits = bachelorHistKey(spec, "NHitsRatio_FemtoCut");
+  if (gConfigLoaded) {
+    canvas->cd(1); h1 = (TH1*)fin->Get(kY); if (h1) {
+      prepareBachelorHist(h1, kY, spec); h1->Draw();
+      drawCutLines1D(h1, cuts.minRapidityCm, cuts.maxRapidityCm);
+    }
+    canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kPtY); if (h2) {
+      prepareBachelorHist(h2, kPtY, spec); h2->Draw("colz");
+      drawCutLine2DH(h2, cuts.minRapidityCm);
+      drawCutLine2DH(h2, cuts.maxRapidityCm);
+    }
+  } else {
+    canvas->cd(1); h1 = (TH1*)fin->Get(kY);
+    if (h1) { prepareBachelorHist(h1, kY, spec); h1->Draw(); }
+    canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kPtY);
+    if (h2) { prepareBachelorHist(h2, kPtY, spec); h2->Draw("colz"); }
+  }
+  canvas->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2VsP); if (h2) {
+    prepareBachelorHist(h2, kM2VsP, spec); h2->Draw("colz");
+    if (gConfigLoaded) {
+      drawCutLine2DH(h2, cuts.minMass2);
+      drawCutLine2DH(h2, cuts.maxMass2);
+    }
+  }
+  canvas->cd(4); h1 = (TH1*)fin->Get(kNHits);
+  if (h1) { prepareBachelorHist(h1, kNHits, spec); h1->Draw(); }
+  canvas->Print(pdfName);
+
+  // Page 12c: wide TOF m2 vs p (nuclei only)
+  if (cuts.hasPMomWindow) {
+    TString kM2WidePre = bachelorHistKey(spec, "Mass2VsP_PreFemtoCut_wide");
+    TString kM2Wide = bachelorHistKey(spec, "Mass2VsP_wide");
+    if (fin->Get(kM2WidePre) || fin->Get(kM2Wide)) {
+      canvas->Clear();
+      canvas->Divide(2, 1);
+      if (gConfigLoaded) {
+        canvas->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2WidePre); if (h2) {
+          prepareBachelorHist(h2, kM2WidePre, spec); h2->Draw("colz");
+          drawCutLine2DH(h2, cuts.minPMom);
+          drawCutLine2DH(h2, cuts.maxPMom);
+        }
+        canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2Wide); if (h2) {
+          prepareBachelorHist(h2, kM2Wide, spec); h2->Draw("colz");
+          drawCutLine2DH(h2, cuts.minPMom);
+          drawCutLine2DH(h2, cuts.maxPMom);
+        }
+      } else {
+        canvas->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2WidePre);
+        if (h2) { prepareBachelorHist(h2, kM2WidePre, spec); h2->Draw("colz"); }
+        canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2Wide);
+        if (h2) { prepareBachelorHist(h2, kM2Wide, spec); h2->Draw("colz"); }
+      }
+      canvas->Print(pdfName);
+    }
+  }
+}
+
+void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
+                                const Char_t* anaNameArg = "auau3p85fxt_anaFemtoPhi",
                                 const Char_t* mainconfPath = 0)
 {
   gROOT->SetBatch(kTRUE);
@@ -922,11 +1304,11 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
       gConfigLoaded = kTRUE;
       if (!ConfigManager::GetInstance().GetPhiCuts().FinalizeRapidityFrame(
               ConfigManager::GetInstance().GetCentralityCuts())) {
-        std::cerr << "[checkHistAnaFemtoPhi4He] WARNING: FinalizeRapidityFrame failed; PDF note may be incomplete."
+        std::cerr << "[checkHistAnaFemtoPhi] WARNING: FinalizeRapidityFrame failed; PDF note may be incomplete."
                   << std::endl;
       }
     } else if (mainconfPath && strlen(mainconfPath) > 0) {
-      std::cerr << "[checkHistAnaFemtoPhi4He] WARNING: Failed to load config " << mainconf.Data() << "; cut lines skipped." << std::endl;
+      std::cerr << "[checkHistAnaFemtoPhi] WARNING: Failed to load config " << mainconf.Data() << "; cut lines skipped." << std::endl;
     }
   }
 
@@ -937,28 +1319,26 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
     gSystem->mkdir(outDir, kTRUE);
   }
 
-  TString pdfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhi4He";
+  TString pdfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhi";
   if (jobid.Length()) pdfName += "_" + jobid;
   pdfName += ".pdf";
-  TString pdfCfName = TString(outDir) + anaName + "_checkHistAnaFemtoPhi4He_CF";
-  if (jobid.Length()) pdfCfName += "_" + jobid;
-  pdfCfName += ".pdf";
-  std::cout << "Output QA PDF: " << pdfName.Data() << std::endl;
-  std::cout << "Output CF PDF: " << pdfCfName.Data() << std::endl;
 
   PdfHeader::OpenPdf(pdfName);
 
   std::vector<std::string> inputs;
   inputs.push_back((const char*)inputRootFile);
 
-  TString note = "Check histograms from run_anaFemtoPhi4He.C (StFemtoMaker output).\n";
-  note += "Phi candidates built via ResonanceBuilder (KK); 4He candidates via TrackPidBuilder (StNuclearIdHelper).\n";
+  TString note = "Check histograms from run_anaFemtoPhi.C (StFemtoMaker output).\n";
+  note += "Phi candidates via ResonanceBuilder (KK); bachelor tracks p/d/t/^{3}He/^{4}He via TrackPidBuilder.\n";
   note += "Pair QA stage0 / strict TOF histograms mirror anaPhi hPhiPair_* naming.\n";
   const Double_t nEvtAll = getHistEntries(fin, "hVz");
   const Double_t nEvtAfter = getHistEntries(fin, "hVz_After");
   const Double_t nPhiCand = getHistEntries(fin, "hPhi_NCand");
+  const Double_t nProtonCand = getHistEntries(fin, "hP_NCand");
+  const Double_t nDeuteronCand = getHistEntries(fin, "hDeuteron_NCand");
+  const Double_t nTritonCand = getHistEntries(fin, "hTriton_NCand");
+  const Double_t nHe3Cand = getHistEntries(fin, "hHe3_NCand");
   const Double_t nHe4Cand = getHistEntries(fin, "hHe4_NCand");
-  const Double_t nKstarSE = getHistEntries(fin, "hKstarSE_phi_he4");
   if (nEvtAll >= 0.0) {
     note += Form("Total statistics (input ROOT): events(all) = %.0f", nEvtAll);
     if (nEvtAfter >= 0.0) {
@@ -967,12 +1347,11 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
     if (nPhiCand >= 0.0) {
       note += Form(", phi cand fills = %.0f", nPhiCand);
     }
-    if (nHe4Cand >= 0.0) {
-      note += Form(", 4He cand fills = %.0f", nHe4Cand);
-    }
-    if (nKstarSE >= 0.0) {
-      note += Form(", k* SE pairs = %.0f", nKstarSE);
-    }
+    if (nProtonCand >= 0.0) note += Form(", p cand fills = %.0f", nProtonCand);
+    if (nDeuteronCand >= 0.0) note += Form(", d cand fills = %.0f", nDeuteronCand);
+    if (nTritonCand >= 0.0) note += Form(", t cand fills = %.0f", nTritonCand);
+    if (nHe3Cand >= 0.0) note += Form(", ^{3}He cand fills = %.0f", nHe3Cand);
+    if (nHe4Cand >= 0.0) note += Form(", ^{4}He cand fills = %.0f", nHe4Cand);
     note += "\n";
     TH1* hVzCheck = (TH1*)fin->Get("hVz");
     if (hVzCheck && nEvtAll > 0.0 && hVzCheck->GetMaximum() < 1e-6) {
@@ -985,7 +1364,7 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
     note += ConfigManager::GetInstance().GetPhiCuts().GetRapidityFrameSummary().c_str();
     note += "\n";
   }
-  note += "QA layout: pre-cut page immediately followed by post-cut page (Event, Track, 4He, Phi).\n";
+  note += "QA layout: pre-cut/post-cut Event, Track; bachelor QA loop (p,d,t,^{3}He,^{4}He); Phi.\n";
   note += "Phi QA: (A) KK pair Raw/AfterCuts + y-pT; (B) femto candidate pre/post. Kaon PID: before/after on Page 9.\n";
   note += Form("CF computed in checkHist from merged SE/ME (TGraphErrors, Poisson stat errors); cfRebinFactor=%d; norm region from maker YAML.\n",
                getCfRebinFactor());
@@ -1002,7 +1381,8 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
                    centCfg.cent9MaxRefMultCorrBin, centCfg.cent9MaxRefMultCorr);
     }
   }
-  note += "phi_he4 legacy channel has no hKstar*VsCent 2D; cent-slice CF pages skip it.\n";
+  note += "Legacy integrated channels (phi_*) may lack hKstar*VsCent 2D; cent-slice pages skip missing keys.\n";
+  note += "Single QA PDF only (no separate CF PDF). CF sideband slices: pct_0_10/20/30 x all channel bases.\n";
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
   std::map<std::string, TGraphErrors*> cfCache;
@@ -1011,7 +1391,7 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
   populateCfCentCache(fin, cfCache);
   populateCfSliceCaches(fin, cfCache);
 
-  PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoPhi4He.C", inputs, note.Data(), true, anaName);
+  PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoPhi.C", inputs, note.Data(), true, anaName);
 
   TCanvas* c1 = new TCanvas("c1", "canvas", 1200, 800);
   TH1* h1 = 0;
@@ -1089,8 +1469,20 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
   c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlus_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonMinus_vs_Cent9"); if (h2) h2->Draw("colz");
   c1->cd(7); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNPhiPairs_vs_Cent9"); if (h2) h2->Draw("colz");
-  c1->cd(8); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNHe4_vs_Cent9"); if (h2) h2->Draw("colz");
+  c1->cd(8); /* spare */;
   c1->cd(9); gPad->SetLogz(); h2 = (TH2*)fin->Get("hRawMult_vs_RefMultCorr"); if (h2) h2->Draw("colz");
+  drawCent9ConventionNote();
+  c1->Print(pdfName);
+
+  // Page 1d: Bachelor multiplicity vs cent9
+  c1->Clear();
+  c1->Divide(3, 2);
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    c1->cd(ib + 1);
+    gPad->SetLogz();
+    h2 = (TH2*)fin->Get(kBachelorQaSpecs[ib].nVsCentKey);
+    if (h2) h2->Draw("colz");
+  }
   drawCent9ConventionNote();
   c1->Print(pdfName);
 
@@ -1463,178 +1855,43 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
   }
   c1->Print(pdfName);
 
-  // Page 10: K multiplicity + 4He n#sigma vs p (ID-cut vs all tracks)
+  // Page 10: K multiplicity + n#sigma vs p (all 5 bachelor species)
   c1->Clear();
-  c1->Divide(2, 3);
+  c1->Divide(3, 3);
   c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNKaonPlusVsNKaonMinus"); if (h2) h2->Draw("colz");
   c1->cd(2); h1 = (TH1*)fin->Get("hNKaonPlus"); if (h1) h1->Draw();
   c1->cd(3); h1 = (TH1*)fin->Get("hNKaonMinus"); if (h1) h1->Draw();
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaHe4VsP"); if (h2) {
-    prepareHe4Hist(h2, "hNSigmaHe4VsP");
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsP"); if (h2) {
+    h2->GetXaxis()->SetRangeUser(0, 5.0);
     h2->Draw("colz");
     if (gConfigLoaded) {
-      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-      drawCutLine2DH(h2, -femtoCfg.he4MaxAbsNSigma);
-      drawCutLine2DH(h2, femtoCfg.he4MaxAbsNSigma);
+      BachelorCuts bc = getBachelorCuts(ConfigManager::GetInstance().GetFemtoConfig(), "proton");
+      drawCutLine2DH(h2, -bc.maxAbsNSigma);
+      drawCutLine2DH(h2, bc.maxAbsNSigma);
     }
   }
-  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaHe4VsP_All"); if (h2) {
-    prepareHe4Hist(h2, "hNSigmaHe4VsP_All");
+  c1->cd(5); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaDeuteronVsP_All"); if (h2) {
+    prepareBachelorHist(h2, "hNSigmaDeuteronVsP_All", kBachelorQaSpecs[1]);
+    h2->Draw("colz");
+  }
+  c1->cd(6); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaTritonVsP_All"); if (h2) {
+    prepareBachelorHist(h2, "hNSigmaTritonVsP_All", kBachelorQaSpecs[2]);
+    h2->Draw("colz");
+  }
+  c1->cd(7); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaHe3VsP_All"); if (h2) {
+    prepareBachelorHist(h2, "hNSigmaHe3VsP_All", kBachelorQaSpecs[3]);
+    h2->Draw("colz");
+  }
+  c1->cd(8); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaHe4VsP_All"); if (h2) {
+    prepareBachelorHist(h2, "hNSigmaHe4VsP_All", kBachelorQaSpecs[4]);
     h2->Draw("colz");
   }
   c1->Print(pdfName);
 
-  // Page 11a: 4He QA 1D (pre-femto cut)
-  c1->Clear();
-  c1->Divide(3, 2);
-  if (gConfigLoaded) {
-    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Pt_PreFemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_Pt_PreFemtoCut");
-      h1->Draw();
-      drawCutLine1D(h1, femtoCfg.he4MinPtPre);
-      drawCutLine1D(h1, femtoCfg.he4MaxPtPre);
-      drawCutLine1D(h1, femtoCfg.he4MinPtPair);
-      drawCutLine1D(h1, femtoCfg.he4MaxPtPair);
-    }
-    c1->cd(2); h1 = (TH1*)fin->Get("hHe4_Eta_PreFemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_Eta_PreFemtoCut");
-      h1->Draw();
-      drawCutLines1D(h1, -femtoCfg.he4MaxAbsEta, femtoCfg.he4MaxAbsEta);
-    }
-    c1->cd(3); h1 = (TH1*)fin->Get("hHe4_NSigmaHe4_PreFemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_NSigmaHe4_PreFemtoCut");
-      h1->Draw();
-      drawCutLines1D(h1, -femtoCfg.he4MaxAbsNSigma, femtoCfg.he4MaxAbsNSigma);
-    }
-    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Mass2_PreFemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_Mass2_PreFemtoCut");
-      h1->Draw();
-      drawCutLines1D(h1, femtoCfg.he4MinMass2, femtoCfg.he4MaxMass2);
-    }
-    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_DCA_PreFemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_DCA_PreFemtoCut");
-      h1->Draw();
-      drawCutLine1D(h1, femtoCfg.he4MaxDca);
-    }
-    c1->cd(6); /* spare */;
-  } else {
-    c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Pt_PreFemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_Pt_PreFemtoCut"); h1->Draw(); }
-    c1->cd(2); h1 = (TH1*)fin->Get("hHe4_Eta_PreFemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_Eta_PreFemtoCut"); h1->Draw(); }
-    c1->cd(3); h1 = (TH1*)fin->Get("hHe4_NSigmaHe4_PreFemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_NSigmaHe4_PreFemtoCut"); h1->Draw(); }
-    c1->cd(4); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Mass2_PreFemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_Mass2_PreFemtoCut"); h1->Draw(); }
-    c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_DCA_PreFemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_DCA_PreFemtoCut"); h1->Draw(); }
-    c1->cd(6); /* spare */;
+  // Pages 11a-12c: bachelor QA per species
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    drawBachelorFemtoQaPages(c1, fin, pdfName, kBachelorQaSpecs[ib]);
   }
-  c1->Print(pdfName);
-
-  // Page 11b: 4He QA 1D (post-femto cut)
-  c1->Clear();
-  c1->Divide(3, 2);
-  c1->cd(1); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Pt");
-  if (h1) { prepareHe4Hist(h1, "hHe4_Pt"); h1->Draw(); }
-  c1->cd(2); h1 = (TH1*)fin->Get("hHe4_Eta");
-  if (h1) { prepareHe4Hist(h1, "hHe4_Eta"); h1->Draw(); }
-  c1->cd(3); h1 = (TH1*)fin->Get("hHe4_Phi");
-  if (h1) { prepareHe4Hist(h1, "hHe4_Phi"); h1->Draw(); }
-  c1->cd(4); h1 = (TH1*)fin->Get("hHe4_NSigmaHe4");
-  if (h1) { prepareHe4Hist(h1, "hHe4_NSigmaHe4"); h1->Draw(); }
-  c1->cd(5); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_Mass2");
-  if (h1) { prepareHe4Hist(h1, "hHe4_Mass2"); h1->Draw(); }
-  c1->cd(6); gPad->SetLogy(); h1 = (TH1*)fin->Get("hHe4_DCA");
-  if (h1) { prepareHe4Hist(h1, "hHe4_DCA"); h1->Draw(); }
-  c1->Print(pdfName);
-
-  // Page 12a: 4He y & y-pT (pre-femto cut)
-  c1->Clear();
-  c1->Divide(2, 1);
-  if (gConfigLoaded) {
-    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_PreFemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_Y_PreFemtoCut");
-      h1->Draw();
-      drawCutLines1D(h1, femtoCfg.he4MinRapidityCm, femtoCfg.he4MaxRapidityCm);
-    }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_PreFemtoCut"); if (h2) {
-      prepareHe4Hist(h2, "hHe4_PtVsY_PreFemtoCut");
-      h2->Draw("colz");
-      drawCutLine2DH(h2, femtoCfg.he4MinRapidityCm);
-      drawCutLine2DH(h2, femtoCfg.he4MaxRapidityCm);
-    }
-  } else {
-    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_PreFemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_Y_PreFemtoCut"); h1->Draw(); }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_PreFemtoCut");
-    if (h2) { prepareHe4Hist(h2, "hHe4_PtVsY_PreFemtoCut"); h2->Draw("colz"); }
-  }
-  c1->Print(pdfName);
-
-  // Page 12b: 4He y & y-pT (post-femto cut)
-  c1->Clear();
-  c1->Divide(3, 2);
-  if (gConfigLoaded) {
-    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_FemtoCut"); if (h1) {
-      prepareHe4Hist(h1, "hHe4_Y_FemtoCut");
-      h1->Draw();
-      drawCutLines1D(h1, femtoCfg.he4MinRapidityCm, femtoCfg.he4MaxRapidityCm);
-    }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_FemtoCut"); if (h2) {
-      prepareHe4Hist(h2, "hHe4_PtVsY_FemtoCut");
-      h2->Draw("colz");
-      drawCutLine2DH(h2, femtoCfg.he4MinRapidityCm);
-      drawCutLine2DH(h2, femtoCfg.he4MaxRapidityCm);
-    }
-  } else {
-    c1->cd(1); h1 = (TH1*)fin->Get("hHe4_Y_FemtoCut");
-    if (h1) { prepareHe4Hist(h1, "hHe4_Y_FemtoCut"); h1->Draw(); }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_PtVsY_FemtoCut");
-    if (h2) { prepareHe4Hist(h2, "hHe4_PtVsY_FemtoCut"); h2->Draw("colz"); }
-  }
-  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP"); if (h2) {
-    prepareHe4Hist(h2, "hHe4_Mass2VsP");
-    h2->Draw("colz");
-    if (gConfigLoaded) {
-      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-      drawCutLine2DH(h2, femtoCfg.he4MinMass2);
-      drawCutLine2DH(h2, femtoCfg.he4MaxMass2);
-    }
-  }
-  c1->cd(4); h1 = (TH1*)fin->Get("hHe4_NHitsRatio_FemtoCut");
-  if (h1) { prepareHe4Hist(h1, "hHe4_NHitsRatio_FemtoCut"); h1->Draw(); }
-  c1->cd(5); /* spare */;
-  c1->cd(6); /* spare */;
-  c1->Print(pdfName);
-
-  // Page 12c: 4He TOF m2 vs p (wide 0-20)
-  c1->Clear();
-  c1->Divide(2, 1);
-  if (gConfigLoaded) {
-    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-    c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_PreFemtoCut_wide"); if (h2) {
-      prepareHe4Hist(h2, "hHe4_Mass2VsP_PreFemtoCut_wide");
-      h2->Draw("colz");
-      drawCutLine2DH(h2, femtoCfg.he4MinPMom);
-      drawCutLine2DH(h2, femtoCfg.he4MaxPMom);
-    }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_wide"); if (h2) {
-      prepareHe4Hist(h2, "hHe4_Mass2VsP_wide");
-      h2->Draw("colz");
-      drawCutLine2DH(h2, femtoCfg.he4MinPMom);
-      drawCutLine2DH(h2, femtoCfg.he4MaxPMom);
-    }
-  } else {
-    c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_PreFemtoCut_wide");
-    if (h2) { prepareHe4Hist(h2, "hHe4_Mass2VsP_PreFemtoCut_wide"); h2->Draw("colz"); }
-    c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hHe4_Mass2VsP_wide");
-    if (h2) { prepareHe4Hist(h2, "hHe4_Mass2VsP_wide"); h2->Draw("colz"); }
-  }
-  c1->Print(pdfName);
 
   // Page 13a: Phi candidate QA (pre-cut)
   c1->Clear();
@@ -1692,18 +1949,24 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
   }
   c1->Print(pdfName);
 
-  // Page 15: Femto k* (legacy phi-4He channel)
-  c1->Clear();
-  c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_he4"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_he4"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_he4", channelNormQMin("phi_he4"), channelNormQMax("phi_he4"), cfCache);
-  c1->cd(4); h1 = (TH1*)fin->Get("hHe4_NCand");
-  if (h1) { prepareHe4Hist(h1, "hHe4_NCand"); h1->Draw(); }
-  c1->Print(pdfName);
+  // Page 15+: Femto k* legacy integrated CF (one page per channel base)
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    const BachelorQaSpec& spec = kBachelorQaSpecs[ib];
+    const std::string base(spec.channelBase);
+    c1->Clear();
+    c1->Divide(2, 2);
+    TString seKey = TString("hKstarSE_") + base.c_str();
+    TString meKey = TString("hKstarME_") + base.c_str();
+    c1->cd(1); h1 = (TH1*)fin->Get(seKey); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(2); h1 = (TH1*)fin->Get(meKey); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(3);
+    drawComputedCf(c1, 3, fin, base, channelNormQMin(base), channelNormQMax(base), cfCache);
+    c1->cd(4); h1 = (TH1*)fin->Get(spec.nCandKey);
+    if (h1) { prepareBachelorHist(h1, spec.nCandKey, spec); h1->Draw(); }
+    c1->Print(pdfName);
+  }
 
-  // Page 16: Phi mass windows / sidebands / rotation
+  // Page 16: Phi mass windows / sidebands / rotation (proton rotation QA)
   c1->Clear();
   c1->Divide(3, 2);
   c1->cd(1); h1 = (TH1*)fin->Get("hPhi_MKK_signal"); if (h1) h1->Draw();
@@ -1714,95 +1977,85 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
   c1->cd(6); h1 = (TH1*)fin->Get("hPhiRot_NCand"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
-  // Page 17: k* SE/ME/CF — signal channel
-  c1->Clear();
-  c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_he4_signal"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_he4_signal"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_he4_signal", channelNormQMin("phi_he4_signal"),
-                 channelNormQMax("phi_he4_signal"), cfCache);
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_he4_signal"); if (h2) h2->Draw("colz");
-  c1->Print(pdfName);
+  // Per-channel signal / sideband / rotation k* pages
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    const BachelorQaSpec& spec = kBachelorQaSpecs[ib];
+    const std::string base(spec.channelBase);
+    const std::string sig = channelSignal(base);
+    const std::string lsb = channelLeftSb(base);
+    const std::string rsb = channelRightSb(base);
 
-  // Page 18: k* SE/ME/CF — sideband channels
-  c1->Clear();
-  c1->Divide(2, 3);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_he4_leftSB"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_he4_leftSB"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_he4_leftSB", channelNormQMin("phi_he4_leftSB"),
-                 channelNormQMax("phi_he4_leftSB"), cfCache);
-  c1->cd(4); h1 = (TH1*)fin->Get("hKstarSE_phi_he4_rightSB"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(5); h1 = (TH1*)fin->Get("hKstarME_phi_he4_rightSB"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(6);
-  drawComputedCf(c1, 6, fin, "phi_he4_rightSB", channelNormQMin("phi_he4_rightSB"),
-                 channelNormQMax("phi_he4_rightSB"), cfCache);
-  c1->Print(pdfName);
+    c1->Clear();
+    c1->Divide(2, 2);
+    c1->cd(1); h1 = (TH1*)fin->Get(TString("hKstarSE_") + sig.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(2); h1 = (TH1*)fin->Get(TString("hKstarME_") + sig.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(3);
+    drawComputedCf(c1, 3, fin, sig, channelNormQMin(sig), channelNormQMax(sig), cfCache);
+    c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + sig.c_str()); if (h2) h2->Draw("colz");
+    c1->Print(pdfName);
 
-  // Page 19: k* SE/ME/CF — rotation background channel
-  c1->Clear();
-  c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_he4"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_rot_he4"); if (h1) drawKstarSeMeHist(h1);
-  c1->cd(3);
-  drawComputedCf(c1, 3, fin, "phi_rot_he4", channelNormQMin("phi_rot_he4"),
-                 channelNormQMax("phi_rot_he4"), cfCache);
-  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKstarSEVsCent_phi_rot_he4"); if (h2) h2->Draw("colz");
-  c1->Print(pdfName);
+    c1->Clear();
+    c1->Divide(2, 3);
+    c1->cd(1); h1 = (TH1*)fin->Get(TString("hKstarSE_") + lsb.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(2); h1 = (TH1*)fin->Get(TString("hKstarME_") + lsb.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(3);
+    drawComputedCf(c1, 3, fin, lsb, channelNormQMin(lsb), channelNormQMax(lsb), cfCache);
+    c1->cd(4); h1 = (TH1*)fin->Get(TString("hKstarSE_") + rsb.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(5); h1 = (TH1*)fin->Get(TString("hKstarME_") + rsb.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->cd(6);
+    drawComputedCf(c1, 6, fin, rsb, channelNormQMin(rsb), channelNormQMax(rsb), cfCache);
+    c1->Print(pdfName);
 
-  // Page 20: k* SE/ME/CF — cent9 slice (default 0-60% = cent9 2-8), 3x4 (rows SE/ME/CF, cols per channel)
+    if (spec.rotChannel) {
+      const std::string rotCh(spec.rotChannel);
+      c1->Clear();
+      c1->Divide(2, 2);
+      c1->cd(1); h1 = (TH1*)fin->Get(TString("hKstarSE_") + rotCh.c_str()); if (h1) drawKstarSeMeHist(h1);
+      c1->cd(2); h1 = (TH1*)fin->Get(TString("hKstarME_") + rotCh.c_str()); if (h1) drawKstarSeMeHist(h1);
+      c1->cd(3);
+      drawComputedCf(c1, 3, fin, rotCh, channelNormQMin(rotCh), channelNormQMax(rotCh), cfCache);
+      c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + rotCh.c_str()); if (h2) h2->Draw("colz");
+      c1->Print(pdfName);
+    }
+  }
+
+  // Cent9-projected CF slice pages (one per channel base)
   Int_t cfCent9Min = 0;
   Int_t cfCent9Max = 0;
   getCfCent9Range(cfCent9Min, cfCent9Max);
   c1->SetCanvasSize(1800, 900);
-  drawCentSlicePage(c1, fin, cfCent9Min, cfCent9Max, centProjKeepAlive, cfCache);
-  c1->Print(pdfName);
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    const BachelorQaSpec& spec = kBachelorQaSpecs[ib];
+    drawCentSlicePageForBase(c1, fin, std::string(spec.channelBase), spec.rotChannel, cfCent9Min, cfCent9Max,
+                             centProjKeepAlive, cfCache);
+    c1->Print(pdfName);
+  }
+  c1->SetCanvasSize(1200, 800);
 
-  // QA representative slices (default pct_0_10, pct_0_20, pct_0_30): signal/SB-L/SB-R/SB-LR
+  // QA representative slices: pct_0_10/20/30 x all channel bases
   {
     const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
     const Int_t qaCanvasH = 1200;
     c1->SetCanvasSize(1800, qaCanvasH);
     for (size_t is = 0; is < allSlices.size(); ++is) {
       if (!isSliceInQaPdf(allSlices[is].id)) continue;
-      drawSidebandSlicePage(c1, fin, allSlices[is], centProjKeepAlive, cfCache, kTRUE);
-      c1->Print(pdfName);
+      for (Int_t ib = 0; kChannelBases[ib]; ++ib) {
+        drawSidebandSlicePageForBase(c1, fin, allSlices[is], std::string(kChannelBases[ib]), centProjKeepAlive,
+                                     cfCache, kTRUE);
+        c1->Print(pdfName);
+      }
     }
     c1->SetCanvasSize(1200, 800);
   }
 
   PdfHeader::ClosePdf(pdfName);
 
-  // CF PDF: remaining centrality slices (SE/ME k* + raw/sub CF)
-  {
-    TString cfNote = "Multi-slice CF PDF from checkHistAnaFemtoPhi4He.C.\n";
-    Double_t cfAlphaL = 0.0;
-    Double_t cfAlphaR = 0.0;
-    getSidebandWidthAlphas(cfAlphaL, cfAlphaR);
-    cfNote += Form("cfRebinFactor=%d; subCF alphaL=%.4f alphaR=%.4f (FemtoConfig mass-window width ratio); "
-                   "SBLR uses (alphaL*L+alphaR*R)/2; negativeBinPolicy=%s.\n",
-                   getCfRebinFactor(), cfAlphaL, cfAlphaR, getNegativeBinPolicy());
-    cfNote += "Layout per slice: rows SE/ME/CF_raw/sub; cols signal/SB-L/SB-R/SB-LR.\n";
-    if (gConfigLoaded && ConfigManager::GetInstance().GetFemtoConfig().cfPdfExcludeQaSlices) {
-      cfNote += "Slices in cfCentSlicesQaPdfInclude are excluded (no duplicate with QA PDF).\n";
-    }
-    PdfHeader::OpenPdf(pdfCfName);
-    PdfHeader::MakePdfHeaderPage(pdfCfName, "checkHistAnaFemtoPhi4He.C", inputs, cfNote.Data(), true, anaName);
-    const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
-    c1->SetCanvasSize(1800, 1200);
-    for (size_t is = 0; is < allSlices.size(); ++is) {
-      if (!isSliceInCfPdf(allSlices[is].id)) continue;
-      drawSidebandSlicePage(c1, fin, allSlices[is], centProjKeepAlive, cfCache, kTRUE);
-      c1->Print(pdfCfName);
-    }
-    c1->SetCanvasSize(1200, 800);
-    PdfHeader::ClosePdf(pdfCfName);
-  }
+
+
 
   // Console: verify key histograms exist and have entries
   {
-    std::cout << "\n=== checkHistAnaFemtoPhi4He: key histogram entries ===\n";
+    std::cout << "\n=== checkHistAnaFemtoPhi: key histogram entries ===\n";
     const char* keys[] = {"hVz",
                            "hVz_After",
                            "hCentrality",
@@ -1823,30 +2076,31 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
                            "hPhi_MKK_rot",
                            "hPhiRot_MKK",
                            "hPhi_NCand",
+                           "hP_Pt_PreFemtoCut",
+                           "hP_Pt",
+                           "hP_NCand",
+                           "hDeuteron_Pt_PreFemtoCut",
+                           "hDeuteron_NCand",
+                           "hTriton_Pt_PreFemtoCut",
+                           "hTriton_NCand",
+                           "hHe3_Pt_PreFemtoCut",
+                           "hHe3_NCand",
                            "hHe4_Pt_PreFemtoCut",
                            "hHe4_Pt",
-                           "hHe4_Y_PreFemtoCut",
-                           "hHe4_Y_FemtoCut",
-                           "hHe4_PtVsY_PreFemtoCut",
-                           "hHe4_PtVsY_FemtoCut",
                            "hHe4_NCand",
-                           "hHe4_Mass2VsP_PreFemtoCut_wide",
-                           "hHe4_Mass2VsP_wide",
+                           "hNSigmaProtonVsP",
+                           "hNSigmaDeuteronVsP_All",
+                           "hNSigmaTritonVsP_All",
+                           "hNSigmaHe3VsP_All",
                            "hNSigmaHe4VsP_All",
+                           "hNProton_vs_Cent9",
+                           "hNDeuteron_vs_Cent9",
+                           "hNTriton_vs_Cent9",
+                           "hNHe3_vs_Cent9",
+                           "hNHe4_vs_Cent9",
                            "hMass2VsPt_TpcKaon",
                            "hDCAKK_All",
                            "hDCAKK_Pass",
-                           "hKstarSE_phi_he4",
-                           "hKstarME_phi_he4",
-                           "hKstarSE_phi_he4_signal",
-                           "hKstarME_phi_he4_signal",
-                           "hKstarSE_phi_he4_leftSB",
-                           "hKstarME_phi_he4_leftSB",
-                           "hKstarSE_phi_he4_rightSB",
-                           "hKstarME_phi_he4_rightSB",
-                           "hKstarSE_phi_rot_he4",
-                           "hKstarME_phi_rot_he4",
-                           "hNHe4_vs_Cent9",
                            0};
     for (Int_t i = 0; keys[i]; ++i) {
       TObject* o = fin->Get(keys[i]);
@@ -1865,24 +2119,33 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
         std::cout << "  " << keys[i] << ": unexpected class " << o->ClassName() << "\n";
       }
     }
-    const char* cfKeys[] = {"hCF_phi_he4",         "hCF_phi_he4_signal", "hCF_phi_he4_leftSB",
-                            "hCF_phi_he4_rightSB", "hCF_phi_rot_he4",    0};
-    const char* cfChannels[] = {"phi_he4", "phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB",
-                                "phi_rot_he4", 0};
-    for (Int_t i = 0; cfKeys[i]; ++i) {
-      Int_t nPts = getCachedCfPointCount(cfCache, cfChannels[i]);
-      std::cout << "  " << cfKeys[i] << " (computed): nPoints=" << nPts;
-      if (nPts < 1) std::cout << "  [empty — check SE/ME or norm region]";
-      std::cout << "\n";
+    for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+      const BachelorQaSpec& spec = kBachelorQaSpecs[ib];
+      const std::string base(spec.channelBase);
+      const char* tags[] = {base.c_str(), channelSignal(base).c_str(), channelLeftSb(base).c_str(),
+                            channelRightSb(base).c_str(), 0};
+      for (Int_t it = 0; tags[it]; ++it) {
+        Int_t nPts = getCachedCfPointCount(cfCache, tags[it]);
+        std::cout << "  hCF_" << tags[it] << " (computed): nPoints=" << nPts;
+        if (nPts < 1) std::cout << "  [empty — check SE/ME or norm region]";
+        std::cout << "\n";
+      }
+      if (spec.rotChannel) {
+        Int_t nRot = getCachedCfPointCount(cfCache, spec.rotChannel);
+        std::cout << "  hCF_" << spec.rotChannel << " (computed): nPoints=" << nRot << "\n";
+      }
     }
-    const char* cfCentChannels[] = {"phi_he4_signal", "phi_he4_leftSB", "phi_he4_rightSB", "phi_rot_he4",
-                                     0};
     std::cout << Form("  CF cent slice (cent9 %d-%d, projected):\n", cfCent9Min, cfCent9Max);
-    for (Int_t i = 0; cfCentChannels[i]; ++i) {
-      Int_t nPts = getCachedCfPointCount(cfCache, cfCentCacheKey(cfCentChannels[i]).c_str());
-      std::cout << "    " << cfCentChannels[i] << ": nPoints=" << nPts;
-      if (nPts < 1) std::cout << "  [empty — check hKstar*VsCent in ROOT]";
-      std::cout << "\n";
+    for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+      const BachelorQaSpec& spec = kBachelorQaSpecs[ib];
+      const std::string base(spec.channelBase);
+      const char* centCh[] = {channelSignal(base).c_str(), channelLeftSb(base).c_str(),
+                              channelRightSb(base).c_str(), spec.rotChannel, 0};
+      std::cout << "    " << base << ":\n";
+      for (Int_t ic = 0; centCh[ic]; ++ic) {
+        Int_t nPts = getCachedCfPointCount(cfCache, cfCentCacheKey(centCh[ic]).c_str());
+        std::cout << "      " << centCh[ic] << ": nPoints=" << nPts << "\n";
+      }
     }
     printCfSliceConsoleSummary(cfCache);
     std::cout << "=============================================================\n\n";
@@ -1899,5 +2162,4 @@ void checkHistAnaFemtoPhi4He(const Char_t* inputRootFile,
   fin->Close();
 
   std::cout << "Done. QA PDF: " << pdfName.Data() << std::endl;
-  std::cout << "Done. CF PDF: " << pdfCfName.Data() << std::endl;
 }

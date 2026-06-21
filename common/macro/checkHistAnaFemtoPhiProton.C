@@ -165,6 +165,7 @@ static TH1* projectKstarVsCent9(TH2* h2, Int_t cent9Min, Int_t cent9Max, const c
   if (h1) {
     h1->SetDirectory(0);
     h1->SetTitle(Form("%s (cent9 %d-%d);k^{*} [GeV/c];Counts", h2->GetTitle(), cent9Min, cent9Max));
+    h1->GetXaxis()->SetRangeUser(0.0, 0.65);
   }
   return h1;
 }
@@ -357,15 +358,32 @@ static void populateCfCentCache(TFile* fin, std::map<std::string, TGraphErrors*>
   }
 }
 
+static const Double_t kCfKstarXMin = 0.0;
+static const Double_t kCfKstarXMax = 0.65;
+
+static void drawKstarSeMeHist(TH1* h) {
+  if (!h) return;
+  h->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+  h->Draw();
+}
+
 static void drawCentProjectedSeMe(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel, Bool_t isSE,
                                   Int_t cent9Min, Int_t cent9Max, std::vector<TH1*>& centProjKeepAlive) {
   if (!canvas) return;
   canvas->cd(pad);
   TH1* h = getProjectedSeMeFromCent(fin, channel, isSE, cent9Min, cent9Max);
   if (h) {
-    h->Draw();
+    drawKstarSeMeHist(h);
     centProjKeepAlive.push_back(h);
   }
+}
+
+static void drawCfGraph(TGraphErrors* gCF) {
+  if (!gCF) return;
+  gCF->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+  gCF->Draw("AP");
+  TH1* hFrame = gCF->GetHistogram();
+  if (hFrame) hFrame->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
 }
 
 static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& channel,
@@ -373,7 +391,7 @@ static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& chann
   if (!canvas) return;
   canvas->cd(pad);
   std::map<std::string, TGraphErrors*>::const_iterator it = cfCache.find(cfCentCacheKey(channel));
-  if (it != cfCache.end() && it->second) it->second->Draw("AP");
+  if (it != cfCache.end() && it->second) drawCfGraph(it->second);
 }
 
 // Divide(4, 3): columns = channels, rows = SE / ME / CF.
@@ -401,7 +419,7 @@ static void drawComputedCf(TCanvas* canvas, Int_t pad, TFile* fin, const std::st
   if (!canvas) return;
   canvas->cd(pad);
   TGraphErrors* gCF = getOrComputeCf(fin, channel, normQMin, normQMax, cfCache);
-  if (gCF) gCF->Draw("AP");
+  if (gCF) drawCfGraph(gCF);
 }
 
 static Int_t getCachedCfPointCount(const std::map<std::string, TGraphErrors*>& cfCache, const char* channel) {
@@ -685,7 +703,7 @@ static void drawSliceCfGraph(TCanvas* canvas, Int_t pad, const std::string& slic
   if (!canvas) return;
   canvas->cd(pad);
   std::map<std::string, TGraphErrors*>::const_iterator it = cfCache.find(cfSliceCacheKey(sliceId, tag));
-  if (it != cfCache.end() && it->second) it->second->Draw("AP");
+  if (it != cfCache.end() && it->second) drawCfGraph(it->second);
 }
 
 static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig::CfCentSlice& slice,
@@ -709,13 +727,13 @@ static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig
       canvas->cd(sidebandSliceLayoutPad(ic, 0));
       if (hSE) {
         hSE->SetTitle(Form("SE SBLR %s", slice.id.c_str()));
-        hSE->Draw();
+        drawKstarSeMeHist(hSE);
         centProjKeepAlive.push_back(hSE);
       }
       canvas->cd(sidebandSliceLayoutPad(ic, 1));
       if (hME) {
         hME->SetTitle(Form("ME SBLR %s", slice.id.c_str()));
-        hME->Draw();
+        drawKstarSeMeHist(hME);
         centProjKeepAlive.push_back(hME);
       }
       getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max,
@@ -726,13 +744,13 @@ static void drawSidebandSlicePage(TCanvas* canvas, TFile* fin, const FemtoConfig
       canvas->cd(sidebandSliceLayoutPad(ic, 0));
       TH1* hSE = getSliceProjectedSeMe(fin, tag, kTRUE, slice.cent9Min, slice.cent9Max);
       if (hSE) {
-        hSE->Draw();
+        drawKstarSeMeHist(hSE);
         centProjKeepAlive.push_back(hSE);
       }
       canvas->cd(sidebandSliceLayoutPad(ic, 1));
       TH1* hME = getSliceProjectedSeMe(fin, tag, kFALSE, slice.cent9Min, slice.cent9Max);
       if (hME) {
-        hME->Draw();
+        drawKstarSeMeHist(hME);
         centProjKeepAlive.push_back(hME);
       }
       getOrComputeSliceChannelCf(fin, slice.id, slice.cent9Min, slice.cent9Max, tag, channelNormQMin(tag),
@@ -1543,8 +1561,8 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   // Page 15: Femto k* (legacy phi-proton channel)
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton"); if (h1) drawKstarSeMeHist(h1);
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton"); if (h1) drawKstarSeMeHist(h1);
   c1->cd(3);
   drawComputedCf(c1, 3, fin, "phi_proton", channelNormQMin("phi_proton"), channelNormQMax("phi_proton"), cfCache);
   c1->cd(4); h1 = (TH1*)fin->Get("hP_NCand"); if (h1) h1->Draw();
@@ -1564,8 +1582,8 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   // Page 17: k* SE/ME/CF — signal channel
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_signal"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_signal"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_signal"); if (h1) drawKstarSeMeHist(h1);
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_signal"); if (h1) drawKstarSeMeHist(h1);
   c1->cd(3);
   drawComputedCf(c1, 3, fin, "phi_proton_signal", channelNormQMin("phi_proton_signal"),
                  channelNormQMax("phi_proton_signal"), cfCache);
@@ -1575,13 +1593,13 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   // Page 18: k* SE/ME/CF — sideband channels
   c1->Clear();
   c1->Divide(2, 3);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_leftSB"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_leftSB"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_leftSB"); if (h1) drawKstarSeMeHist(h1);
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_proton_leftSB"); if (h1) drawKstarSeMeHist(h1);
   c1->cd(3);
   drawComputedCf(c1, 3, fin, "phi_proton_leftSB", channelNormQMin("phi_proton_leftSB"),
                  channelNormQMax("phi_proton_leftSB"), cfCache);
-  c1->cd(4); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_rightSB"); if (h1) h1->Draw();
-  c1->cd(5); h1 = (TH1*)fin->Get("hKstarME_phi_proton_rightSB"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hKstarSE_phi_proton_rightSB"); if (h1) drawKstarSeMeHist(h1);
+  c1->cd(5); h1 = (TH1*)fin->Get("hKstarME_phi_proton_rightSB"); if (h1) drawKstarSeMeHist(h1);
   c1->cd(6);
   drawComputedCf(c1, 6, fin, "phi_proton_rightSB", channelNormQMin("phi_proton_rightSB"),
                  channelNormQMax("phi_proton_rightSB"), cfCache);
@@ -1590,8 +1608,8 @@ void checkHistAnaFemtoPhiProton(const Char_t* inputRootFile,
   // Page 19: k* SE/ME/CF — rotation background channel
   c1->Clear();
   c1->Divide(2, 2);
-  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_proton"); if (h1) h1->Draw();
-  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_rot_proton"); if (h1) h1->Draw();
+  c1->cd(1); h1 = (TH1*)fin->Get("hKstarSE_phi_rot_proton"); if (h1) drawKstarSeMeHist(h1);
+  c1->cd(2); h1 = (TH1*)fin->Get("hKstarME_phi_rot_proton"); if (h1) drawKstarSeMeHist(h1);
   c1->cd(3);
   drawComputedCf(c1, 3, fin, "phi_rot_proton", channelNormQMin("phi_rot_proton"),
                  channelNormQMax("phi_rot_proton"), cfCache);

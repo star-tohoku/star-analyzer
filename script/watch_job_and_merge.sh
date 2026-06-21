@@ -16,6 +16,7 @@ POLL_SEC="${WATCH_MERGE_POLL_SEC:-300}"
 TIMEOUT_SEC="${WATCH_MERGE_TIMEOUT_SEC:-$((72 * 3600))}"
 ALLOW_PARTIAL=0
 FORCE_MERGE=0
+EXCLUDE_BAD_ROOTS=""
 
 RUNMETA=""
 ANA_NAME=""
@@ -152,6 +153,10 @@ while [[ $# -gt 0 ]]; do
       FORCE_MERGE=1
       shift
       ;;
+    --exclude-bad-roots)
+      EXCLUDE_BAD_ROOTS="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -221,6 +226,13 @@ exec >> "$WATCH_LOG" 2>&1
 log_msg "watch-merge started anaName=$ANA_NAME jobid=$JOBID expectedSubjobs=$EXPECTED"
 log_msg "pollSec=$POLL_SEC timeoutSec=$TIMEOUT_SEC allowPartial=$ALLOW_PARTIAL forceMerge=$FORCE_MERGE"
 log_msg "rootfileDir=$ROOTFILE_DIR mergeSample=$MERGE_SAMPLE mergeOutput=$MERGE_OUTPUT"
+if [[ -n "$EXCLUDE_BAD_ROOTS" ]]; then
+  if [[ ! -f "$EXCLUDE_BAD_ROOTS" ]]; then
+    die "exclude list not found: $EXCLUDE_BAD_ROOTS"
+  fi
+  excluded_count="$(awk 'NF{n++} END{print n+0}' "$EXCLUDE_BAD_ROOTS")"
+  log_msg "exclude-bad-roots list=$EXCLUDE_BAD_ROOTS entries=$excluded_count"
+fi
 
 if [[ -f "$MERGE_OUTPUT" && "$FORCE_MERGE" -eq 0 ]]; then
   log_msg "merge output already exists; skipping merge: $MERGE_OUTPUT"
@@ -299,7 +311,11 @@ set +e
   cd "$PROJECT_ROOT"
   # shellcheck disable=SC1091
   source ./script/setup.sh "$MAINCONF"
-  ./script/merge_root_files.csh "$MERGE_SAMPLE"
+  if [[ -n "$EXCLUDE_BAD_ROOTS" ]]; then
+    ./script/merge_root_files.csh "--exclude-list=$EXCLUDE_BAD_ROOTS" "$MERGE_SAMPLE"
+  else
+    ./script/merge_root_files.csh "$MERGE_SAMPLE"
+  fi
 )
 merge_rc=$?
 set -e

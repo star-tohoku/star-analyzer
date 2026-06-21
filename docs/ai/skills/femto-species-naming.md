@@ -19,12 +19,13 @@ Headers `include/FemtoCandidate.h` and `include/cuts/FemtoConfig.h` point to thi
 2. Update `config/maker/maker_<anaName>.yaml` (femto section) with new species/channel keys.
 3. Extend builder dispatch in `StFemtoMaker` for new `particleKey` values (generic builders, not analysis-specific classes).
 4. Add histogram names using channel suffix: `hKstarSE_<channel>`, `hKstarME_<channel>`, optional empty `hCF_<channel>` shell in hist YAML.
-5. CF for QA: computed in `checkHistAnaFemtoPhiProton.C` from merged SE/ME (not in Maker output).
+5. CF for QA: computed in checkHist from merged SE/ME (not in Maker output).
+   - Per-analysis macros: `checkHistAnaFemtoPhiProton.C`, `checkHistAnaFemtoPhi4He.C`, `checkHistAnaFemtoPhiDeuteron.C` (QA + separate CF PDF).
    - `cfRebinFactor`, `cfCent9Min`/`cfCent9Max` (legacy Page 20).
    - `cfCentSlices` (default 15 slices: cent9\_0…8 + pct\_0\_10…60), `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`.
-   - SB-LR: project `phi_proton_leftSB` + `phi_proton_rightSB`, then `combineSidebandLR` (no maker channel).
+   - SB-LR: project `phi_<bachelor>_leftSB` + `phi_<bachelor>_rightSB`, then `combineSidebandLR` (no maker channel).
    - Sideband subtract (count-level): `sidebandSubtractAlpha`, `sidebandAlphaMode`, `negativeBinPolicy`; sub CF `CF_sig_sub_SBL|SBR|SBLR`.
-   - Outputs two PDFs per run: QA + `*_CF_{jobid}.pdf`; per-slice pages are 4×4 (SE/ME/raw CF/sub CF × signal/SB-L/SB-R/SBLR).
+   - Legacy per-species analyses output two PDFs: QA + `*_CF_{jobid}.pdf`.
 6. ME statistics: `mixingMode` (`randomSample`|`bufferAll`), `maxMixedPairsPerEvent` (per-event cap, randomSample only), `mixBothDirections`, `bufferSize` in mixing YAML (`MixingConfig`). Re-batch after mixing changes.
 7. Update `config/hist/hist_anaFemto*.yaml` and checkHist macro pages if QA changes.
 8. Document new keys in `StMaker/StFemtoMaker/README.md`.

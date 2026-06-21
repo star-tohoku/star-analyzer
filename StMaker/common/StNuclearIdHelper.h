@@ -42,6 +42,9 @@ class StNuclearIdHelper {
   static Double_t GetNSigma(NuclearSpecies sp, Double_t p, Double_t dedx);
   static Bool_t PassTpc(NuclearSpecies sp, const NuclearTrackState& state);
   static Bool_t PassTof(NuclearSpecies sp, const NuclearTrackState& state);
+  static Bool_t IsDeuteron(const NuclearTrackState& state);
+  static Bool_t IsTriton(const NuclearTrackState& state);
+  static Bool_t IsHe3(const NuclearTrackState& state);
   static Bool_t IsHe4(const NuclearTrackState& state);
   static TLorentzVector NuclearP4(const TVector3& pTrack, NuclearSpecies sp);
   static void FillFromPico(NuclearTrackState& state, StPicoTrack* trk, StPicoDst* picoDst);

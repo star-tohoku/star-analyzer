@@ -15,15 +15,15 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 ## Particle keys (`particleKey` field)
 
 - Selects builder logic inside generic `TrackPidBuilder` / `ResonanceBuilder`
-- Phase 1 supported values: `proton` (track), `he4` (track, via `StNuclearIdHelper`), `phi` (resonance from KK)
+- Phase 1 supported values: `proton` (track), `he4` (track, via `StNuclearIdHelper`), `deuteron` (track, via `StNuclearIdHelper`), `phi` (resonance from KK)
 - Background QA: `phi_rotation` (resonance builder dispatch → `BuildRotatedPhiCandidates`, stored as species `phi_rot`)
 - Use PDG-inspired names; charge sign goes in species key when needed (`anti_proton`)
 
 ## Channel names
 
 - Format: `{partA}_{partB}` using species keys
-- Example: `phi_proton` with `partA: phi`, `partB: proton`; or `phi_he4` with `partB: he4`
-- Background channels (same `partB`, different `partA` / mass window): `phi_proton_signal`, `phi_proton_leftSB`, `phi_proton_rightSB`, `phi_rot_proton` (or `phi_he4_*` / `phi_rot_he4` for ⁴He)
+- Example: `phi_proton` with `partA: phi`, `partB: proton`; or `phi_he4` with `partB: he4`; or `phi_deuteron` with `partB: deuteron`
+- Background channels (same `partB`, different `partA` / mass window): `phi_proton_signal`, `phi_proton_leftSB`, `phi_proton_rightSB`, `phi_rot_proton` (or `phi_he4_*` / `phi_rot_he4` for ⁴He; `phi_deuteron_*` / `phi_rot_deuteron` for d)
 - Histogram suffixes use channel name: `hKstarSE_phi_proton`, `hCF_phi_proton`, `hKstarSEVsCent_phi_proton_signal`, etc.
 - Mass window per channel: `signalMin` / `signalMax` on resonance `partA` invMass at pairing time (sidebands need no extra maker logic)
 
@@ -124,4 +124,21 @@ When `rotationEnabled: true`, species `phi_rot` with `particleKey: phi_rotation`
 - **Kinematics** (maker `he4*` keys): primary window `he4MinPMom` / `he4MaxPMom`; pT limits `he4MinPtPre`–`he4MaxPtPre` (pre QA) and `he4MinPtPair`–`he4MaxPtPair` (femto cut).
 - **QA histograms:** `hHe4_Mass2VsP` (m² 0–16) plus `hHe4_Mass2VsP_*_wide` (m² 0–20) for TOF diagnostics when fills are enabled.
 
+## Deuteron bachelor (`anaFemtoPhiDeuteron`)
+
+- **Nuclear ID** (`nuclearid:` YAML → `StNuclearIdHelper::IsDeuteron`): TPC nσ + `requireBestSpecies` (best among d/t/³He/⁴He). Set `m2_selection: false` to skip TOF m² at ID time (initial default matches `anaFemtoPhi4He`).
+- **Femto TOF rule** (`deuteronTofMomentumThreshold` in maker YAML): tracks with `|p| >= threshold` require TOF m² in `[deuteronMinMass2, deuteronMaxMass2]`. Set threshold high (e.g. `99`) to disable.
+- **Kinematics** (maker `deuteron*` keys): primary window `deuteronMinPMom` / `deuteronMaxPMom`; pT limits `deuteronMinPtPre`–`deuteronMaxPtPre` (pre QA) and `deuteronMinPtPair`–`deuteronMaxPtPair` (femto cut).
+- **QA histograms:** `hDeuteron_Mass2VsP` (m² 0–16) plus `hDeuteron_Mass2VsP_*_wide` (m² 0–20) for TOF diagnostics when fills are enabled.
+
 See also `docs/femto_track_sharing_concerns.md` for overlap risks when extending species.
+
+## Unified multi-bachelor (`anaFemtoPhi`)
+
+- **anaName:** `auau3p85fxt_anaFemtoPhi` — one picoDst pass for φ–(p, d, t, ³He, ⁴He).
+- **Species keys:** `proton`, `deuteron`, `triton`, `he3`, `he4`, `phi`, `phi_rot` (rotation for proton only).
+- **Channels (21):** `phi_<bachelor>`, `_signal`, `_leftSB`, `_rightSB` per bachelor; plus `phi_rot_proton`.
+- **Nuclear ID:** `StNuclearIdHelper::IsTriton()` / `IsHe3()` with `requireBestSpecies: true` (bestType 1=triton, 2=he3).
+- **QA hist prefixes:** `hP_`, `hDeuteron_`, `hTriton_`, `hHe3_`, `hHe4_`; k* keys `hKstarSE/ME_<channel>`.
+- **checkHist:** `checkHistAnaFemtoPhi.C` — bachelor-loop QA; single PDF (no CF-only PDF).
+
