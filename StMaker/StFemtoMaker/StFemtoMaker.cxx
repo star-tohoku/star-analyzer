@@ -1513,6 +1513,12 @@ void StFemtoMaker::FillSameEventPairs(const FemtoConfig::ChannelDef& ch) {
         if (m_histManager->Get(h2dName.c_str())) {
           m_histManager->Fill(h2dName.c_str(), kstar, centX);
         }
+        if (a.source == kFemtoCandResonance) {
+          std::string hMkkK = HistName("hPhiMKK_vs_KstarSE", ch.name);
+          if (m_histManager->Get(hMkkK.c_str())) {
+            m_histManager->Fill(hMkkK.c_str(), a.reso.invMass, kstar, centX);
+          }
+        }
       }
     }
   }
@@ -1571,6 +1577,12 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Float_
       m_histManager->Fill(hName.c_str(), kstar);
       if (m_histManager->Get(h2dName.c_str())) {
         m_histManager->Fill(h2dName.c_str(), kstar, centX);
+      }
+      if (a.source == kFemtoCandResonance) {
+        std::string hMkkK = HistName("hPhiMKK_vs_KstarME", ch.name);
+        if (m_histManager->Get(hMkkK.c_str())) {
+          m_histManager->Fill(hMkkK.c_str(), a.reso.invMass, kstar, centX);
+        }
       }
     }
   };

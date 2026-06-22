@@ -159,6 +159,17 @@ class FemtoConfig {
   std::string sidebandAlphaMode;  // fixed | massYieldRatio (future)
   std::string negativeBinPolicy;  // zero | skip
 
+  // k*-binned purity / CF_genuine (checkHist Topic 3).
+  Bool_t purityFitUseConstantBkg;
+  Double_t purityFitGaussSigmaMin;
+  Double_t purityFitGaussSigmaMax;
+  Double_t purityMinKstar;
+  Double_t purityMaxKstar;
+  Int_t purityMinEntriesPerBin;
+  Double_t purityClampMin;
+  Double_t purityClampMax;
+  std::string cfBkgMode;  // me_mass
+
   Bool_t Validate() const;
   const CfCentSlice* FindCfCentSlice(const std::string& id) const;
   Bool_t IsCfCentSliceInQaPdf(const std::string& id) const;

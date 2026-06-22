@@ -175,6 +175,16 @@ void FemtoConfig::SetDefaults() {
   sidebandAlphaMode = "fixed";
   negativeBinPolicy = "zero";
 
+  purityFitUseConstantBkg = kTRUE;
+  purityFitGaussSigmaMin = 0.002;
+  purityFitGaussSigmaMax = 0.020;
+  purityMinKstar = 0.0;
+  purityMaxKstar = 0.65;
+  purityMinEntriesPerBin = 20;
+  purityClampMin = 0.05;
+  purityClampMax = 1.0;
+  cfBkgMode = "me_mass";
+
   SpeciesDef proton;
   proton.key = "proton";
   proton.builderType = "track";
@@ -404,6 +414,31 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   }
   if (values.find("sidebandAlphaMode") != values.end()) sidebandAlphaMode = values.at("sidebandAlphaMode");
   if (values.find("negativeBinPolicy") != values.end()) negativeBinPolicy = values.at("negativeBinPolicy");
+  if (values.find("purityFitUseConstantBkg") != values.end()) {
+    purityFitUseConstantBkg = YamlParser::ToBool(values.at("purityFitUseConstantBkg"), purityFitUseConstantBkg);
+  }
+  if (values.find("purityFitGaussSigmaMin") != values.end()) {
+    purityFitGaussSigmaMin = YamlParser::ToDouble(values.at("purityFitGaussSigmaMin"), purityFitGaussSigmaMin);
+  }
+  if (values.find("purityFitGaussSigmaMax") != values.end()) {
+    purityFitGaussSigmaMax = YamlParser::ToDouble(values.at("purityFitGaussSigmaMax"), purityFitGaussSigmaMax);
+  }
+  if (values.find("purityMinKstar") != values.end()) {
+    purityMinKstar = YamlParser::ToDouble(values.at("purityMinKstar"), purityMinKstar);
+  }
+  if (values.find("purityMaxKstar") != values.end()) {
+    purityMaxKstar = YamlParser::ToDouble(values.at("purityMaxKstar"), purityMaxKstar);
+  }
+  if (values.find("purityMinEntriesPerBin") != values.end()) {
+    purityMinEntriesPerBin = YamlParser::ToInt(values.at("purityMinEntriesPerBin"), purityMinEntriesPerBin);
+  }
+  if (values.find("purityClampMin") != values.end()) {
+    purityClampMin = YamlParser::ToDouble(values.at("purityClampMin"), purityClampMin);
+  }
+  if (values.find("purityClampMax") != values.end()) {
+    purityClampMax = YamlParser::ToDouble(values.at("purityClampMax"), purityClampMax);
+  }
+  if (values.find("cfBkgMode") != values.end()) cfBkgMode = values.at("cfBkgMode");
   if (values.find("cfCentSlicesQaPdfInclude") != values.end()) {
     cfCentSlicesQaPdfInclude = SplitComma(values.at("cfCentSlicesQaPdfInclude"));
   }
@@ -580,6 +615,22 @@ Bool_t FemtoConfig::Validate() const {
   }
   if (sidebandSubtractAlpha < 0.0) {
     std::cerr << "ERROR: FemtoConfig sidebandSubtractAlpha must be >= 0" << std::endl;
+    ok = kFALSE;
+  }
+  if (purityFitGaussSigmaMin <= 0.0 || purityFitGaussSigmaMax <= purityFitGaussSigmaMin) {
+    std::cerr << "ERROR: FemtoConfig purityFitGaussSigmaMin/Max invalid" << std::endl;
+    ok = kFALSE;
+  }
+  if (purityMinKstar < 0.0 || purityMaxKstar <= purityMinKstar) {
+    std::cerr << "ERROR: FemtoConfig purityMinKstar/Max invalid" << std::endl;
+    ok = kFALSE;
+  }
+  if (purityMinEntriesPerBin < 1) {
+    std::cerr << "ERROR: FemtoConfig purityMinEntriesPerBin must be >= 1" << std::endl;
+    ok = kFALSE;
+  }
+  if (purityClampMin <= 0.0 || purityClampMax > 1.0 || purityClampMin >= purityClampMax) {
+    std::cerr << "ERROR: FemtoConfig purityClampMin/Max invalid (expect 0 < min < max <= 1)" << std::endl;
     ok = kFALSE;
   }
   return ok;

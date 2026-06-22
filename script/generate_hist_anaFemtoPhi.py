@@ -139,6 +139,27 @@ def extract_bachelor_blocks(blocks: dict[str, str], prefix: str) -> dict[str, st
     return {k: v for k, v in blocks.items() if k.startswith(prefix)}
 
 
+SIGNAL_FEMTO_CHANNELS = [
+    "phi_proton_signal",
+    "phi_deuteron_signal",
+    "phi_triton_signal",
+    "phi_he3_signal",
+    "phi_he4_signal",
+]
+
+
+def mkk_vs_kstar_block(channel: str, is_se: bool) -> str:
+    kind = "SE" if is_se else "ME"
+    name = f"hPhiMKK_vs_Kstar{kind}_{channel}"
+    return f"""  {name}:
+    xAxis: *MKK
+    yAxis: *Kstar
+    zAxis: *Cent9
+    type: TH3F
+    title: "#phi M_{{KK}} vs k^{{*}} {kind} vs cent9 ({channel});M_{{KK}} [GeV/c^{{2}}];k^{{*}} [GeV/c];cent9"
+"""
+
+
 def main() -> None:
     he4_text = (HIST_DIR / "hist_anaFemtoPhi4He.yaml").read_text()
     proton_text = (HIST_DIR / "hist_anaFemtoPhiProton.yaml").read_text()
@@ -296,6 +317,14 @@ def main() -> None:
                     continue
             channel_blocks[new_name] = channel_block_from_template(he4_blocks[hk], ch)
 
+    mkk_kstar_blocks: dict[str, str] = {}
+    for ch in SIGNAL_FEMTO_CHANNELS:
+        for is_se in (True, False):
+            block = mkk_vs_kstar_block(ch, is_se)
+            m = re.search(r"^  (h[A-Za-z0-9_]+):", block, re.MULTILINE)
+            if m:
+                mkk_kstar_blocks[m.group(1)] = block
+
     out_header = "# StFemtoMaker histogram definitions (auau3p85fxt_anaFemtoPhi unified)\n"
     out_header += "# 1D: axis: *Preset or nBins/min/max; title required\n"
     out_header += "# 2D: xAxis: *Preset, yAxis: *Preset; title required\n\n"
@@ -316,12 +345,18 @@ def main() -> None:
             nm = kind + ch
             if nm in channel_blocks:
                 ordered_names.append(nm)
+    for ch in SIGNAL_FEMTO_CHANNELS:
+        for kind in ("hPhiMKK_vs_KstarSE_", "hPhiMKK_vs_KstarME_"):
+            nm = kind + ch
+            if nm in mkk_kstar_blocks:
+                ordered_names.append(nm)
 
     merged: dict[str, str] = {}
     merged.update(common)
     merged.update(bachelor)
     merged.update(phi_femto)
     merged.update(channel_blocks)
+    merged.update(mkk_kstar_blocks)
 
     lines = [out_header.rstrip(), "", "histograms:"]
     for name in ordered_names:

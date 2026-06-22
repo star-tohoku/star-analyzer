@@ -24,7 +24,7 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 - Format: `{partA}_{partB}` using species keys
 - Example: `phi_proton` with `partA: phi`, `partB: proton`; or `phi_he4` with `partB: he4`; or `phi_deuteron` with `partB: deuteron`
 - Background channels (same `partB`, different `partA` / mass window): `phi_proton_signal`, `phi_proton_leftSB`, `phi_proton_rightSB`, `phi_rot_proton` (or `phi_he4_*` / `phi_rot_he4` for ⁴He; `phi_deuteron_*` / `phi_rot_deuteron` for d)
-- Histogram suffixes use channel name: `hKstarSE_phi_proton`, `hCF_phi_proton`, `hKstarSEVsCent_phi_proton_signal`, etc.
+- Histogram suffixes use channel name: `hKstarSE_phi_proton`, `hCF_phi_proton`, `hKstarSEVsCent_phi_proton_signal`, `hPhiMKK_vs_KstarSE_phi_proton_signal` (TH3: M_KK × k* × cent9), etc.
 - Mass window per channel: `signalMin` / `signalMax` on resonance `partA` invMass at pairing time (sidebands need no extra maker logic)
 
 ## Correlation function (CF)
@@ -44,6 +44,17 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
   - **Per-slice layout (representative + CF PDF):** 4 columns (signal / SB-L / SB-R / SB-LR) × 4 rows (SE k*, ME k*, raw `CF_sig_raw`, sub `CF_sig_sub_SBL|SBR|SBLR` on row 4).
 - Run QA on `*_merge.root`: `./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf>`.
 - Implementation record: `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md` (φ–p cent/SB/CF extension).
+
+### Topic 3: k*-binned purity and CF_genuine (`anaFemtoPhi` unified)
+
+- Maker fills **TH3** `hPhiMKK_vs_KstarSE/ME_<channel>_signal` (x = M_KK, y = k*, z = cent9) for signal channels only.
+- checkHist (`checkHistAnaFemtoPhi.C`) post-processes per `cfCentSlices` slice:
+  - scaled SE−ME subtraction on M_KK (per k* bin), Gaussian + constant background fit → `lambda_sig(k*)`, `lambda_bkg = 1 - lambda_sig`.
+  - `C_bkg` from ME mass shape: scale `hPhiMKK_vs_KstarME` in k* norm band, project signal mass window → combinatorial CF (`cfBkgMode: me_mass`).
+  - `C_genuine = 1 + [(C_meas-1) - lambda_bkg(C_bkg-1)] / lambda_sig` with `C_meas` = raw signal-channel CF.
+- YAML keys: `purityFitUseConstantBkg`, `purityFitGaussSigmaMin/Max`, `purityMinKstar/Max`, `purityMinEntriesPerBin`, `purityClampMin/Max`, `cfBkgMode`.
+- QA PDF pages: `lambda_sig(k*)` and `C_meas` vs `C_genuine` for `cfCentSlicesQaPdfInclude` slices × all bachelor bases.
+- Requires batch re-run after hist/Maker deploy so TH3 keys exist in merge ROOT.
 
 ## Event mixing (ME statistics)
 

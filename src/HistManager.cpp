@@ -3,6 +3,8 @@
 #include "TH1F.h"
 #include "TH1I.h"
 #include "TH2F.h"
+#include "TH3F.h"
+#include "TH3.h"
 #include "yaml-cpp/yaml.h"
 #include <iostream>
 #include <map>
@@ -111,9 +113,10 @@ Bool_t HistManager::LoadFromFile(const Char_t* yamlPath) {
         typeStr = trim(histNode["type"].as<std::string>());
       }
 
-      AxisSpec xSpec, ySpec;
+      AxisSpec xSpec, ySpec, zSpec;
       Bool_t hasX = kFALSE;
       Bool_t hasY = kFALSE;
+      Bool_t hasZ = kFALSE;
 
       if (histNode["axis"]) {
         hasX = parseAxisSpec(histNode["axis"], xSpec);
@@ -122,6 +125,9 @@ Bool_t HistManager::LoadFromFile(const Char_t* yamlPath) {
       }
       if (histNode["yAxis"]) {
         hasY = parseAxisSpec(histNode["yAxis"], ySpec);
+      }
+      if (histNode["zAxis"]) {
+        hasZ = parseAxisSpec(histNode["zAxis"], zSpec);
       }
       if (!hasX && histNode["nBins"] && histNode["min"] && histNode["max"]) {
         try {
@@ -140,7 +146,13 @@ Bool_t HistManager::LoadFromFile(const Char_t* yamlPath) {
         continue;
       }
 
-      if (hasY) {
+      if (hasY && hasZ) {
+        TH3F* h = new TH3F(name.c_str(), title.c_str(),
+                           xSpec.nBins, xSpec.min, xSpec.max,
+                           ySpec.nBins, ySpec.min, ySpec.max,
+                           zSpec.nBins, zSpec.min, zSpec.max);
+        m_histograms[name] = h;
+      } else if (hasY) {
         TH2F* h = new TH2F(name.c_str(), title.c_str(),
                            xSpec.nBins, xSpec.min, xSpec.max,
                            ySpec.nBins, ySpec.min, ySpec.max);
@@ -205,6 +217,23 @@ void HistManager::Fill(const char* name, Double_t x, Double_t y) {
     return;
   }
   h->Fill(x, y);
+}
+
+void HistManager::Fill(const char* name, Double_t x, Double_t y, Double_t z) {
+  if (!name) return;
+  TH1* h = Get(name);
+  if (!h) {
+    if (m_missingKeyWarned.find(name) == m_missingKeyWarned.end()) {
+      std::cerr << "[HistManager] Fill failed: histogram '" << name << "' not found (not defined in YAML)." << std::endl;
+      m_missingKeyWarned.insert(name);
+    }
+    return;
+  }
+  if (h->InheritsFrom("TH3")) {
+    ((TH3*)h)->Fill(x, y, z);
+  } else {
+    std::cerr << "[HistManager] Fill(x,y,z) failed: histogram '" << name << "' is not TH3." << std::endl;
+  }
 }
 
 void HistManager::Write() {

@@ -9,7 +9,7 @@
 class TH1;
 
 /**
- * Loads histogram definitions from a flat key-value YAML and creates TH1/TH2.
+ * Loads histogram definitions from a flat key-value YAML and creates TH1/TH2/TH3.
  * Fill by name; missing keys are logged once and Fill is skipped.
  */
 class HistManager {
@@ -31,6 +31,9 @@ public:
 
   /** Fill 2D histogram. No-op and log once if name not found. */
   void Fill(const char* name, Double_t x, Double_t y);
+
+  /** Fill 3D histogram. No-op and log once if name not found. */
+  void Fill(const char* name, Double_t x, Double_t y, Double_t z);
 
   /** Write all owned histograms to current TDirectory. */
   void Write();
