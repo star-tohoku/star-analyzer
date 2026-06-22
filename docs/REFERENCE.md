@@ -225,11 +225,13 @@ On some login or dev nodes (for example AL9), host `root4star` may fail before t
 - **Phi:** `./script/singularity_run_anaPhi.sh MAINCONF [inputFile] [outputFile] [jobid] [nEvents]` — same arguments as `run_anaPhi.sh` (defaults from analysis_info when input/output are omitted).
 - **Phi-p femto:** `./script/singularity_run_anaFemtoPhiProton.sh` — same arguments as `run_anaFemtoPhiProton.sh`; uses `StFemtoMaker` (`libStFemtoMaker.so`). Mainconf key **`maker:`** → `config/maker/maker_<anaName>.yaml` (φ builder + femto species/channels in one file).
 - **Unified phi femto (p, d, t, ³He, ⁴He):** `./script/singularity_run_anaFemtoPhi.sh` — one pass, 21 channels; mainconf `config/mainconf/main_auau3p85fxt_anaFemtoPhi.yaml`.
+- **Unified K⁻ femto (p, d, t, ³He, ⁴He):** `./script/singularity_run_anaFemtoKaon.sh` — one pass, 5 channels (`kaon_minus_*`); mainconf `config/mainconf/main_auau3p85fxt_anaFemtoKaon.yaml`. CF from merged SE/ME via `singularity_checkHistAnaFemtoKaon.sh` (no sidebands).
 - **Phi-4He femto:** `./script/singularity_run_anaFemtoPhi4He.sh` — same pattern as phi-p; species `he4`, channels `phi_he4_*`.
 - **Phi-deuteron femto:** `./script/singularity_run_anaFemtoPhiDeuteron.sh` — same pattern; species `deuteron`, channels `phi_deuteron_*`.
 - **Phi QA:** `./script/singularity_checkHistAnaPhi.sh <root_file> <mainconf_path>` — same role as `checkHistAnaPhi.sh`.
 - **Phi-p femto QA:** `./script/singularity_checkHistAnaFemtoPhiProton.sh <root_file> <mainconf_path>`. Writes QA PDF plus `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` (15 centrality slices: SE/ME k*, raw CF, sideband-subtracted CF). Maker YAML (`FemtoConfig`): `cfCentSlices`, `cfCentSlicesQaPdfInclude`, `cfPdfExcludeQaSlices`, `sidebandSubtractAlpha`, `negativeBinPolicy`. Mixing YAML: `mixingMode` (`randomSample`|`bufferAll`), `maxMixedPairsPerEvent`, `mixBothDirections`, `bufferSize`. See `StMaker/StFemtoMaker/README.md` and `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md`.
 - **Unified phi femto QA:** `./script/singularity_checkHistAnaFemtoPhi.sh <root_file> <mainconf_path>` — single QA PDF only (representative cent slices × all channel bases; no `*_CF_*.pdf`).
+- **Unified K⁻ femto QA:** `./script/singularity_checkHistAnaFemtoKaon.sh <root_file> <mainconf_path>` — K⁻ + bachelor QA, k* SE/ME, inclusive CF and cent slices in one PDF.
 - **Phi-4He / phi-deuteron femto QA:** `./script/singularity_checkHistAnaFemtoPhi4He.sh` or `./script/singularity_checkHistAnaFemtoPhiDeuteron.sh` — same CF/QA PDF layout as phi-p femto (Pages 1–20 + separate CF PDF).
 
 Example (build):

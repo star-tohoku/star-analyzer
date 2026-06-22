@@ -71,6 +71,20 @@ After merge, QA PDF:
   config/mainconf/main_auau3p85fxt_anaFemtoPhi.yaml
 ```
 
+Unified K⁻ femto (all bachelors in one pass):
+
+```bash
+./submit.sh --watch-merge ../joblist/joblist_auau3p85fxt_anaFemtoKaon.xml
+```
+
+After merge, QA + CF PDF:
+
+```bash
+./script/singularity_checkHistAnaFemtoKaon.sh \
+  rootfile/auau3p85fxt_anaFemtoKaon/auau3p85fxt_anaFemtoKaon_<jobid>_merge.root \
+  config/mainconf/main_auau3p85fxt_anaFemtoKaon.yaml
+```
+
 - **`--watch-merge`**: after a successful submit, starts `script/watch_job_and_merge.sh` in the background (`nohup`).
 - **`--watch-merge-foreground`**: same watcher, but blocks until merge finishes (debug).
 - **Log**: `job/run/watchmerge/watchmerge_<anaName>_<jobid>.log`

@@ -100,6 +100,7 @@ class StFemtoMaker : public StMaker {
   Bool_t PassEventCuts(Float_t vz, Float_t vr, Int_t refMult, Float_t vzVpd);
   Bool_t PassTrackCuts(StPicoTrack* trk, TVector3& pVtx);
   Bool_t PassKaonCuts(StPicoTrack* trk, TVector3& pVtx);
+  Bool_t PassKaonMinusBaseCuts(StPicoTrack* trk, TVector3& pVtx);
   Bool_t PassProtonCuts(StPicoTrack* trk, TVector3& pVtx);
 
   static PhiKkTrackState ToPhiKkTrack(const TrackState& trk);
@@ -108,6 +109,7 @@ class StFemtoMaker : public StMaker {
   Bool_t PassTofKaonPid(const TrackState& trk) const;
   Bool_t PassTofProtonPid(const TrackState& trk) const;
   Bool_t PassFemtoProtonCuts(const TrackState& trk) const;
+  Bool_t PassFemtoKaonMinusCuts(const TrackState& trk) const;
   Bool_t PassFemtoHe4Cuts(const He4TrackState& h4) const;
   Bool_t PassFemtoDeuteronCuts(const DeuteronTrackState& d) const;
   Bool_t PassFemtoTritonCuts(const TritonTrackState& t) const;
@@ -115,12 +117,15 @@ class StFemtoMaker : public StMaker {
   Bool_t IsKaon(const TrackState& trk);
   Bool_t IsProton(const TrackState& trk);
   Double_t ProtonRapidityCm(const TrackState& trk) const;
+  Double_t KaonMinusRapidityCm(const TrackState& trk) const;
   Double_t He4RapidityCm(const TrackState& trk) const;
   Double_t DeuteronRapidityCm(const TrackState& trk) const;
   Double_t TritonRapidityCm(const TrackState& trk) const;
   Double_t He3RapidityCm(const TrackState& trk) const;
   void FillProtonPreFemtoQa(const TrackState& trk);
   void FillProtonFemtoQa(const TrackState& trk);
+  void FillKaonMinusPreFemtoQa(const TrackState& trk);
+  void FillKaonMinusFemtoQa(const TrackState& trk);
   void FillHe4PreFemtoQa(const TrackState& trk, Float_t nSigmaHe4);
   void FillHe4FemtoQa(const TrackState& trk);
   void FillDeuteronPreFemtoQa(const TrackState& trk, Float_t nSigmaDeuteron);
@@ -144,6 +149,7 @@ class StFemtoMaker : public StMaker {
 
   void BuildTrackPidCandidates(const std::string& speciesKey, const std::string& particleKey,
                                const std::vector<TrackState>& protonTracks,
+                               const std::vector<TrackState>& kaonMinusTracks,
                                const std::vector<He4TrackState>& he4Tracks,
                                const std::vector<DeuteronTrackState>& deuteronTracks,
                                const std::vector<TritonTrackState>& tritonTracks,
@@ -154,6 +160,7 @@ class StFemtoMaker : public StMaker {
   void BuildRotatedPhiCandidates(const std::string& speciesKey, const std::vector<TrackState>& kaonsPlus,
                                  const std::vector<TrackState>& kaonsMinus, Int_t eventIndex);
   FemtoCandidate MakeProtonCandidate(const TrackState& trk, Int_t eventIndex, const std::string& speciesKey) const;
+  FemtoCandidate MakeKaonMinusCandidate(const TrackState& trk, Int_t eventIndex, const std::string& speciesKey) const;
   FemtoCandidate MakeHe4Candidate(const He4TrackState& trk, Int_t eventIndex, const std::string& speciesKey) const;
   FemtoCandidate MakeDeuteronCandidate(const DeuteronTrackState& trk, Int_t eventIndex,
                                        const std::string& speciesKey) const;
@@ -166,6 +173,7 @@ class StFemtoMaker : public StMaker {
 
   Double_t ComputeKStar(const TLorentzVector& pA, const TLorentzVector& pB) const;
   TLorentzVector ProtonP4(const TVector3& p) const;
+  TLorentzVector KaonP4(const TVector3& p) const;
   TLorentzVector CandidateP4(const FemtoCandidate& cand) const;
   Bool_t TracksOverlap(const FemtoCandidate& phiCand, const FemtoCandidate& trkCand) const;
 

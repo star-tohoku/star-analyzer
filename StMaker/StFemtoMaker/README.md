@@ -15,7 +15,7 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 ## Particle keys (`particleKey` field)
 
 - Selects builder logic inside generic `TrackPidBuilder` / `ResonanceBuilder`
-- Phase 1 supported values: `proton` (track), `he4` (track, via `StNuclearIdHelper`), `deuteron` (track, via `StNuclearIdHelper`), `phi` (resonance from KK)
+- Phase 1 supported values: `proton` (track), `he4` (track, via `StNuclearIdHelper`), `deuteron` (track, via `StNuclearIdHelper`), `kaon_minus` (track, K⁻ bachelor), `phi` (resonance from KK)
 - Background QA: `phi_rotation` (resonance builder dispatch → `BuildRotatedPhiCandidates`, stored as species `phi_rot`)
 - Use PDG-inspired names; charge sign goes in species key when needed (`anti_proton`)
 
@@ -115,6 +115,24 @@ normQMax: 1.0
 ## Proton femto bachelor cuts (Zhangwei-like)
 
 YAML keys on femto config (not `PIDCutConfig`): `protonChargeMode`, `protonMaxDca`, `protonMinPtPre`, `protonMinPtPair`, `protonMaxPtPair`, `protonMaxAbsEta`, `protonMaxAbsNSigma`, `protonMinNHitsFit`, `protonMinNHitsRatio`, `protonTofMomentumThreshold`, `protonMinMass2`, `protonMaxMass2`, `protonMinRapidityCm`, `protonMaxRapidityCm`. Applied in `PassFemtoProtonCuts` after generic `PassProtonCuts` + `IsProton`.
+
+## K⁻ bachelor (`anaFemtoKaon`)
+
+- **Species key:** `kaon_minus` with `builderType: track`, `particleKey: kaon_minus`.
+- **Femto cuts** (`kaonMinus*` keys in maker YAML): mirror proton femto layout — DCA, nσ, nHits, TOF momentum threshold + m² window, pair pT, CM rapidity. TPC pre-cuts use `kaonMinusMaxDca` / `kaonMinusMaxAbsNSigma` (not `PhiCutConfig`).
+- **TOF:** `IsKaon` (`PIDCutConfig`) at ID time; femto TOF rule via `kaonMinusTofMomentumThreshold` + `kaonMinusMin/MaxMass2`.
+- **Channels (5, no background):** `kaon_minus_proton`, `kaon_minus_deuteron`, `kaon_minus_triton`, `kaon_minus_he3`, `kaon_minus_he4`.
+- **QA hist prefix:** `hKm_`; k* keys `hKstarSE/ME_<channel>`.
+- **CF:** computed in `checkHistAnaFemtoKaon.C` from merged SE/ME (Maker fills histograms only). Common `normQMin`/`normQMax` and `cfCentSlices` across channels.
+- **checkHist:** `checkHistAnaFemtoKaon.C` — K⁻ QA + bachelor-loop + inclusive CF + cent slices (no SB/rotation).
+
+## Unified multi-bachelor (`auau3p85fxt_anaFemtoKaon`)
+
+- **anaName:** `auau3p85fxt_anaFemtoKaon` — one picoDst pass for K⁻–(p, d, t, ³He, ⁴He).
+- **Species keys:** `kaon_minus`, `proton`, `deuteron`, `triton`, `he3`, `he4`.
+- **Channels (5):** `kaon_minus_<bachelor>` only (purity=1.0, no sidebands).
+- **Nuclear ID:** same as unified `anaFemtoPhi` (`nuclearid_auau3p85fxt_anaFemtoPhi.yaml`).
+- **Maker YAML:** minimal `PhiCutConfig` keys only (`rapidityFrame`, event-plane, `maxNTr`) — no φ reconstruction keys.
 
 ## Rotation background
 

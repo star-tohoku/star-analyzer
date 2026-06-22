@@ -51,6 +51,21 @@ class FemtoConfig {
   Double_t protonMinRapidityCm;
   Double_t protonMaxRapidityCm;
 
+  // K- bachelor cuts for femto pairing (anaFemtoKaon).
+  Double_t kaonMinusMaxDca;
+  Double_t kaonMinusMinPtPre;
+  Double_t kaonMinusMinPtPair;
+  Double_t kaonMinusMaxPtPair;
+  Double_t kaonMinusMaxAbsEta;
+  Double_t kaonMinusMaxAbsNSigma;
+  Short_t kaonMinusMinNHitsFit;
+  Double_t kaonMinusMinNHitsRatio;
+  Double_t kaonMinusTofMomentumThreshold;
+  Double_t kaonMinusMinMass2;
+  Double_t kaonMinusMaxMass2;
+  Double_t kaonMinusMinRapidityCm;
+  Double_t kaonMinusMaxRapidityCm;
+
   // 4He bachelor cuts for femto pairing.
   Double_t he4MaxDca;
   Double_t he4MinPMom;
