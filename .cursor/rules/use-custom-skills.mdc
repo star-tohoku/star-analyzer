@@ -8,7 +8,7 @@ This project defines specific developer and analyst workflow scripts/procedures 
 
 AI Agents (including Antigravity / Gemini) MUST follow these guidelines:
 
-1. **Scan Custom Skills**: When requested to perform a daily summary, write analysis notes, or execute specific workflows, check `.cursor/skills/` for matching skills (e.g., `daily-analysis-log`).
+1. **Scan Custom Skills**: When requested to perform a daily summary, write analysis notes, critically review an analysis, or execute specific workflows, check `.cursor/skills/` for matching skills (e.g., `daily-analysis-log` for end-of-day logs; `star-analysis-note` for analysis-level STAR notes with critical review).
 2. **Read Canonical Procedure**: Before initiating any action for these tasks, read the corresponding `SKILL.md` or source Markdown file under `docs/ai/skills/` using the `view_file` tool.
 3. **Execute Step-by-Step**: Execute the canonical workflow steps exactly as defined.
 4. **Synchronize**: If custom skill markdown files are added or modified, run `script/sync_and_check_skills.sh` before completing the task.
