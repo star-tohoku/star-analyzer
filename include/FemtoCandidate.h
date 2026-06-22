@@ -42,12 +42,14 @@ struct TrackExtra {
 struct ResonanceExtra {
   Float_t invMass;
   Float_t dcaDaughters;
+  Float_t betaGamma;
   Int_t dau1Index;
   Int_t dau2Index;
 
   ResonanceExtra()
       : invMass(0.0f),
         dcaDaughters(0.0f),
+        betaGamma(-1.0f),
         dau1Index(-1),
         dau2Index(-1) {}
 };

@@ -50,6 +50,7 @@ class StFemtoMaker : public StMaker {
     Bool_t tofMatch;
     Float_t mass2;
     Float_t deltaOneOverBeta;
+    Float_t tofBeta;
     Float_t originX, originY, originZ;
     Float_t momentumX, momentumY, momentumZ;
     Float_t BField;

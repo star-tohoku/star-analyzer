@@ -38,6 +38,17 @@
 namespace {
 const Double_t kProtonMass = 0.938272;
 const Double_t kPhiMass = 1.019461;
+
+Bool_t ComputePhiBetaGamma(Bool_t tofPlus, Float_t betaPlus, Bool_t tofMinus, Float_t betaMinus, Float_t& betaGamma) {
+  betaGamma = -1.0f;
+  if (!tofPlus || !tofMinus) return kFALSE;
+  if (betaPlus <= 1e-4f || betaMinus <= 1e-4f) return kFALSE;
+  const Double_t beta = 0.5 * ((Double_t)betaPlus + (Double_t)betaMinus);
+  if (beta >= 1.0) return kFALSE;
+  const Double_t gamma = 1.0 / TMath::Sqrt(1.0 - beta * beta);
+  betaGamma = (Float_t)(beta * gamma);
+  return kTRUE;
+}
 }  // namespace
 
 StFemtoMaker::StFemtoMaker(const char* name, StPicoDstMaker* picoMaker, const char* outName)
@@ -645,6 +656,7 @@ void StFemtoMaker::BuildTrackState(TrackState& track, StPicoTrack* pico, StPicoE
   track.tofMatch = kFALSE;
   track.mass2 = -999.0f;
   track.deltaOneOverBeta = 999.0f;
+  track.tofBeta = -1.0f;
 }
 
 PhiKkTrackState StFemtoMaker::ToPhiKkTrack(const TrackState& trk) {
@@ -668,9 +680,14 @@ PhiKkTrackState StFemtoMaker::ToPhiKkTrack(const TrackState& trk) {
 
 void StFemtoMaker::FillTofInfo(TrackState& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex) {
   (void)trk;
+  track.tofBeta = -1.0f;
   StPicoBTofPidTraits* tof = 0;
   if (btofIndex >= 0) tof = mPicoDst->btofPidTraits(btofIndex);
   StPhiKKReconstruction::FillTofInfo(track.mass2, track.deltaOneOverBeta, track.tofMatch, tof, pMom);
+  if (tof && track.tofMatch) {
+    const Double_t beta = tof->btofBeta();
+    if (beta > 1e-4) track.tofBeta = (Float_t)beta;
+  }
 }
 
 Bool_t StFemtoMaker::PassTofKaonPid(const TrackState& trk) const {
@@ -1210,6 +1227,7 @@ FemtoCandidate StFemtoMaker::MakePhiCandidate(const TrackState& kPlus, const Tra
   cand.reso.dcaDaughters = (Float_t)dcaKK;
   cand.reso.dau1Index = kPlus.trackIndex;
   cand.reso.dau2Index = kMinus.trackIndex;
+  ComputePhiBetaGamma(kPlus.tofMatch, kPlus.tofBeta, kMinus.tofMatch, kMinus.tofBeta, cand.reso.betaGamma);
   (void)openingAngle;
   return cand;
 }
@@ -1698,6 +1716,9 @@ void StFemtoMaker::FillCandidateQA() {
         m_histManager->Fill("hPhi_Pt", c.pt);
         m_histManager->Fill("hPhi_Rapidity", c.y);
         m_histManager->Fill("hPhi_PtVsY_PostCut", c.y, c.pt);
+        if (c.reso.betaGamma > 0.0f) {
+          m_histManager->Fill("hPhi_MKK_vs_BetaGamma", mass, (Double_t)c.reso.betaGamma);
+        }
       }
       for (size_t ic = 0; ic < femtoCfg.channels.size(); ic++) {
         const FemtoConfig::ChannelDef& ch = femtoCfg.channels[ic];

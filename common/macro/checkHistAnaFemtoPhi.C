@@ -17,6 +17,7 @@
 #include <TString.h>
 #include <TStyle.h>
 #include <TLatex.h>
+#include <TLegend.h>
 #include <TEllipse.h>
 #include <iostream>
 #include <vector>
@@ -35,6 +36,11 @@
 #include <cstring>
 
 static Bool_t gConfigLoaded = kFALSE;
+
+static const Double_t kKstarHistXMin = 0.0;
+static const Double_t kKstarHistXMax = 2.0;
+static const Double_t kCfKstarXMin = 0.0;
+static const Double_t kCfKstarXMax = 0.65;
 
 
 struct BachelorQaSpec {
@@ -387,7 +393,7 @@ static TH1* projectKstarVsCent9(TH2* h2, Int_t cent9Min, Int_t cent9Max, const c
   if (h1) {
     h1->SetDirectory(0);
     h1->SetTitle(Form("%s (cent9 %d-%d);k^{*} [GeV/c];Counts", h2->GetTitle(), cent9Min, cent9Max));
-    h1->GetXaxis()->SetRangeUser(0.0, 0.65);
+    h1->GetXaxis()->SetRangeUser(0.0, kKstarHistXMax);
   }
   return h1;
 }
@@ -597,24 +603,50 @@ static void populateCfCentCache(TFile* fin, std::map<std::string, TGraphErrors*>
   }
 }
 
-static const Double_t kCfKstarXMin = 0.0;
-static const Double_t kCfKstarXMax = 0.65;
-
 static void drawKstarSeMeHist(TH1* h) {
   if (!h) return;
-  h->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+  h->GetXaxis()->SetRangeUser(kKstarHistXMin, kKstarHistXMax);
   h->Draw();
 }
 
-static void drawCentProjectedSeMe(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel, Bool_t isSE,
-                                  Int_t cent9Min, Int_t cent9Max, std::vector<TH1*>& centProjKeepAlive) {
+static void drawKstarSeMeOverlay(TH1* hSE, TH1* hME) {
+  if (!hSE && !hME) return;
+  if (hSE) {
+    hSE->SetLineColor(kBlack);
+    hSE->SetLineWidth(2);
+    hSE->GetXaxis()->SetRangeUser(kKstarHistXMin, kKstarHistXMax);
+    hSE->Draw("HIST");
+  }
+  if (hME) {
+    hME->SetLineColor(kRed);
+    hME->SetLineStyle(2);
+    hME->SetLineWidth(2);
+    hME->GetXaxis()->SetRangeUser(kKstarHistXMin, kKstarHistXMax);
+    if (hSE) {
+      hME->Draw("HIST SAME");
+    } else {
+      hME->Draw("HIST");
+    }
+  }
+  if (hSE && hME && gPad) {
+    TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    leg->AddEntry(hSE, "Same Event", "l");
+    leg->AddEntry(hME, "Mixed Event", "l");
+    leg->Draw();
+  }
+}
+
+static void drawCentProjectedSeMeOverlay(TCanvas* canvas, Int_t pad, TFile* fin, const std::string& channel,
+                                         Int_t cent9Min, Int_t cent9Max, std::vector<TH1*>& centProjKeepAlive) {
   if (!canvas) return;
   canvas->cd(pad);
-  TH1* h = getProjectedSeMeFromCent(fin, channel, isSE, cent9Min, cent9Max);
-  if (h) {
-    drawKstarSeMeHist(h);
-    centProjKeepAlive.push_back(h);
-  }
+  TH1* hSE = getProjectedSeMeFromCent(fin, channel, kTRUE, cent9Min, cent9Max);
+  TH1* hME = getProjectedSeMeFromCent(fin, channel, kFALSE, cent9Min, cent9Max);
+  if (hSE) centProjKeepAlive.push_back(hSE);
+  if (hME) centProjKeepAlive.push_back(hME);
+  drawKstarSeMeOverlay(hSE, hME);
 }
 
 static void drawCfGraph(TGraphErrors* gCF) {
@@ -633,8 +665,8 @@ static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& chann
   if (it != cfCache.end() && it->second) drawCfGraph(it->second);
 }
 
-// Divide(4, 3): columns = channels, rows = SE / ME / CF.
-static Int_t centSliceLayoutPad(Int_t col, Int_t rowSeMeCf, Int_t nCols) { return col + rowSeMeCf * nCols + 1; }
+// Divide(nCols, 2): columns = channels, rows = SE+ME overlay / CF.
+static Int_t centSliceLayoutPad(Int_t col, Int_t rowOverlayCf, Int_t nCols) { return col + rowOverlayCf * nCols + 1; }
 
 static void drawCentSlicePageForBase(TCanvas* canvas, TFile* fin, const std::string& channelBase,
                               const char* rotChannel, Int_t cent9Min, Int_t cent9Max,
@@ -650,14 +682,12 @@ static void drawCentSlicePageForBase(TCanvas* canvas, TFile* fin, const std::str
   channels[3] = rotChannel;
   channels[4] = 0;
   if (rotChannel && rotChannel[0] != '\0') nCols = 4;
-  canvas->Divide(nCols, 3);
+  canvas->Divide(nCols, 2);
   for (Int_t ic = 0; ic < nCols; ++ic) {
     const std::string channel(channels[ic]);
-    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 0, nCols), fin, channel, kTRUE, cent9Min, cent9Max,
-                          centProjKeepAlive);
-    drawCentProjectedSeMe(canvas, centSliceLayoutPad(ic, 1, nCols), fin, channel, kFALSE, cent9Min, cent9Max,
-                          centProjKeepAlive);
-    drawCentSliceCf(canvas, centSliceLayoutPad(ic, 2, nCols), channel, cfCache);
+    drawCentProjectedSeMeOverlay(canvas, centSliceLayoutPad(ic, 0, nCols), fin, channel, cent9Min, cent9Max,
+                                 centProjKeepAlive);
+    drawCentSliceCf(canvas, centSliceLayoutPad(ic, 1, nCols), channel, cfCache);
   }
   if (gPad) {
     TLatex* lat = new TLatex();
@@ -972,7 +1002,7 @@ static void drawSidebandSlicePageForBase(TCanvas* canvas, TFile* fin, const Femt
                                            std::map<std::string, TGraphErrors*>& cfCache, Bool_t drawSubCfRow) {
   if (!canvas) return;
   canvas->Clear();
-  const Int_t nRows = drawSubCfRow ? 4 : 3;
+  const Int_t nRows = drawSubCfRow ? 3 : 2;
   canvas->Divide(4, nRows);
   const std::string chSig = channelSignal(channelBase);
   const std::string chL = channelLeftSb(channelBase);
@@ -989,45 +1019,34 @@ static void drawSidebandSlicePageForBase(TCanvas* canvas, TFile* fin, const Femt
       TH1* hME = combineSidebandLR(hMEL, hMER);
       canvas->cd(sidebandSliceLayoutPad(ic, 0));
       if (hSE) {
-        hSE->SetTitle(Form("SE SBLR %s %s", channelBase.c_str(), slice.id.c_str()));
-        drawKstarSeMeHist(hSE);
+        hSE->SetTitle(Form("SE+ME SBLR %s %s", channelBase.c_str(), slice.id.c_str()));
         centProjKeepAlive.push_back(hSE);
       }
-      canvas->cd(sidebandSliceLayoutPad(ic, 1));
-      if (hME) {
-        hME->SetTitle(Form("ME SBLR %s %s", channelBase.c_str(), slice.id.c_str()));
-        drawKstarSeMeHist(hME);
-        centProjKeepAlive.push_back(hME);
-      }
+      if (hME) centProjKeepAlive.push_back(hME);
+      drawKstarSeMeOverlay(hSE, hME);
       getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max, channelBase,
                               channelNormQMin(chSig), channelNormQMax(chSig), cfCache);
-      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, channelBase + ":SBLR", cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 1), slice.id, channelBase + ":SBLR", cfCache);
     } else {
       canvas->cd(sidebandSliceLayoutPad(ic, 0));
       TH1* hSE = getSliceProjectedSeMe(fin, tag, kTRUE, slice.cent9Min, slice.cent9Max);
-      if (hSE) {
-        drawKstarSeMeHist(hSE);
-        centProjKeepAlive.push_back(hSE);
-      }
-      canvas->cd(sidebandSliceLayoutPad(ic, 1));
       TH1* hME = getSliceProjectedSeMe(fin, tag, kFALSE, slice.cent9Min, slice.cent9Max);
-      if (hME) {
-        drawKstarSeMeHist(hME);
-        centProjKeepAlive.push_back(hME);
-      }
+      if (hSE) centProjKeepAlive.push_back(hSE);
+      if (hME) centProjKeepAlive.push_back(hME);
+      drawKstarSeMeOverlay(hSE, hME);
       getOrComputeSliceChannelCf(fin, slice.id, slice.cent9Min, slice.cent9Max, tag, channelNormQMin(tag),
                                  channelNormQMax(tag), cfCache);
-      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 2), slice.id, tag, cfCache);
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 1), slice.id, tag, cfCache);
     }
   }
   if (drawSubCfRow) {
     const char* subTags[] = {"CF_sig_sub_SBL", "CF_sig_sub_SBR", "CF_sig_sub_SBLR"};
     const char* subSb[] = {chL.c_str(), chR.c_str(), "SBLR"};
-    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 3), slice.id, chSig, cfCache);
+    drawSliceCfGraph(canvas, sidebandSliceLayoutPad(0, 2), slice.id, chSig, cfCache);
     for (Int_t isb = 0; isb < 3; ++isb) {
       getOrComputeSliceSigSubCf(fin, slice.id, slice.cent9Min, slice.cent9Max, channelBase, subSb[isb], subTags[isb],
                                 channelNormQMin(chSig), channelNormQMax(chSig), cfCache);
-      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(isb + 1, 3), slice.id, channelBase + ":" + subTags[isb],
+      drawSliceCfGraph(canvas, sidebandSliceLayoutPad(isb + 1, 2), slice.id, channelBase + ":" + subTags[isb],
                        cfCache);
     }
   }
@@ -1372,8 +1391,10 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   Int_t cfCent9MaxNote = 8;
   getCfCent9Range(cfCent9MinNote, cfCent9MaxNote);
   note += Form("CF cent slice: cent9 [%d, %d] projected from hKstarSEVsCent/hKstarMEVsCent (0-60%% for default 2-8); "
-               "layout 3x4 (rows SE/ME/CF, cols signal/leftSB/rightSB/rot).\n",
+               "layout nCols x 2 (rows SE+ME overlay / CF, cols signal/leftSB/rightSB/rot).\n",
                cfCent9MinNote, cfCent9MaxNote);
+  note += "k* count histograms display 0-2.0 GeV/c; CF graphs remain 0-0.65 GeV/c.\n";
+  note += "hPhi_MKK_vs_BetaGamma: both K daughters must have TOF match (beta from btofBeta).\n";
   if (gConfigLoaded) {
     const CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
     if (centCfg.cent9MaxRefMultCorrBin >= 0 && centCfg.cent9MaxRefMultCorr > 0.0) {
@@ -1957,11 +1978,11 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
     c1->Divide(2, 2);
     TString seKey = TString("hKstarSE_") + base.c_str();
     TString meKey = TString("hKstarME_") + base.c_str();
-    c1->cd(1); h1 = (TH1*)fin->Get(seKey); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(2); h1 = (TH1*)fin->Get(meKey); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(3);
-    drawComputedCf(c1, 3, fin, base, channelNormQMin(base), channelNormQMax(base), cfCache);
-    c1->cd(4); h1 = (TH1*)fin->Get(spec.nCandKey);
+    c1->cd(1);
+    drawKstarSeMeOverlay((TH1*)fin->Get(seKey), (TH1*)fin->Get(meKey));
+    c1->cd(2);
+    drawComputedCf(c1, 2, fin, base, channelNormQMin(base), channelNormQMax(base), cfCache);
+    c1->cd(3); h1 = (TH1*)fin->Get(spec.nCandKey);
     if (h1) { prepareBachelorHist(h1, spec.nCandKey, spec); h1->Draw(); }
     c1->Print(pdfName);
   }
@@ -1977,6 +1998,32 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   c1->cd(6); h1 = (TH1*)fin->Get("hPhiRot_NCand"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
+  // Page 16b: Phi M_KK vs beta-gamma (TOF K daughters, both matched)
+  c1->Clear();
+  c1->cd();
+  gPad->SetLogz();
+  h2 = (TH2*)fin->Get("hPhi_MKK_vs_BetaGamma");
+  if (h2) {
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+      const FemtoConfig::ChannelDef* ch = femtoCfg.FindChannel("phi_deuteron_signal");
+      if (ch) {
+        Double_t ylo = gPad->GetUymin();
+        Double_t yhi = gPad->GetUymax();
+        TLine* lLo = new TLine(ch->signalMin, ylo, ch->signalMin, yhi);
+        lLo->SetLineColor(kRed);
+        lLo->SetLineStyle(2);
+        lLo->Draw("same");
+        TLine* lHi = new TLine(ch->signalMax, ylo, ch->signalMax, yhi);
+        lHi->SetLineColor(kRed);
+        lHi->SetLineStyle(2);
+        lHi->Draw("same");
+      }
+    }
+  }
+  c1->Print(pdfName);
+
   // Per-channel signal / sideband / rotation k* pages
   for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
     const BachelorQaSpec& spec = kBachelorQaSpecs[ib];
@@ -1987,34 +2034,38 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
 
     c1->Clear();
     c1->Divide(2, 2);
-    c1->cd(1); h1 = (TH1*)fin->Get(TString("hKstarSE_") + sig.c_str()); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(2); h1 = (TH1*)fin->Get(TString("hKstarME_") + sig.c_str()); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(3);
-    drawComputedCf(c1, 3, fin, sig, channelNormQMin(sig), channelNormQMax(sig), cfCache);
-    c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + sig.c_str()); if (h2) h2->Draw("colz");
+    c1->cd(1);
+    drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + sig.c_str()),
+                         (TH1*)fin->Get(TString("hKstarME_") + sig.c_str()));
+    c1->cd(2);
+    drawComputedCf(c1, 2, fin, sig, channelNormQMin(sig), channelNormQMax(sig), cfCache);
+    c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + sig.c_str()); if (h2) h2->Draw("colz");
     c1->Print(pdfName);
 
     c1->Clear();
-    c1->Divide(2, 3);
-    c1->cd(1); h1 = (TH1*)fin->Get(TString("hKstarSE_") + lsb.c_str()); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(2); h1 = (TH1*)fin->Get(TString("hKstarME_") + lsb.c_str()); if (h1) drawKstarSeMeHist(h1);
+    c1->Divide(2, 2);
+    c1->cd(1);
+    drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + lsb.c_str()),
+                         (TH1*)fin->Get(TString("hKstarME_") + lsb.c_str()));
+    c1->cd(2);
+    drawComputedCf(c1, 2, fin, lsb, channelNormQMin(lsb), channelNormQMax(lsb), cfCache);
     c1->cd(3);
-    drawComputedCf(c1, 3, fin, lsb, channelNormQMin(lsb), channelNormQMax(lsb), cfCache);
-    c1->cd(4); h1 = (TH1*)fin->Get(TString("hKstarSE_") + rsb.c_str()); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(5); h1 = (TH1*)fin->Get(TString("hKstarME_") + rsb.c_str()); if (h1) drawKstarSeMeHist(h1);
-    c1->cd(6);
-    drawComputedCf(c1, 6, fin, rsb, channelNormQMin(rsb), channelNormQMax(rsb), cfCache);
+    drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + rsb.c_str()),
+                         (TH1*)fin->Get(TString("hKstarME_") + rsb.c_str()));
+    c1->cd(4);
+    drawComputedCf(c1, 4, fin, rsb, channelNormQMin(rsb), channelNormQMax(rsb), cfCache);
     c1->Print(pdfName);
 
     if (spec.rotChannel) {
       const std::string rotCh(spec.rotChannel);
       c1->Clear();
       c1->Divide(2, 2);
-      c1->cd(1); h1 = (TH1*)fin->Get(TString("hKstarSE_") + rotCh.c_str()); if (h1) drawKstarSeMeHist(h1);
-      c1->cd(2); h1 = (TH1*)fin->Get(TString("hKstarME_") + rotCh.c_str()); if (h1) drawKstarSeMeHist(h1);
-      c1->cd(3);
-      drawComputedCf(c1, 3, fin, rotCh, channelNormQMin(rotCh), channelNormQMax(rotCh), cfCache);
-      c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + rotCh.c_str()); if (h2) h2->Draw("colz");
+      c1->cd(1);
+      drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + rotCh.c_str()),
+                           (TH1*)fin->Get(TString("hKstarME_") + rotCh.c_str()));
+      c1->cd(2);
+      drawComputedCf(c1, 2, fin, rotCh, channelNormQMin(rotCh), channelNormQMax(rotCh), cfCache);
+      c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + rotCh.c_str()); if (h2) h2->Draw("colz");
       c1->Print(pdfName);
     }
   }
@@ -2074,6 +2125,7 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
                            "hPhi_MKK_leftSB",
                            "hPhi_MKK_rightSB",
                            "hPhi_MKK_rot",
+                           "hPhi_MKK_vs_BetaGamma",
                            "hPhiRot_MKK",
                            "hPhi_NCand",
                            "hP_Pt_PreFemtoCut",
