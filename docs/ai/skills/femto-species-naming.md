@@ -20,6 +20,7 @@ Headers `include/FemtoCandidate.h` and `include/cuts/FemtoConfig.h` point to thi
 3. Extend builder dispatch in `StFemtoMaker` for new `particleKey` values (generic builders, not analysis-specific classes).
 4. Add histogram names using channel suffix: `hKstarSE_<channel>`, `hKstarME_<channel>`, optional empty `hCF_<channel>` shell in hist YAML.
    - Topic 3 (`anaFemtoPhi` unified): `hPhiMKK_vs_KstarSE/ME_<channel>_signal` (TH3: M_KK × k* × cent9); generate via `script/generate_hist_anaFemtoPhi.py`.
+   - Phi–bachelor momentum angle QA (`anaFemtoPhi`): `hPhiPairMomAngle_<channel>_signal` (+ `_tofStrict`), `hPhiPairMomAngle_vs_MKK_<channel>_signal` (+ `_tofStrict`); CF unchanged; see README Topic “Phi–bachelor pair momentum angle QA”.
 5. CF for QA: computed in checkHist from merged SE/ME (not in Maker output).
    - Per-analysis macros: `checkHistAnaFemtoPhiProton.C`, `checkHistAnaFemtoPhi4He.C`, `checkHistAnaFemtoPhiDeuteron.C` (QA + separate CF PDF).
    - `cfRebinFactor`, `cfCent9Min`/`cfCent9Max` (legacy Page 20).

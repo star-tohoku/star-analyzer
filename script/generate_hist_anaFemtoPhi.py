@@ -160,6 +160,26 @@ def mkk_vs_kstar_block(channel: str, is_se: bool) -> str:
 """
 
 
+def phi_pair_mom_angle_block(channel: str, tof_strict: bool) -> list[str]:
+    suffix = "_tofStrict" if tof_strict else ""
+    tag = "tofStrict" if tof_strict else "signal"
+    h1d = f"hPhiPairMomAngle_{channel}{suffix}"
+    h2d = f"hPhiPairMomAngle_vs_MKK_{channel}{suffix}"
+    blocks = [
+        f"""  {h1d}:
+    axis: *OpeningAngle
+    title: "#phi-bachelor momentum angle ({channel}, {tag});#theta_{{p}} [rad];Counts"
+""",
+        f"""  {h2d}:
+    xAxis: *OpeningAngle
+    yAxis: *MKK
+    title: "#theta_{{p}} vs M_{{KK}} ({channel}, {tag});#theta_{{p}} [rad];M_{{KK}} [GeV/c^{{2}}]"
+""",
+    ]
+    names = [h1d, h2d]
+    return list(zip(names, blocks))
+
+
 def main() -> None:
     he4_text = (HIST_DIR / "hist_anaFemtoPhi4He.yaml").read_text()
     proton_text = (HIST_DIR / "hist_anaFemtoPhiProton.yaml").read_text()
@@ -325,6 +345,12 @@ def main() -> None:
             if m:
                 mkk_kstar_blocks[m.group(1)] = block
 
+    pair_angle_blocks: dict[str, str] = {}
+    for ch in SIGNAL_FEMTO_CHANNELS:
+        for tof_strict in (False, True):
+            for name, block in phi_pair_mom_angle_block(ch, tof_strict):
+                pair_angle_blocks[name] = block
+
     out_header = "# StFemtoMaker histogram definitions (auau3p85fxt_anaFemtoPhi unified)\n"
     out_header += "# 1D: axis: *Preset or nBins/min/max; title required\n"
     out_header += "# 2D: xAxis: *Preset, yAxis: *Preset; title required\n\n"
@@ -350,6 +376,11 @@ def main() -> None:
             nm = kind + ch
             if nm in mkk_kstar_blocks:
                 ordered_names.append(nm)
+    for ch in SIGNAL_FEMTO_CHANNELS:
+        for tof_strict in (False, True):
+            for name, _ in phi_pair_mom_angle_block(ch, tof_strict):
+                if name in pair_angle_blocks:
+                    ordered_names.append(name)
 
     merged: dict[str, str] = {}
     merged.update(common)
@@ -357,6 +388,7 @@ def main() -> None:
     merged.update(phi_femto)
     merged.update(channel_blocks)
     merged.update(mkk_kstar_blocks)
+    merged.update(pair_angle_blocks)
 
     lines = [out_header.rstrip(), "", "histograms:"]
     for name in ordered_names:

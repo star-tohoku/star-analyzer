@@ -14,8 +14,10 @@
 #include <TString.h>
 #include <TStyle.h>
 #include <TLatex.h>
+#include <TLegend.h>
 #include <iostream>
 #include <vector>
+#include <string>
 #include <map>
 #include <cstring>
 
@@ -142,15 +144,62 @@ static TGraphErrors* getOrComputeCf(TFile* fin, const std::string& channel, Doub
   return g;
 }
 
-static void drawCfGraph(TGraphErrors* g) {
+static const Int_t kCfPanelsPerRow = 3;
+static const Int_t kCfPanelsPerCol = 2;
+static const Int_t kCfPanelsPerPage = kCfPanelsPerRow * kCfPanelsPerCol;
+
+static const char* channelShortLabel(const char* channelBase) {
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    if (strcmp(kBachelorQaSpecs[ib].channelBase, channelBase) == 0) return kBachelorQaSpecs[ib].label;
+  }
+  return channelBase;
+}
+
+static void drawCfGraph(TGraphErrors* g, Bool_t compact = kFALSE) {
   if (!g) return;
   g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
   g->SetMinimum(0.0);
   g->SetMaximum(2.0);
+  if (compact) {
+    g->SetTitle("");
+    g->GetXaxis()->SetTitleSize(0.08);
+    g->GetXaxis()->SetLabelSize(0.07);
+    g->GetYaxis()->SetTitleSize(0.08);
+    g->GetYaxis()->SetLabelSize(0.07);
+    g->GetXaxis()->SetTitleOffset(0.9);
+    g->GetYaxis()->SetTitleOffset(0.6);
+    g->SetMarkerSize(0.6);
+  } else {
+    g->SetMarkerSize(0.8);
+  }
   g->Draw("AP");
   TLine* one = new TLine(kCfKstarXMin, 1.0, kCfKstarXMax, 1.0);
   one->SetLineStyle(2);
   one->Draw();
+}
+
+static void drawCfPanelLabel(const char* text, Double_t x = 0.12, Double_t y = 0.88, Double_t textSize = 0.045) {
+  TLatex* lat = new TLatex();
+  lat->SetNDC();
+  lat->SetTextSize(textSize);
+  lat->DrawLatex(x, y, text);
+}
+
+static void beginCfGridPage(TCanvas* c, Int_t nPanels) {
+  c->Clear();
+  if (nPanels <= 1) {
+    c->Divide(1, 1);
+    return;
+  }
+  if (nPanels <= 2) {
+    c->Divide(2, 1);
+    return;
+  }
+  if (nPanels <= 4) {
+    c->Divide(2, 2);
+    return;
+  }
+  c->Divide(kCfPanelsPerRow, kCfPanelsPerCol);
 }
 
 static TH1* projectKstarVsCent(TH2* h2, Int_t cmin, Int_t cmax, const char* name) {
@@ -165,21 +214,80 @@ static TH1* projectKstarVsCent(TH2* h2, Int_t cmin, Int_t cmax, const char* name
   return h1;
 }
 
+static TH1* getProjectedSeMeCent(TFile* fin, const std::string& channel, Bool_t isSE, Int_t cmin, Int_t cmax,
+                                 const char* hname) {
+  const char* kind = isSE ? "SE" : "ME";
+  TH2* h2 = (TH2*)fin->Get(Form("hKstar%sVsCent_%s", kind, channel.c_str()));
+  return projectKstarVsCent(h2, cmin, cmax, hname);
+}
+
 static TGraphErrors* getOrComputeCfCentSlice(TFile* fin, const std::string& channel, Int_t cmin, Int_t cmax,
                                              Double_t normQMin, Double_t normQMax,
                                              std::map<std::string, TGraphErrors*>& cache) {
   std::string key = channel + Form("_cent%d_%d", cmin, cmax);
   if (cache.find(key) != cache.end()) return cache[key];
-  TH2* hSE2 = (TH2*)fin->Get(Form("hKstarSEVsCent_%s", channel.c_str()));
-  TH2* hME2 = (TH2*)fin->Get(Form("hKstarMEVsCent_%s", channel.c_str()));
-  TH1* hSE = projectKstarVsCent(hSE2, cmin, cmax, "_se_proj");
-  TH1* hME = projectKstarVsCent(hME2, cmin, cmax, "_me_proj");
+  TH1* hSE = getProjectedSeMeCent(fin, channel, kTRUE, cmin, cmax, "_se_proj");
+  TH1* hME = getProjectedSeMeCent(fin, channel, kFALSE, cmin, cmax, "_me_proj");
   TString title = Form("CF %s cent9 %d-%d;k^{*} [GeV/c];C(k^{*})", channel.c_str(), cmin, cmax);
   TGraphErrors* g = computeCfGraphFromSeMe(hSE, hME, normQMin, normQMax, title.Data());
   delete hSE;
   delete hME;
   cache[key] = g;
   return g;
+}
+
+static void drawKstarSeMeOverlayScaled(TH1* hSE, TH1* hME, Double_t normQMin, Double_t normQMax, Bool_t compact) {
+  if (!hSE && !hME) return;
+
+  Double_t meScale = 1.0;
+  if (hSE && hME) {
+    Int_t binLo = hSE->FindBin(normQMin + 1e-9);
+    Int_t binHi = hSE->FindBin(normQMax - 1e-9);
+    Double_t seNorm = hSE->Integral(binLo, binHi);
+    Double_t meNorm = hME->Integral(binLo, binHi);
+    if (seNorm > 0 && meNorm > 0) meScale = seNorm / meNorm;
+  }
+
+  TH1* hMEplot = hME;
+  TH1* hMEscaled = 0;
+  if (hME && meScale != 1.0) {
+    hMEscaled = (TH1*)hME->Clone("_me_scaled");
+    hMEscaled->SetDirectory(0);
+    hMEscaled->Scale(meScale);
+    hMEplot = hMEscaled;
+  }
+
+  if (hSE) {
+    hSE->SetStats(0);
+    hSE->SetLineColor(kBlack);
+    hSE->SetLineWidth(compact ? 1 : 2);
+    hSE->GetXaxis()->SetRangeUser(0.0, kKstarHistXMax);
+    if (compact) {
+      hSE->SetTitle("");
+      hSE->GetXaxis()->SetLabelSize(0.07);
+      hSE->GetYaxis()->SetLabelSize(0.07);
+    }
+    hSE->Draw("HIST");
+  }
+  if (hMEplot) {
+    hMEplot->SetStats(0);
+    hMEplot->SetLineColor(kRed);
+    hMEplot->SetLineStyle(2);
+    hMEplot->SetLineWidth(compact ? 1 : 2);
+    hMEplot->GetXaxis()->SetRangeUser(0.0, kKstarHistXMax);
+    if (hSE) hMEplot->Draw("HIST SAME");
+    else hMEplot->Draw("HIST");
+  }
+  if (hSE && hMEplot && gPad) {
+    TLegend* leg = new TLegend(0.52, 0.68, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    leg->SetTextSize(compact ? 0.055 : 0.04);
+    leg->AddEntry(hSE, "Same Event", "l");
+    leg->AddEntry(hMEplot, "Mixed Event (scaled)", "l");
+    leg->Draw();
+  }
+  delete hMEscaled;
 }
 
 static std::vector<FemtoConfig::CfCentSlice> getCfCentSlices() {
@@ -189,6 +297,10 @@ static std::vector<FemtoConfig::CfCentSlice> getCfCentSlices() {
   }
   std::vector<FemtoConfig::CfCentSlice> out;
   FemtoConfig::CfCentSlice sl;
+  sl.id = "cent9_8";
+  sl.cent9Min = 8;
+  sl.cent9Max = 8;
+  out.push_back(sl);
   sl.id = "pct_0_10";
   sl.cent9Min = 7;
   sl.cent9Max = 8;
@@ -255,31 +367,65 @@ static void drawBachelorKstar(TCanvas* c, TFile* fin, const char* channel, TStri
   c->Print(pdf);
 }
 
-static void drawBachelorCfInclusive(TCanvas* c, TFile* fin, const char* channel, TString pdf,
-                                    std::map<std::string, TGraphErrors*>& cache) {
-  c->Clear();
-  c->cd(1);
-  const Double_t qmin = channelNormQMin(channel);
-  const Double_t qmax = channelNormQMax(channel);
-  TGraphErrors* g = getOrComputeCf(fin, channel, qmin, qmax, cache);
-  drawCfGraph(g);
-  TLatex* lat = new TLatex();
-  lat->SetNDC();
-  lat->DrawLatex(0.12, 0.92, Form("%s inclusive CF (norm %.2f-%.2f GeV/c)", channel, qmin, qmax));
+static void drawAllInclusiveCfPages(TCanvas* c, TFile* fin, TString pdf, std::map<std::string, TGraphErrors*>& cache) {
+  std::vector<const char*> channels;
+  for (Int_t ic = 0; kChannelBases[ic]; ++ic) channels.push_back(kChannelBases[ic]);
+
+  for (size_t i0 = 0; i0 < channels.size(); i0 += kCfPanelsPerPage) {
+    const size_t nOnPage = TMath::Min((size_t)kCfPanelsPerPage, channels.size() - i0);
+    beginCfGridPage(c, (Int_t)nOnPage);
+    for (size_t ip = 0; ip < nOnPage; ++ip) {
+      const char* channel = channels[i0 + ip];
+      c->cd((Int_t)ip + 1);
+      const Double_t qmin = channelNormQMin(channel);
+      const Double_t qmax = channelNormQMax(channel);
+      TGraphErrors* g = getOrComputeCf(fin, channel, qmin, qmax, cache);
+      drawCfGraph(g, kTRUE);
+      drawCfPanelLabel(Form("K^{-}-%s inclusive (norm %.2f-%.2f)", channelShortLabel(channel), qmin, qmax));
+    }
+    c->Print(pdf);
+  }
+}
+
+static void drawCentSliceAllChannelsPage(TCanvas* c, TFile* fin, const FemtoConfig::CfCentSlice& sl, TString pdf,
+                                         std::map<std::string, TGraphErrors*>& cache) {
+  std::vector<const char*> channels;
+  for (Int_t ic = 0; kChannelBases[ic]; ++ic) channels.push_back(kChannelBases[ic]);
+
+  beginCfGridPage(c, (Int_t)channels.size());
+  for (size_t ip = 0; ip < channels.size(); ++ip) {
+    const char* channel = channels[ip];
+    c->cd((Int_t)ip + 1);
+    const Double_t qmin = channelNormQMin(channel);
+    const Double_t qmax = channelNormQMax(channel);
+    TGraphErrors* g = getOrComputeCfCentSlice(fin, channel, sl.cent9Min, sl.cent9Max, qmin, qmax, cache);
+    drawCfGraph(g, kTRUE);
+    drawCfPanelLabel(Form("K^{-}-%s %s (cent9 %d-%d)", channelShortLabel(channel), sl.id.c_str(), sl.cent9Min,
+                          sl.cent9Max));
+  }
   c->Print(pdf);
 }
 
-static void drawCfCentSlicePage(TCanvas* c, TFile* fin, const FemtoConfig::CfCentSlice& sl, const char* channel,
-                                TString pdf, std::map<std::string, TGraphErrors*>& cache) {
-  c->Clear();
-  c->cd(1);
-  const Double_t qmin = channelNormQMin(channel);
-  const Double_t qmax = channelNormQMax(channel);
-  TGraphErrors* g = getOrComputeCfCentSlice(fin, channel, sl.cent9Min, sl.cent9Max, qmin, qmax, cache);
-  drawCfGraph(g);
-  TLatex* lat = new TLatex();
-  lat->SetNDC();
-  lat->DrawLatex(0.12, 0.92, Form("%s %s (cent9 %d-%d)", channel, sl.id.c_str(), sl.cent9Min, sl.cent9Max));
+static void drawCentSliceSeMeOverlayPage(TCanvas* c, TFile* fin, const FemtoConfig::CfCentSlice& sl, TString pdf,
+                                         std::vector<TH1*>& keepAlive) {
+  std::vector<const char*> channels;
+  for (Int_t ic = 0; kChannelBases[ic]; ++ic) channels.push_back(kChannelBases[ic]);
+
+  beginCfGridPage(c, (Int_t)channels.size());
+  for (size_t ip = 0; ip < channels.size(); ++ip) {
+    const char* channel = channels[ip];
+    c->cd((Int_t)ip + 1);
+    const Double_t qmin = channelNormQMin(channel);
+    const Double_t qmax = channelNormQMax(channel);
+    TString tag = Form("_%s_cent%d_%d", channel, sl.cent9Min, sl.cent9Max);
+    TH1* hSE = getProjectedSeMeCent(fin, channel, kTRUE, sl.cent9Min, sl.cent9Max, (tag + "_se").Data());
+    TH1* hME = getProjectedSeMeCent(fin, channel, kFALSE, sl.cent9Min, sl.cent9Max, (tag + "_me").Data());
+    if (hSE) keepAlive.push_back(hSE);
+    if (hME) keepAlive.push_back(hME);
+    drawKstarSeMeOverlayScaled(hSE, hME, qmin, qmax, kTRUE);
+    drawCfPanelLabel(Form("K^{-}-%s %s (cent9 %d-%d)", channelShortLabel(channel), sl.id.c_str(), sl.cent9Min,
+                          sl.cent9Max));
+  }
   c->Print(pdf);
 }
 
@@ -311,9 +457,12 @@ void checkHistAnaFemtoKaon(const Char_t* rootFile,
   gSystem->mkdir(outDir.Data(), kTRUE);
   TString pdfName = outDir + "/" + anaName + "_checkHistAnaFemtoKaon_" + jobid + ".pdf";
 
+  PdfHeader::OpenPdf(pdfName);
+
   TString note = "K^{-}-(p,d,t,^{3}He,^{4}He) femto QA + CF from merged SE/ME (purity=1.0, no sidebands).\n";
   note += "CF computed in checkHist; norm region from maker YAML per channel.\n";
-  std::vector<TString> inputs;
+  note += "Cent slices: cent9 8-8, 7-8, 6-8, 5-8 (5 channels per page: SE + norm-scaled ME overlay, then CF).\n";
+  std::vector<std::string> inputs;
   inputs.push_back(rootFile);
   if (mainconfPath) inputs.push_back(mainconfPath);
   PdfHeader::MakePdfHeaderPage(pdfName, "checkHistAnaFemtoKaon.C", inputs, note.Data(), kTRUE, anaName);
@@ -374,16 +523,21 @@ void checkHistAnaFemtoKaon(const Char_t* rootFile,
 
   for (Int_t ic = 0; kChannelBases[ic]; ++ic) {
     drawBachelorKstar(c1, fin, kChannelBases[ic], pdfName);
-    drawBachelorCfInclusive(c1, fin, kChannelBases[ic], pdfName, cfCache);
   }
 
+  c1->SetCanvasSize(1800, 900);
+  drawAllInclusiveCfPages(c1, fin, pdfName, cfCache);
+
+  std::vector<TH1*> centProjKeepAlive;
   const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSlices();
   for (size_t is = 0; is < slices.size(); ++is) {
-    for (Int_t ic = 0; kChannelBases[ic]; ++ic) {
-      drawCfCentSlicePage(c1, fin, slices[is], kChannelBases[ic], pdfName, cfCache);
-    }
+    drawCentSliceSeMeOverlayPage(c1, fin, slices[is], pdfName, centProjKeepAlive);
+    drawCentSliceAllChannelsPage(c1, fin, slices[is], pdfName, cfCache);
   }
+  for (size_t ih = 0; ih < centProjKeepAlive.size(); ++ih) delete centProjKeepAlive[ih];
+  c1->SetCanvasSize(800, 600);
 
+  PdfHeader::ClosePdf(pdfName);
   std::cout << "Wrote PDF: " << pdfName.Data() << std::endl;
   fin->Close();
   delete fin;

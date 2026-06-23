@@ -128,6 +128,7 @@ Int_t StFemtoMaker::Init() {
 void StFemtoMaker::Clear(Option_t* opt) {
   (void)opt;
   m_eventCandidates.clear();
+  m_phiQaLoose.clear();
 }
 
 Int_t StFemtoMaker::Make() {
@@ -140,6 +141,7 @@ Int_t StFemtoMaker::Make() {
 
   mEventCounter++;
   m_eventCandidates.clear();
+  m_phiQaLoose.clear();
 
   TVector3 pVtx = event->primaryVertex();
   Float_t vzVpd = event->vzVpd();
@@ -561,6 +563,7 @@ Int_t StFemtoMaker::Make() {
   }
 
   FillCandidateQA();
+  FillPhiBachelorPairAngleQa();
 
   for (size_t ic = 0; ic < femtoCfg.channels.size(); ic++) {
     const FemtoConfig::ChannelDef& ch = femtoCfg.channels[ic];
@@ -1441,6 +1444,11 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
           (openingAngle >= phiCfg.minOpeningAngle && openingAngle <= phiCfg.maxOpeningAngle) &&
           (pairRapidity >= phiCfg.minPairRapidity && pairRapidity <= phiCfg.maxPairRapidity);
 
+      if (passStage) {
+        m_phiQaLoose.push_back(MakePhiCandidate(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom, openingAngle,
+                                                pairRapidity, dcaKK, eventIndex, speciesKey));
+      }
+
       if (!PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) continue;
 
       FillPhiPairKinematicsQa(invMass, phiMom, openingAngle, pairRapidity);
@@ -1611,6 +1619,86 @@ Bool_t StFemtoMaker::TracksOverlap(const FemtoCandidate& phiCand, const FemtoCan
 
 std::string StFemtoMaker::HistName(const std::string& prefix, const std::string& channelName) const {
   return prefix + "_" + channelName;
+}
+
+Double_t StFemtoMaker::ComputeMomentumAngleRad(const TVector3& pA, const TVector3& pB) {
+  const Double_t magA = pA.Mag();
+  const Double_t magB = pB.Mag();
+  if (magA <= 0.0 || magB <= 0.0) return -1.0;
+  Double_t cosTheta = pA.Dot(pB) / (magA * magB);
+  if (cosTheta > 1.0) cosTheta = 1.0;
+  if (cosTheta < -1.0) cosTheta = -1.0;
+  return TMath::ACos(cosTheta);
+}
+
+std::string StFemtoMaker::PhiPairMomAngleHistKey(const std::string& channel, Bool_t vsMkk, Bool_t tofStrict) const {
+  std::string key = vsMkk ? "hPhiPairMomAngle_vs_MKK_" : "hPhiPairMomAngle_";
+  key += channel;
+  if (tofStrict) key += "_tofStrict";
+  return key;
+}
+
+void StFemtoMaker::FillPhiBachelorPairAngleQa() {
+  if (!m_histManager) return;
+
+  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  static const char* kBachelorKeys[] = {"proton", "deuteron", "triton", "he3", "he4", 0};
+
+  for (Int_t ib = 0; kBachelorKeys[ib]; ++ib) {
+    const std::string partB(kBachelorKeys[ib]);
+    std::string channelName = std::string("phi_") + partB + "_signal";
+    const FemtoConfig::ChannelDef* ch = femtoCfg.FindChannel(channelName);
+    if (!ch || !ch->enabled) continue;
+
+    FemtoCandidateStore::const_iterator itBach = m_eventCandidates.find(partB);
+    if (itBach == m_eventCandidates.end() || itBach->second.empty()) continue;
+    const std::vector<FemtoCandidate>& bachCands = itBach->second;
+
+    const std::string h1dLoose = PhiPairMomAngleHistKey(channelName, kFALSE, kFALSE);
+    const std::string h2dLoose = PhiPairMomAngleHistKey(channelName, kTRUE, kFALSE);
+    const std::string h1dStrict = PhiPairMomAngleHistKey(channelName, kFALSE, kTRUE);
+    const std::string h2dStrict = PhiPairMomAngleHistKey(channelName, kTRUE, kTRUE);
+
+    for (size_t ip = 0; ip < m_phiQaLoose.size(); ++ip) {
+      const FemtoCandidate& phiCand = m_phiQaLoose[ip];
+      if (phiCand.reso.invMass < ch->signalMin || phiCand.reso.invMass > ch->signalMax) continue;
+
+      TVector3 pPhi(phiCand.px, phiCand.py, phiCand.pz);
+      for (size_t jb = 0; jb < bachCands.size(); ++jb) {
+        const FemtoCandidate& bach = bachCands[jb];
+        if (TracksOverlap(phiCand, bach)) continue;
+        TVector3 pBach(bach.px, bach.py, bach.pz);
+        Double_t angle = ComputeMomentumAngleRad(pPhi, pBach);
+        if (angle < 0.0) continue;
+        if (m_histManager->Get(h1dLoose.c_str())) m_histManager->Fill(h1dLoose.c_str(), angle);
+        if (m_histManager->Get(h2dLoose.c_str())) {
+          m_histManager->Fill(h2dLoose.c_str(), angle, (Double_t)phiCand.reso.invMass);
+        }
+      }
+    }
+
+    FemtoCandidateStore::const_iterator itPhi = m_eventCandidates.find("phi");
+    if (itPhi == m_eventCandidates.end()) continue;
+    const std::vector<FemtoCandidate>& phiStore = itPhi->second;
+    for (size_t ip = 0; ip < phiStore.size(); ++ip) {
+      const FemtoCandidate& phiCand = phiStore[ip];
+      if (phiCand.reso.invMass < ch->signalMin || phiCand.reso.invMass > ch->signalMax) continue;
+      if (phiCand.reso.betaGamma <= 0.0f) continue;
+
+      TVector3 pPhi(phiCand.px, phiCand.py, phiCand.pz);
+      for (size_t jb = 0; jb < bachCands.size(); ++jb) {
+        const FemtoCandidate& bach = bachCands[jb];
+        if (TracksOverlap(phiCand, bach)) continue;
+        TVector3 pBach(bach.px, bach.py, bach.pz);
+        Double_t angle = ComputeMomentumAngleRad(pPhi, pBach);
+        if (angle < 0.0) continue;
+        if (m_histManager->Get(h1dStrict.c_str())) m_histManager->Fill(h1dStrict.c_str(), angle);
+        if (m_histManager->Get(h2dStrict.c_str())) {
+          m_histManager->Fill(h2dStrict.c_str(), angle, (Double_t)phiCand.reso.invMass);
+        }
+      }
+    }
+  }
 }
 
 void StFemtoMaker::FillSameEventPairs(const FemtoConfig::ChannelDef& ch) {

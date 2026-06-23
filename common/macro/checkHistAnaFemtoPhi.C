@@ -264,6 +264,13 @@ static std::string channelSignal(const std::string& base) { return base + "_sign
 static std::string channelLeftSb(const std::string& base) { return base + "_leftSB"; }
 static std::string channelRightSb(const std::string& base) { return base + "_rightSB"; }
 
+static TString phiPairMomAngleKey(const char* channelBase, Bool_t vsMkk, Bool_t tofStrict) {
+  const std::string ch = channelSignal(channelBase);
+  if (vsMkk) {
+    return TString("hPhiPairMomAngle_vs_MKK_") + ch.c_str() + (tofStrict ? "_tofStrict" : "");
+  }
+  return TString("hPhiPairMomAngle_") + ch.c_str() + (tofStrict ? "_tofStrict" : "");
+}
 
 static TString resolveFigureRoot(const char* pwd) {
   const char* envFigureRoot = gSystem->Getenv("STAR_QA_FIGURE_ROOT");
@@ -611,31 +618,60 @@ static void drawKstarSeMeHist(TH1* h) {
   h->Draw();
 }
 
-static void drawKstarSeMeOverlay(TH1* hSE, TH1* hME) {
+// Scale ME so its integral in [normQMin, normQMax] matches SE (inverse of CF norm factor).
+static Double_t computeMeOverlayScale(TH1* hSE, TH1* hME, Double_t normQMin, Double_t normQMax) {
+  if (!hSE || !hME) return 1.0;
+  Int_t binLo = hSE->FindBin(normQMin + 1e-9);
+  Int_t binHi = hSE->FindBin(normQMax - 1e-9);
+  Double_t seNorm = hSE->Integral(binLo, binHi);
+  Double_t meNorm = hME->Integral(binLo, binHi);
+  if (seNorm <= 0 || meNorm <= 0) return 1.0;
+  return seNorm / meNorm;
+}
+
+static void drawKstarSeMeOverlay(TH1* hSE, TH1* hME, Double_t normQMin, Double_t normQMax,
+                                 std::vector<TH1*>& keepAlive) {
   if (!hSE && !hME) return;
+  TH1* hMEPlot = hME;
+  Bool_t meScaled = kFALSE;
+  Double_t meScale = 1.0;
+  if (hSE && hME) {
+    meScale = computeMeOverlayScale(hSE, hME, normQMin, normQMax);
+    if (TMath::Abs(meScale - 1.0) > 1e-12) {
+      hMEPlot = (TH1*)hME->Clone();
+      hMEPlot->SetDirectory(0);
+      hMEPlot->Scale(meScale);
+      keepAlive.push_back(hMEPlot);
+      meScaled = kTRUE;
+    }
+  }
   if (hSE) {
     hSE->SetLineColor(kBlack);
     hSE->SetLineWidth(2);
     hSE->GetXaxis()->SetRangeUser(kKstarHistXMin, kKstarHistXMax);
     hSE->Draw("HIST");
   }
-  if (hME) {
-    hME->SetLineColor(kRed);
-    hME->SetLineStyle(2);
-    hME->SetLineWidth(2);
-    hME->GetXaxis()->SetRangeUser(kKstarHistXMin, kKstarHistXMax);
+  if (hMEPlot) {
+    hMEPlot->SetLineColor(kRed);
+    hMEPlot->SetLineStyle(2);
+    hMEPlot->SetLineWidth(2);
+    hMEPlot->GetXaxis()->SetRangeUser(kKstarHistXMin, kKstarHistXMax);
     if (hSE) {
-      hME->Draw("HIST SAME");
+      hMEPlot->Draw("HIST SAME");
     } else {
-      hME->Draw("HIST");
+      hMEPlot->Draw("HIST");
     }
   }
-  if (hSE && hME && gPad) {
-    TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
+  if (hSE && hMEPlot && gPad) {
+    TLegend* leg = new TLegend(0.55, 0.68, 0.88, 0.88);
     leg->SetBorderSize(0);
     leg->SetFillStyle(0);
     leg->AddEntry(hSE, "Same Event", "l");
-    leg->AddEntry(hME, "Mixed Event", "l");
+    if (meScaled) {
+      leg->AddEntry(hMEPlot, Form("Mixed Event (norm x%.3g)", meScale), "l");
+    } else {
+      leg->AddEntry(hMEPlot, "Mixed Event", "l");
+    }
     leg->Draw();
   }
 }
@@ -648,7 +684,7 @@ static void drawCentProjectedSeMeOverlay(TCanvas* canvas, Int_t pad, TFile* fin,
   TH1* hME = getProjectedSeMeFromCent(fin, channel, kFALSE, cent9Min, cent9Max);
   if (hSE) centProjKeepAlive.push_back(hSE);
   if (hME) centProjKeepAlive.push_back(hME);
-  drawKstarSeMeOverlay(hSE, hME);
+  drawKstarSeMeOverlay(hSE, hME, channelNormQMin(channel), channelNormQMax(channel), centProjKeepAlive);
 }
 
 static void drawCfGraph(TGraphErrors* gCF) {
@@ -1025,7 +1061,7 @@ static void drawSidebandSlicePageForBase(TCanvas* canvas, TFile* fin, const Femt
         centProjKeepAlive.push_back(hSE);
       }
       if (hME) centProjKeepAlive.push_back(hME);
-      drawKstarSeMeOverlay(hSE, hME);
+      drawKstarSeMeOverlay(hSE, hME, channelNormQMin(chSig), channelNormQMax(chSig), centProjKeepAlive);
       getOrComputeSliceSblrCf(fin, slice.id, slice.cent9Min, slice.cent9Max, channelBase,
                               channelNormQMin(chSig), channelNormQMax(chSig), cfCache);
       drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 1), slice.id, channelBase + ":SBLR", cfCache);
@@ -1035,7 +1071,7 @@ static void drawSidebandSlicePageForBase(TCanvas* canvas, TFile* fin, const Femt
       TH1* hME = getSliceProjectedSeMe(fin, tag, kFALSE, slice.cent9Min, slice.cent9Max);
       if (hSE) centProjKeepAlive.push_back(hSE);
       if (hME) centProjKeepAlive.push_back(hME);
-      drawKstarSeMeOverlay(hSE, hME);
+      drawKstarSeMeOverlay(hSE, hME, channelNormQMin(tag), channelNormQMax(tag), centProjKeepAlive);
       getOrComputeSliceChannelCf(fin, slice.id, slice.cent9Min, slice.cent9Max, tag, channelNormQMin(tag),
                                  channelNormQMax(tag), cfCache);
       drawSliceCfGraph(canvas, sidebandSliceLayoutPad(ic, 1), slice.id, tag, cfCache);
@@ -1518,7 +1554,7 @@ static void drawGenuineCfSlicePageForBase(TCanvas* canvas, TFile* fin, const Fem
   TH1* hME = getSliceProjectedSeMe(fin, chSig, kFALSE, slice.cent9Min, slice.cent9Max);
   if (hSE) centProjKeepAlive.push_back(hSE);
   if (hME) centProjKeepAlive.push_back(hME);
-  drawKstarSeMeOverlay(hSE, hME);
+  drawKstarSeMeOverlay(hSE, hME, normQMin, normQMax, centProjKeepAlive);
 
   canvas->cd(2);
   TGraphErrors* gMeas = getOrComputeSliceChannelCf(fin, slice.id, slice.cent9Min, slice.cent9Max, chSig, normQMin,
@@ -1567,6 +1603,96 @@ static void drawLambdaSigSlicePageForBase(TCanvas* canvas, TFile* fin, const Fem
   }
 }
 
+
+static void drawPhiPairMomAngleMkkLines(const FemtoConfig::ChannelDef* ch) {
+  if (!ch || !gPad) return;
+  Double_t xlo = gPad->GetUxmin();
+  Double_t xhi = gPad->GetUxmax();
+  TLine* lLo = new TLine(xlo, ch->signalMin, xhi, ch->signalMin);
+  lLo->SetLineColor(kRed);
+  lLo->SetLineStyle(2);
+  lLo->Draw("same");
+  TLine* lHi = new TLine(xlo, ch->signalMax, xhi, ch->signalMax);
+  lHi->SetLineColor(kRed);
+  lHi->SetLineStyle(2);
+  lHi->Draw("same");
+}
+
+static void drawPhiBachelorPairAngleQaPage(TCanvas* canvas, TFile* fin, TString pdfName,
+                                           const BachelorQaSpec& spec) {
+  if (!canvas || !fin) return;
+  TH1* h1 = 0;
+  TH2* h2 = 0;
+  canvas->Clear();
+  canvas->Divide(2, 2);
+
+  TString kLoose1d = phiPairMomAngleKey(spec.channelBase, kFALSE, kFALSE);
+  TString kStrict1d = phiPairMomAngleKey(spec.channelBase, kFALSE, kTRUE);
+  TString kLoose2d = phiPairMomAngleKey(spec.channelBase, kTRUE, kFALSE);
+  TString kStrict2d = phiPairMomAngleKey(spec.channelBase, kTRUE, kTRUE);
+
+  const FemtoConfig::ChannelDef* chSig = 0;
+  if (gConfigLoaded) {
+    chSig = ConfigManager::GetInstance().GetFemtoConfig().FindChannel(channelSignal(spec.channelBase));
+  }
+
+  canvas->cd(1);
+  h1 = (TH1*)fin->Get(kLoose1d);
+  TH1* hStrict1d = (TH1*)fin->Get(kStrict1d);
+  if (h1) {
+    h1->SetLineColor(kBlack);
+    h1->SetLineWidth(2);
+    h1->Draw("HIST");
+  }
+  if (hStrict1d) {
+    hStrict1d->SetLineColor(kRed);
+    hStrict1d->SetLineStyle(2);
+    hStrict1d->SetLineWidth(2);
+    if (h1) {
+      hStrict1d->Draw("HIST SAME");
+    } else {
+      hStrict1d->Draw("HIST");
+    }
+  }
+  if (h1 || hStrict1d) {
+    TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    if (h1) leg->AddEntry(h1, "signal (no TOF strict)", "l");
+    if (hStrict1d) leg->AddEntry(hStrict1d, "signal tofStrict", "l");
+    leg->Draw();
+  }
+
+  canvas->cd(2);
+  h2 = (TH2*)fin->Get(kLoose2d);
+  if (h2) {
+    h2->Draw("colz");
+    drawPhiPairMomAngleMkkLines(chSig);
+  }
+
+  canvas->cd(3);
+  h2 = (TH2*)fin->Get(kStrict2d);
+  if (h2) {
+    h2->Draw("colz");
+    drawPhiPairMomAngleMkkLines(chSig);
+  }
+
+  canvas->cd(4);
+  if (gPad) {
+    TLatex* lat = new TLatex();
+    lat->SetNDC(kTRUE);
+    lat->SetTextSize(0.035);
+    lat->DrawLatex(0.05, 0.85, Form("#phi-%s pair momentum angle QA", spec.label));
+    lat->DrawLatex(0.05, 0.78, Form("channel: %s_signal", spec.channelBase));
+    if (chSig) {
+      lat->DrawLatex(0.05, 0.71,
+                     Form("signal M_{KK}: %.3f - %.3f GeV/c^{2}", chSig->signalMin, chSig->signalMax));
+    }
+    lat->DrawLatex(0.05, 0.64, "Pad1: #theta_{p} (black=no TOF strict, red=tofStrict)");
+    lat->DrawLatex(0.05, 0.57, "Pad2/3: #theta_{p} vs M_{KK}; CF pipeline unchanged");
+  }
+  canvas->Print(pdfName);
+}
 
 static void drawBachelorFemtoQaPages(TCanvas* canvas, TFile* fin, TString pdfName, const BachelorQaSpec& spec) {
   if (!canvas || !fin) return;
@@ -1875,6 +2001,8 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
                cfCent9MinNote, cfCent9MaxNote);
   note += "k* count histograms display 0-2.0 GeV/c; CF graphs remain 0-0.65 GeV/c.\n";
   note += "hPhi_MKK_vs_BetaGamma: both K daughters must have TOF match (beta from btofBeta).\n";
+  note += "hPhiPairMomAngle_*: #phi-bachelor 3-momentum angle QA only (not used in CF). "
+          "_signal = m_phiQaLoose + signal mass window; _tofStrict = betaGamma>0 + same window.\n";
   if (gConfigLoaded) {
     const CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
     if (centCfg.cent9MaxRefMultCorrBin >= 0 && centCfg.cent9MaxRefMultCorr > 0.0) {
@@ -2462,7 +2590,8 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
     TString seKey = TString("hKstarSE_") + base.c_str();
     TString meKey = TString("hKstarME_") + base.c_str();
     c1->cd(1);
-    drawKstarSeMeOverlay((TH1*)fin->Get(seKey), (TH1*)fin->Get(meKey));
+    drawKstarSeMeOverlay((TH1*)fin->Get(seKey), (TH1*)fin->Get(meKey), channelNormQMin(base), channelNormQMax(base),
+                         centProjKeepAlive);
     c1->cd(2);
     drawComputedCf(c1, 2, fin, base, channelNormQMin(base), channelNormQMax(base), cfCache);
     c1->cd(3); h1 = (TH1*)fin->Get(spec.nCandKey);
@@ -2519,7 +2648,8 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
     c1->Divide(2, 2);
     c1->cd(1);
     drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + sig.c_str()),
-                         (TH1*)fin->Get(TString("hKstarME_") + sig.c_str()));
+                         (TH1*)fin->Get(TString("hKstarME_") + sig.c_str()), channelNormQMin(sig),
+                         channelNormQMax(sig), centProjKeepAlive);
     c1->cd(2);
     drawComputedCf(c1, 2, fin, sig, channelNormQMin(sig), channelNormQMax(sig), cfCache);
     c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + sig.c_str()); if (h2) h2->Draw("colz");
@@ -2529,12 +2659,14 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
     c1->Divide(2, 2);
     c1->cd(1);
     drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + lsb.c_str()),
-                         (TH1*)fin->Get(TString("hKstarME_") + lsb.c_str()));
+                         (TH1*)fin->Get(TString("hKstarME_") + lsb.c_str()), channelNormQMin(lsb),
+                         channelNormQMax(lsb), centProjKeepAlive);
     c1->cd(2);
     drawComputedCf(c1, 2, fin, lsb, channelNormQMin(lsb), channelNormQMax(lsb), cfCache);
     c1->cd(3);
     drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + rsb.c_str()),
-                         (TH1*)fin->Get(TString("hKstarME_") + rsb.c_str()));
+                         (TH1*)fin->Get(TString("hKstarME_") + rsb.c_str()), channelNormQMin(rsb),
+                         channelNormQMax(rsb), centProjKeepAlive);
     c1->cd(4);
     drawComputedCf(c1, 4, fin, rsb, channelNormQMin(rsb), channelNormQMax(rsb), cfCache);
     c1->Print(pdfName);
@@ -2545,12 +2677,18 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
       c1->Divide(2, 2);
       c1->cd(1);
       drawKstarSeMeOverlay((TH1*)fin->Get(TString("hKstarSE_") + rotCh.c_str()),
-                           (TH1*)fin->Get(TString("hKstarME_") + rotCh.c_str()));
+                           (TH1*)fin->Get(TString("hKstarME_") + rotCh.c_str()), channelNormQMin(rotCh),
+                           channelNormQMax(rotCh), centProjKeepAlive);
       c1->cd(2);
       drawComputedCf(c1, 2, fin, rotCh, channelNormQMin(rotCh), channelNormQMax(rotCh), cfCache);
       c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get(TString("hKstarSEVsCent_") + rotCh.c_str()); if (h2) h2->Draw("colz");
       c1->Print(pdfName);
     }
+  }
+
+  // Phi-bachelor pair momentum angle QA (one page per bachelor; CF unchanged)
+  for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+    drawPhiBachelorPairAngleQaPage(c1, fin, pdfName, kBachelorQaSpecs[ib]);
   }
 
   // Cent9-projected CF slice pages (one per channel base)
@@ -2669,6 +2807,23 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
         std::cout << "\n";
       } else {
         std::cout << "  " << keys[i] << ": unexpected class " << o->ClassName() << "\n";
+      }
+    }
+    std::cout << "  --- hPhiPairMomAngle (phi-bachelor QA) ---\n";
+    for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
+      const char* base = kBachelorQaSpecs[ib].channelBase;
+      const TString angleKeyStrs[4] = {phiPairMomAngleKey(base, kFALSE, kFALSE), phiPairMomAngleKey(base, kFALSE, kTRUE),
+                                         phiPairMomAngleKey(base, kTRUE, kFALSE), phiPairMomAngleKey(base, kTRUE, kTRUE)};
+      for (Int_t ik = 0; ik < 4; ++ik) {
+        TObject* o = fin->Get(angleKeyStrs[ik]);
+        if (!o) {
+          std::cout << "  " << angleKeyStrs[ik].Data() << ": NOT IN FILE\n";
+          continue;
+        }
+        if (o->InheritsFrom("TH1")) {
+          TH1* hh = (TH1*)o;
+          std::cout << "  " << angleKeyStrs[ik].Data() << ": entries=" << hh->GetEntries() << "\n";
+        }
       }
     }
     for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {

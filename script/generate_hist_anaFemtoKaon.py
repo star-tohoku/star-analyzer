@@ -122,6 +122,13 @@ def main() -> None:
         parse_axes(deuteron_text),
         parse_axes(he4_text),
     )
+    # anaFemtoKaon: k* QA and CF use 0–2.0 GeV/c (checkHist kKstarHistXMax).
+    merged_axes = re.sub(
+        r"  Kstar: &Kstar\n    nBins: \d+\n    min: 0\.0\n    max: [\d.]+",
+        "  Kstar: &Kstar\n    nBins: 200\n    min: 0.0\n    max: 2.0",
+        merged_axes,
+        count=1,
+    )
 
     common: dict[str, str] = {}
     for name, block in phi_blocks.items():
