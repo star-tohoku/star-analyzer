@@ -25,6 +25,8 @@ void LambdaCutConfig::SetDefaults() {
   maxDCAV0 = 1.0;
   minCosPointing = 0.995;
   maxPathLength = 100.0;
+  minNHitsFit = 15;
+  minNHitsRatio = 0.52;
 }
 
 Bool_t LambdaCutConfig::LoadFromFile(const Char_t* filename) {
@@ -62,6 +64,12 @@ Bool_t LambdaCutConfig::ParseYamlFile(const Char_t* filename) {
   }
   if (values.find("maxPathLength") != values.end()) {
     maxPathLength = YamlParser::ToDouble(values["maxPathLength"], maxPathLength);
+  }
+  if (values.find("minNHitsFit") != values.end()) {
+    minNHitsFit = (Int_t)YamlParser::ToDouble(values["minNHitsFit"], (Double_t)minNHitsFit);
+  }
+  if (values.find("minNHitsRatio") != values.end()) {
+    minNHitsRatio = YamlParser::ToDouble(values["minNHitsRatio"], minNHitsRatio);
   }
 
   return kTRUE;

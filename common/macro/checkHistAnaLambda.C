@@ -256,7 +256,8 @@ void checkHistAnaLambda(const Char_t* inputRootFile,
   c1->Divide(2, 2);
   c1->cd(1); h2 = (TH2*)fin->Get("hDCAV0_vs_InvMass"); if (h2) h2->Draw("colz");
   c1->cd(2); h2 = (TH2*)fin->Get("hCosPointing_vs_InvMass"); if (h2) h2->Draw("colz");
-  c1->cd(3); /* spare */; c1->cd(4); /* spare */;
+  c1->cd(3); h2 = (TH2*)fin->Get("hLambda_InvMass_vs_TransDecayLength"); if (h2) h2->Draw("colz");
+  c1->cd(4); /* spare */;
   c1->Print(pdfName);
 
   fin->Close();

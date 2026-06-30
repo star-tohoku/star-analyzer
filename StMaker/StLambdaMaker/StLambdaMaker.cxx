@@ -106,6 +106,9 @@ Bool_t StLambdaMaker::PassEventCuts(Int_t nTracks) {
 Bool_t StLambdaMaker::PassProtonCuts(StPicoTrack* trk, const TVector3& pVtx) {
   if (!trk || trk->charge() <= 0) return kFALSE;
   LambdaCutConfig& lam = ConfigManager::GetInstance().GetLambdaCuts();
+  if (trk->nHitsFit() < lam.minNHitsFit) return kFALSE;
+  if (trk->nHitsMax() > 0 &&
+      (Double_t)trk->nHitsFit() / (Double_t)trk->nHitsMax() < lam.minNHitsRatio) return kFALSE;
   if (TMath::Abs(trk->nSigmaProton()) > lam.nSigmaProton) return kFALSE;
   Double_t dca = trk->gDCA(pVtx.X(), pVtx.Y(), pVtx.Z());
   if (dca < lam.minDCAProton) return kFALSE;
@@ -116,6 +119,9 @@ Bool_t StLambdaMaker::PassProtonCuts(StPicoTrack* trk, const TVector3& pVtx) {
 Bool_t StLambdaMaker::PassPionCuts(StPicoTrack* trk, const TVector3& pVtx) {
   if (!trk || trk->charge() >= 0) return kFALSE;
   LambdaCutConfig& lam = ConfigManager::GetInstance().GetLambdaCuts();
+  if (trk->nHitsFit() < lam.minNHitsFit) return kFALSE;
+  if (trk->nHitsMax() > 0 &&
+      (Double_t)trk->nHitsFit() / (Double_t)trk->nHitsMax() < lam.minNHitsRatio) return kFALSE;
   if (TMath::Abs(trk->nSigmaPion()) > lam.nSigmaPion) return kFALSE;
   Double_t dca = trk->gDCA(pVtx.X(), pVtx.Y(), pVtx.Z());
   if (dca < lam.minDCAPion) return kFALSE;
@@ -361,6 +367,8 @@ Int_t StLambdaMaker::Make() {
         m_histManager->Fill("hLambda_InvMass_vs_Y", rapidity, invMass);
         m_histManager->Fill("hDCAV0_vs_InvMass", invMass, dcaV0);
         m_histManager->Fill("hCosPointing_vs_InvMass", invMass, cosPoint);
+        Double_t transDecayLen = flight.Perp();
+        m_histManager->Fill("hLambda_InvMass_vs_TransDecayLength", transDecayLen, invMass);
         FillLambdaInvMassCentrality(invMass);
       }
     }

@@ -18,6 +18,10 @@ public:
   Double_t minCosPointing;   // min cos(pointing angle)
   Double_t maxPathLength;    // max |path length| for helix (e.g. 100)
 
+  // Track quality cuts (added for S/N improvement)
+  Int_t    minNHitsFit;      // min nHitsFit for daughter tracks
+  Double_t minNHitsRatio;    // min nHitsFit/nHitsMax ratio (split track suppression)
+
   void SetDefaults();
 
 private:

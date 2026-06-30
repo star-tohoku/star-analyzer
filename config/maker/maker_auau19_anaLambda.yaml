@@ -1,13 +1,15 @@
 # Lambda V0 (p + pi-) analysis cuts
 
-nSigmaProton: 2.0
-nSigmaPion: 2.0
-minDCAProton: 0.5
-minDCAPion: 0.8
-maxDaughterDCA: 1.0
-maxDCAV0: 1.0
+nSigmaProton: 3.0
+nSigmaPion: 3.0
+minDCAProton: 0.7
+minDCAPion: 1.0
+maxDaughterDCA: 0.5
+maxDCAV0: 0.5
 minCosPointing: 0.995
 maxPathLength: 100.0
+minNHitsFit: 15
+minNHitsRatio: 0.52
 
 # Event-level: skip event if nTracks > maxNTr (0 = no limit)
 maxNTr: 0

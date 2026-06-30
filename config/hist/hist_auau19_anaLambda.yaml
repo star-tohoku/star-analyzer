@@ -17,6 +17,10 @@ axes:
     nBins: 200
     min: 0.0
     max: 100.0
+  TransDecayLength: &TransDecayLength
+    nBins: 200
+    min: 0.0
+    max: 50.0
   Eta: &Eta
     nBins: 100
     min: -2.5
@@ -233,6 +237,10 @@ histograms:
     xAxis: *InvMassLambda
     yAxis: *CosPointing
     title: "cos(#theta) vs M_{p#pi^{-}};M_{p#pi^{-}} [GeV/c^{2}];cos(#theta)"
+  hLambda_InvMass_vs_TransDecayLength:
+    xAxis: *TransDecayLength
+    yAxis: *InvMassLambda
+    title: "M_{p#pi^{-}} vs Transverse Decay Length;L_{T} [cm];M_{p#pi^{-}} [GeV/c^{2}]"
 
   hN:
     nBins: 1
