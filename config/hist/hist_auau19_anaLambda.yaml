@@ -39,8 +39,8 @@ axes:
     max: 1.01
   Vz: &Vz
     nBins: 400
-    min: -100.0
-    max: 100.0
+    min: -300.0
+    max: 300.0
   RefMult: &RefMult
     nBins: 1000
     min: 0.0
