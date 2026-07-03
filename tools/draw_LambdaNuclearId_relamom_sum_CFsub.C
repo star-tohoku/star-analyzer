@@ -1,13 +1,14 @@
 #include "TCanvas.h"
 #include "TFile.h"
 #include "TH1.h"
+#include "TLegend.h"
 #include "TMath.h"
 #include "TString.h"
 #include "TStyle.h"
 #include "TSystem.h"
 #include <iostream>
 
-void draw_LambdaNuclearId_relamom_sum() {
+void draw_LambdaNuclearId_relamom_sum_CFsub() {
   // スタイルの設定
   gStyle->SetOptStat(0);
   gStyle->SetOptTitle(1);
@@ -45,7 +46,7 @@ void draw_LambdaNuclearId_relamom_sum() {
     TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
     TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
-    TString outFile = Form("%s/kstar_sum_%s.pdf", outDir.Data(), sp.Data());
+    TString outFile = Form("%s/kstar_sum_CFsub_%s.pdf", outDir.Data(), sp.Data());
 
     for (int groupSet = 0; groupSet < 2; ++groupSet) {
       int nGroups = (groupSet == 0) ? 2 : 3;
@@ -72,12 +73,12 @@ void draw_LambdaNuclearId_relamom_sum() {
 
       TCanvas *c5 = new TCanvas(
           Form("c5_%s_groupSet%d", sp.Data(), groupSet),
-          Form("SB Subtracted for Lambda - %s", sp.Data()), 1200, 600);
+          Form("CF Comparison for Lambda - %s", sp.Data()), 1200, 600);
       c5->Divide(nGroups, 1);
 
       TCanvas *c6 = new TCanvas(
           Form("c6_%s_groupSet%d", sp.Data(), groupSet),
-          Form("CF (SB Subtracted) for Lambda - %s", sp.Data()), 1200, 1200);
+          Form("CF (Purity Corrected) for Lambda - %s", sp.Data()), 1200, 1200);
       c6->Divide(nGroups, 2);
 
       for (int group = 0; group < nGroups; ++group) {
@@ -405,136 +406,124 @@ void draw_LambdaNuclearId_relamom_sum() {
             h4->SetMaximum(max4 * 1.2);
           }
 
-          // --- 5ページ目: Sideband Subtraction ---
+          // --- 5ページ目: CF Comparison ---
           c5->cd(group + 1);
-          TH1 *h5_true = (TH1 *)h->Clone(Form("h5_true_%s_groupSet%d_Group%d",
-                                              sp.Data(), groupSet, group));
-          h5_true->SetTitle(
-              Form("Sideband Subtracted %s (%s)", sp.Data(), centLabel.Data()));
+          
+          TH1 *hCF_sig = 0;
+          if (hmix) {
+            hCF_sig = (TH1 *)h->Clone(Form("hCF_sig_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            hCF_sig->Divide(hmix);
+          }
 
           TH1 *hSB_tot_true = 0;
           if (hSBNeg_orig && hSBPos_orig) {
             hSB_tot_true = (TH1 *)hSBNeg_orig->Clone(
-                Form("hSB_tot_true_%s_groupSet%d_Group%d", sp.Data(), groupSet,
-                     group));
+                Form("hSB_tot_true_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
             if (!hSB_tot_true->GetSumw2N())
               hSB_tot_true->Sumw2();
             hSB_tot_true->Add(hSBPos_orig);
             hSB_tot_true->Rebin(nRebin);
           } else if (hSBNeg_orig) {
             hSB_tot_true = (TH1 *)hSBNeg_orig->Clone(
-                Form("hSB_tot_true_%s_groupSet%d_Group%d", sp.Data(), groupSet,
-                     group));
+                Form("hSB_tot_true_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
             if (!hSB_tot_true->GetSumw2N())
               hSB_tot_true->Sumw2();
             hSB_tot_true->Rebin(nRebin);
           } else if (hSBPos_orig) {
             hSB_tot_true = (TH1 *)hSBPos_orig->Clone(
-                Form("hSB_tot_true_%s_groupSet%d_Group%d", sp.Data(), groupSet,
-                     group));
+                Form("hSB_tot_true_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
             if (!hSB_tot_true->GetSumw2N())
               hSB_tot_true->Sumw2();
             hSB_tot_true->Rebin(nRebin);
           }
 
-          if (hSB_tot_true) {
-            h5_true->Add(hSB_tot_true, -1.0);
+          TH1 *hmixSB_tot = 0;
+          if (hmixSBNeg_orig && hmixSBPos_orig) {
+            hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
+                Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            if (!hmixSB_tot->GetSumw2N())
+              hmixSB_tot->Sumw2();
+            hmixSB_tot->Add(hmixSBPos_orig);
+            hmixSB_tot->Rebin(nRebin);
+          } else if (hmixSBNeg_orig) {
+            hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
+                Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            if (!hmixSB_tot->GetSumw2N())
+              hmixSB_tot->Sumw2();
+            hmixSB_tot->Rebin(nRebin);
+          } else if (hmixSBPos_orig) {
+            hmixSB_tot = (TH1 *)hmixSBPos_orig->Clone(
+                Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            if (!hmixSB_tot->GetSumw2N())
+              hmixSB_tot->Sumw2();
+            hmixSB_tot->Rebin(nRebin);
           }
 
-          h5_true->SetLineColor(kBlack);
-          h5_true->SetMarkerColor(kBlack);
-          h5_true->SetMarkerStyle(20);
-          h5_true->SetMarkerSize(0.8);
-
-          TH1 *h5_mix = 0;
-          if (hmix_unscaled) {
-            h5_mix = (TH1 *)hmix_unscaled->Clone(Form(
-                "h5_mix_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-
-            TH1 *hmixSB_tot = 0;
-            if (hmixSBNeg_orig && hmixSBPos_orig) {
-              hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
-                  Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet,
-                       group));
-              if (!hmixSB_tot->GetSumw2N())
-                hmixSB_tot->Sumw2();
-              hmixSB_tot->Add(hmixSBPos_orig);
-              hmixSB_tot->Rebin(nRebin);
-            } else if (hmixSBNeg_orig) {
-              hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
-                  Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet,
-                       group));
-              if (!hmixSB_tot->GetSumw2N())
-                hmixSB_tot->Sumw2();
-              hmixSB_tot->Rebin(nRebin);
-            } else if (hmixSBPos_orig) {
-              hmixSB_tot = (TH1 *)hmixSBPos_orig->Clone(
-                  Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet,
-                       group));
-              if (!hmixSB_tot->GetSumw2N())
-                hmixSB_tot->Sumw2();
-              hmixSB_tot->Rebin(nRebin);
+          TH1 *hCF_bg = 0;
+          if (hSB_tot_true && hmixSB_tot) {
+            int bin1 = hSB_tot_true->FindBin(0.40001);
+            int bin2 = hSB_tot_true->FindBin(0.59999);
+            double intSB_true = hSB_tot_true->Integral(bin1, bin2);
+            double intSB_mix = hmixSB_tot->Integral(hmixSB_tot->FindBin(0.40001), hmixSB_tot->FindBin(0.59999));
+            if (intSB_mix > 0) {
+              hmixSB_tot->Scale(intSB_true / intSB_mix);
             }
-
-            if (hmixSB_tot) {
-              h5_mix->Add(hmixSB_tot, -1.0);
-            }
-
-            h5_mix->SetLineColor(kRed);
-            h5_mix->SetMarkerColor(kRed);
-            h5_mix->SetMarkerStyle(20);
-            h5_mix->SetMarkerSize(0.8);
-
-            // 0.4 - 0.6 GeV/c で積分してスケールを合わせる
-            int bin1 = h5_true->FindBin(0.40001);
-            int bin2 = h5_true->FindBin(0.59999);
-            double int5_true = h5_true->Integral(bin1, bin2);
-            double int5_mix = h5_mix->Integral(h5_mix->FindBin(0.40001),
-                                               h5_mix->FindBin(0.59999));
-
-            if (int5_mix > 0) {
-              h5_mix->Scale(int5_true / int5_mix);
-            }
+            hCF_bg = (TH1 *)hSB_tot_true->Clone(Form("hCF_bg_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            hCF_bg->Divide(hmixSB_tot);
           }
 
-          double max5 = h5_true->GetMaximum();
-          if (h5_mix && h5_mix->GetMaximum() > max5)
-            max5 = h5_mix->GetMaximum();
-          h5_true->SetMaximum(max5 * 1.2);
-
-          h5_true->Draw("E1");
-          if (h5_mix) {
-            h5_mix->Draw("E1 same");
+          if (hCF_sig) {
+            hCF_sig->SetTitle(Form("CF Comparison %s (%s)", sp.Data(), centLabel.Data()));
+            hCF_sig->SetLineColor(kBlack);
+            hCF_sig->SetMarkerColor(kBlack);
+            hCF_sig->GetYaxis()->SetTitle("CF");
+            hCF_sig->GetYaxis()->SetRangeUser(0.0, 2.0);
+            hCF_sig->Draw("E1");
           }
+          if (hCF_bg) {
+            hCF_bg->SetLineColor(kRed);
+            hCF_bg->SetMarkerColor(kRed);
+            hCF_bg->SetMarkerStyle(20);
+            hCF_bg->Draw("E1 same");
+          }
+          
+          TLegend *leg5 = new TLegend(0.15, 0.7, 0.55, 0.88);
+          if (hCF_sig) leg5->AddEntry(hCF_sig, "CF (Signal Window)", "pe");
+          if (hCF_bg) leg5->AddEntry(hCF_bg, "CF (Sideband)", "pe");
+          leg5->Draw();
 
-          // --- 6ページ目: Correlation Function (After SB Subtraction) ---
+          // --- 6ページ目: Correlation Function (Constant Purity Corrected) ---
           c6->cd(group + 1);
-          if (h5_mix) {
-            TH1 *hCF_sb = (TH1 *)h5_true->Clone(Form(
-                "hCF_sb_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-            hCF_sb->SetTitle(Form("CF (SB Subtracted) %s (%s)", sp.Data(),
-                                  centLabel.Data()));
-            hCF_sb->Divide(h5_mix);
+          if (hCF_sig && hCF_bg && h && hSB_tot_true) {
+            double sn = 5.217;
+            double purity = sn / (sn + 1.0);
+            
+            TH1 *hCF_sub = (TH1 *)hCF_sig->Clone(Form("hCF_sub_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            hCF_sub->SetTitle(Form("CF (Constant Purity Corrected) %s (%s)", sp.Data(), centLabel.Data()));
+            
+            if (purity > 0) {
+              TH1 *hTerm2 = (TH1*)hCF_bg->Clone("hTerm2");
+              hTerm2->Scale(1.0 - purity);
+              hCF_sub->Add(hTerm2, -1.0);
+              hCF_sub->Scale(1.0 / purity);
+            } else {
+              hCF_sub->Reset();
+            }
 
-            // 黒色でプロット、Y軸の範囲を[0, 2]に固定
-            hCF_sb->SetLineColor(kBlack);
-            hCF_sb->SetMarkerColor(kBlack);
-            hCF_sb->GetYaxis()->SetTitle("C(k*) = True_sub / Mixed_sub");
-            hCF_sb->GetYaxis()->SetRangeUser(0.0, 2.0);
-
-            hCF_sb->Draw("E1");
+            hCF_sub->SetLineColor(kBlack);
+            hCF_sub->SetMarkerColor(kBlack);
+            hCF_sub->GetYaxis()->SetTitle(Form("CF (Corrected, P=%.3f)", purity));
+            hCF_sub->GetYaxis()->SetRangeUser(0.0, 2.0);
+            hCF_sub->Draw("E1");
 
             c6->cd(group + 1 + nGroups);
-            TH1 *hCF_sb_zoom =
-                (TH1 *)hCF_sb->Clone(Form("hCF_sb_zoom_%s_groupSet%d_Group%d",
-                                          sp.Data(), groupSet, group));
-            hCF_sb_zoom->SetTitle(Form("CF Zoom (SB Subtracted) %s (%s)",
-                                       sp.Data(), centLabel.Data()));
-            hCF_sb_zoom->GetXaxis()->SetRangeUser(0.0, 0.15);
-            hCF_sb_zoom->GetYaxis()->SetRangeUser(0.0, 30.0);
-	    hCF_sb_zoom->SetLineColor(kGreen);
-	    hCF_sb_zoom->SetMarkerColor(kGreen);
-            hCF_sb_zoom->Draw("E1");
+            TH1 *hCF_sub_zoom = (TH1 *)hCF_sub->Clone(Form("hCF_sub_zoom_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+            hCF_sub_zoom->SetTitle(Form("CF Zoom (Corrected) %s (%s)", sp.Data(), centLabel.Data()));
+            hCF_sub_zoom->GetXaxis()->SetRangeUser(0.0, 0.15);
+            hCF_sub_zoom->GetYaxis()->SetRangeUser(0.0, 30.0);
+	    hCF_sub_zoom->SetLineColor(kGreen);
+	    hCF_sub_zoom->SetMarkerColor(kGreen);
+            hCF_sub_zoom->Draw("E1");
           }
 
         } else {

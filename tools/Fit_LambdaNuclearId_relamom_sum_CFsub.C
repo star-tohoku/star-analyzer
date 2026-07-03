@@ -117,7 +117,7 @@ double fitLL_free(double *x, double *p) {
 
 #include "TLatex.h"
 
-void Fit_LambdaNuclearId_relamom_sum() {
+void Fit_LambdaNuclearId_relamom_sum_CFsub() {
   gStyle->SetOptFit(0); // Hide fit parameters in stat box
   gStyle->SetOptStat(0); // Hide stat box
 
@@ -141,14 +141,14 @@ void Fit_LambdaNuclearId_relamom_sum() {
   TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
   TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
-  TString outFile = Form("%s/Fit_LL_%s.pdf", outDir.Data(), sp.Data());
+  TString outFile = Form("%s/Fit_LL_CFsub_%s.pdf", outDir.Data(), sp.Data());
 
   for (int groupSet = 0; groupSet < 2; ++groupSet) {
     int nGroups = (groupSet == 0) ? 2 : 3;
 
     TCanvas *cFit = new TCanvas(
         Form("cFit_%s_groupSet%d", sp.Data(), groupSet),
-        Form("LL Fit CF (SB Subtracted) for Lambda - %s", sp.Data()), 1200, 600);
+        Form("LL Fit CF (Purity Corrected) for Lambda - %s", sp.Data()), 1200, 600);
     cFit->Divide(nGroups, 1);
 
     for (int group = 0; group < nGroups; ++group) {
@@ -281,8 +281,11 @@ void Fit_LambdaNuclearId_relamom_sum() {
           }
         }
 
-        // Sideband Subtraction
-        TH1 *h5_true = (TH1 *)h->Clone(Form("h5_true_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+        TH1 *hCF_sig = 0;
+        if (hmix) {
+          hCF_sig = (TH1 *)h->Clone(Form("hCF_sig_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          hCF_sig->Divide(hmix);
+        }
 
         TH1 *hSB_tot_true = 0;
         if (hSBNeg_orig && hSBPos_orig) {
@@ -300,53 +303,54 @@ void Fit_LambdaNuclearId_relamom_sum() {
           hSB_tot_true->Rebin(nRebin);
         }
 
-        if (hSB_tot_true) {
-          h5_true->Add(hSB_tot_true, -1.0);
+        TH1 *hmixSB_tot = 0;
+        if (hmixSBNeg_orig && hmixSBPos_orig) {
+          hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
+          hmixSB_tot->Add(hmixSBPos_orig);
+          hmixSB_tot->Rebin(nRebin);
+        } else if (hmixSBNeg_orig) {
+          hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
+          hmixSB_tot->Rebin(nRebin);
+        } else if (hmixSBPos_orig) {
+          hmixSB_tot = (TH1 *)hmixSBPos_orig->Clone(Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
+          hmixSB_tot->Rebin(nRebin);
         }
 
-        TH1 *h5_mix = 0;
-        if (hmix_unscaled) {
-          h5_mix = (TH1 *)hmix_unscaled->Clone(Form("h5_mix_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-
-          TH1 *hmixSB_tot = 0;
-          if (hmixSBNeg_orig && hmixSBPos_orig) {
-            hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-            if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
-            hmixSB_tot->Add(hmixSBPos_orig);
-            hmixSB_tot->Rebin(nRebin);
-          } else if (hmixSBNeg_orig) {
-            hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-            if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
-            hmixSB_tot->Rebin(nRebin);
-          } else if (hmixSBPos_orig) {
-            hmixSB_tot = (TH1 *)hmixSBPos_orig->Clone(Form("hmixSB_tot_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-            if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
-            hmixSB_tot->Rebin(nRebin);
+        TH1 *hCF_bg = 0;
+        if (hSB_tot_true && hmixSB_tot) {
+          int bin1 = hSB_tot_true->FindBin(0.40001);
+          int bin2 = hSB_tot_true->FindBin(0.59999);
+          double intSB_true = hSB_tot_true->Integral(bin1, bin2);
+          double intSB_mix = hmixSB_tot->Integral(hmixSB_tot->FindBin(0.40001), hmixSB_tot->FindBin(0.59999));
+          if (intSB_mix > 0) {
+            hmixSB_tot->Scale(intSB_true / intSB_mix);
           }
-
-          if (hmixSB_tot) {
-            h5_mix->Add(hmixSB_tot, -1.0);
-          }
-
-          // Scale
-          int bin1 = h5_true->FindBin(0.40001);
-          int bin2 = h5_true->FindBin(0.59999);
-          double int5_true = h5_true->Integral(bin1, bin2);
-          double int5_mix = h5_mix->Integral(h5_mix->FindBin(0.40001), h5_mix->FindBin(0.59999));
-
-          if (int5_mix > 0) {
-            h5_mix->Scale(int5_true / int5_mix);
-          }
+          hCF_bg = (TH1 *)hSB_tot_true->Clone(Form("hCF_bg_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          hCF_bg->Divide(hmixSB_tot);
         }
 
         // Generate CF
         cFit->cd(group + 1);
-        if (h5_mix) {
-          TH1 *hCF_sb = (TH1 *)h5_true->Clone(Form("hCF_sb_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-          hCF_sb->Divide(h5_mix);
+        if (hCF_sig && hCF_bg && h && hSB_tot_true) {
+          double sn = 5.217;
+          double purity = sn / (sn + 1.0);
+          
+          TH1 *hCF_sub = (TH1 *)hCF_sig->Clone(Form("hCF_sub_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          
+          if (purity > 0) {
+            TH1 *hTerm2 = (TH1*)hCF_bg->Clone("hTerm2");
+            hTerm2->Scale(1.0 - purity);
+            hCF_sub->Add(hTerm2, -1.0);
+            hCF_sub->Scale(1.0 / purity);
+          } else {
+            hCF_sub->Reset();
+          }
 
-          TH1 *hCF_sb_zoom = (TH1 *)hCF_sb->Clone(Form("hCF_sb_zoom_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
-          hCF_sb_zoom->SetTitle(Form("CF Zoom (SB Sub) %s (%s)", sp.Data(), centLabel.Data()));
+          TH1 *hCF_sb_zoom = (TH1 *)hCF_sub->Clone(Form("hCF_sb_zoom_%s_groupSet%d_Group%d", sp.Data(), groupSet, group));
+          hCF_sb_zoom->SetTitle(Form("CF Zoom (Purity Corrected) %s (%s)", sp.Data(), centLabel.Data()));
           hCF_sb_zoom->GetXaxis()->SetRangeUser(0.0, 0.40);
           hCF_sb_zoom->GetYaxis()->SetRangeUser(0.0, 7.0);
           hCF_sb_zoom->GetYaxis()->SetTitle("C(k*)");

@@ -8,7 +8,7 @@
 #include "TSystem.h"
 #include <iostream>
 
-void draw_LambdaNuclearId_relamom() {
+void draw_LambdaNuclearId_relamom_CFsub() {
   // スタイルの設定
   gStyle->SetOptStat(0);
   gStyle->SetOptTitle(1);
@@ -66,16 +66,16 @@ void draw_LambdaNuclearId_relamom() {
         Form("Mixed Sidebands for Lambda - %s", sp.Data()), 1200, 900);
     c4->Divide(3, 3);
 
-    // SB Subtraction用の5ページ目のキャンバス
+    // CF Comparison用の5ページ目のキャンバス
     TCanvas *c5 = new TCanvas(Form("c5_%s", sp.Data()),
-                              Form("SB Subtracted for Lambda - %s", sp.Data()),
+                              Form("CF Comparison for Lambda - %s", sp.Data()),
                               1200, 900);
     c5->Divide(3, 3);
 
-    // SB Subtraction CF用の6ページ目のキャンバス
+    // CF Corrected用の6ページ目のキャンバス
     TCanvas *c6 = new TCanvas(
         Form("c6_%s", sp.Data()),
-        Form("CF (SB Subtracted) for Lambda - %s", sp.Data()), 1200, 900);
+        Form("CF (Purity Corrected) for Lambda - %s", sp.Data()), 1200, 900);
     c6->Divide(3, 3);
 
     // True event histograms are in the "nuclearid" subdirectory
@@ -195,10 +195,10 @@ void draw_LambdaNuclearId_relamom() {
         TString nameSBPos = Form("hKstar_%s_SBPos_CentBin%d", sp.Data(), j);
         TH1 *hSBNeg_tmp = dirNuc ? (TH1 *)dirNuc->Get(nameSBNeg) : (TH1 *)fIn->Get(nameSBNeg);
         TH1 *hSBPos_tmp = dirNuc ? (TH1 *)dirNuc->Get(nameSBPos) : (TH1 *)fIn->Get(nameSBPos);
-
+        
         TH1 *hSBNeg_orig = hSBNeg_tmp ? (TH1 *)hSBNeg_tmp->Clone(Form("%s_orig", nameSBNeg.Data())) : 0;
         TH1 *hSBPos_orig = hSBPos_tmp ? (TH1 *)hSBPos_tmp->Clone(Form("%s_orig", nameSBPos.Data())) : 0;
-
+        
         if (hSBNeg_orig) {
           if (!hSBNeg_orig->GetSumw2N()) hSBNeg_orig->Sumw2();
           hSBNeg_orig->Scale(1.0 / 3.0);
@@ -260,7 +260,7 @@ void draw_LambdaNuclearId_relamom() {
 
         TH1 *hmixSBNeg_orig = hmixSBNeg_tmp ? (TH1 *)hmixSBNeg_tmp->Clone(Form("%s_orig", mixNameSBNeg.Data())) : 0;
         TH1 *hmixSBPos_orig = hmixSBPos_tmp ? (TH1 *)hmixSBPos_tmp->Clone(Form("%s_orig", mixNameSBPos.Data())) : 0;
-
+        
         if (hmixSBNeg_orig) {
           if (!hmixSBNeg_orig->GetSumw2N()) hmixSBNeg_orig->Sumw2();
           hmixSBNeg_orig->Scale(1.0 / 3.0);
@@ -323,12 +323,14 @@ void draw_LambdaNuclearId_relamom() {
           leg4->Draw();
         }
 
-        // --- 5ページ目: Sideband Subtraction ---
+        // --- 5ページ目: CF Comparison ---
         c5->cd(j + 1);
-        TH1 *h5_true =
-            (TH1 *)h->Clone(Form("h5_true_%s_CentBin%d", sp.Data(), j));
-        h5_true->SetTitle(
-            Form("Sideband Subtracted %s CentBin%d (%s)", sp.Data(), j, centLabels[j]));
+        
+        TH1 *hCF_sig = 0;
+        if (hmix) {
+          hCF_sig = (TH1 *)h->Clone(Form("hCF_sig_%s_CentBin%d", sp.Data(), j));
+          hCF_sig->Divide(hmix);
+        }
 
         TH1 *hSB_tot_true = 0;
         if (hSBNeg_orig && hSBPos_orig) {
@@ -349,91 +351,81 @@ void draw_LambdaNuclearId_relamom() {
           hSB_tot_true->Rebin(nRebin);
         }
 
-        if (hSB_tot_true) {
-          h5_true->Add(hSB_tot_true, -1.0);
+        TH1 *hmixSB_tot = 0;
+        if (hmixSBNeg_orig && hmixSBPos_orig) {
+          hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
+              Form("hmixSB_tot_%s_CentBin%d", sp.Data(), j));
+          if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
+          hmixSB_tot->Add(hmixSBPos_orig);
+          hmixSB_tot->Rebin(nRebin);
+        } else if (hmixSBNeg_orig) {
+          hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
+              Form("hmixSB_tot_%s_CentBin%d", sp.Data(), j));
+          if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
+          hmixSB_tot->Rebin(nRebin);
+        } else if (hmixSBPos_orig) {
+          hmixSB_tot = (TH1 *)hmixSBPos_orig->Clone(
+              Form("hmixSB_tot_%s_CentBin%d", sp.Data(), j));
+          if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
+          hmixSB_tot->Rebin(nRebin);
         }
 
-        h5_true->SetLineColor(kBlack);
-        h5_true->SetMarkerColor(kBlack);
-        h5_true->SetMarkerStyle(20);
-        h5_true->SetMarkerSize(0.8);
-
-        TH1 *h5_mix = 0;
-        if (hmix_unscaled) {
-          h5_mix = (TH1 *)hmix_unscaled->Clone(
-              Form("h5_mix_%s_CentBin%d", sp.Data(), j));
-
-          TH1 *hmixSB_tot = 0;
-          if (hmixSBNeg_orig && hmixSBPos_orig) {
-            hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
-                Form("hmixSB_tot_%s_CentBin%d", sp.Data(), j));
-            if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
-            hmixSB_tot->Add(hmixSBPos_orig);
-            hmixSB_tot->Rebin(nRebin);
-          } else if (hmixSBNeg_orig) {
-            hmixSB_tot = (TH1 *)hmixSBNeg_orig->Clone(
-                Form("hmixSB_tot_%s_CentBin%d", sp.Data(), j));
-            if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
-            hmixSB_tot->Rebin(nRebin);
-          } else if (hmixSBPos_orig) {
-            hmixSB_tot = (TH1 *)hmixSBPos_orig->Clone(
-                Form("hmixSB_tot_%s_CentBin%d", sp.Data(), j));
-            if (!hmixSB_tot->GetSumw2N()) hmixSB_tot->Sumw2();
-            hmixSB_tot->Rebin(nRebin);
+        TH1 *hCF_bg = 0;
+        if (hSB_tot_true && hmixSB_tot) {
+          // Scale hmixSB_tot to hSB_tot_true
+          int bin1 = hSB_tot_true->FindBin(0.40001);
+          int bin2 = hSB_tot_true->FindBin(0.59999);
+          double intSB_true = hSB_tot_true->Integral(bin1, bin2);
+          double intSB_mix = hmixSB_tot->Integral(hmixSB_tot->FindBin(0.40001), hmixSB_tot->FindBin(0.59999));
+          if (intSB_mix > 0) {
+            hmixSB_tot->Scale(intSB_true / intSB_mix);
           }
-
-          if (hmixSB_tot) {
-            h5_mix->Add(hmixSB_tot, -1.0);
-          }
-
-          h5_mix->SetLineColor(kRed);
-          h5_mix->SetMarkerColor(kRed);
-          h5_mix->SetMarkerStyle(20);
-          h5_mix->SetMarkerSize(0.8);
-
-          // 0.4 - 0.6 GeV/c で積分してスケールを合わせる
-          int bin1 = h5_true->FindBin(0.40001);
-          int bin2 = h5_true->FindBin(0.59999);
-          double int5_true = h5_true->Integral(bin1, bin2);
-          double int5_mix = h5_mix->Integral(h5_mix->FindBin(0.40001),
-                                             h5_mix->FindBin(0.59999));
-
-          if (int5_mix > 0) {
-            h5_mix->Scale(int5_true / int5_mix);
-          }
-        }
-
-        double max5 = h5_true->GetMaximum();
-        if (h5_mix && h5_mix->GetMaximum() > max5)
-          max5 = h5_mix->GetMaximum();
-        h5_true->SetMaximum(max5 * 1.2);
-
-        h5_true->Draw("E1");
-        if (h5_mix) {
-          h5_mix->Draw("E1 same");
+          hCF_bg = (TH1 *)hSB_tot_true->Clone(Form("hCF_bg_%s_CentBin%d", sp.Data(), j));
+          hCF_bg->Divide(hmixSB_tot);
         }
         
+        if (hCF_sig) {
+          hCF_sig->SetTitle(Form("CF Comparison %s CentBin%d (%s)", sp.Data(), j, centLabels[j]));
+          hCF_sig->SetLineColor(kBlack);
+          hCF_sig->SetMarkerColor(kBlack);
+          hCF_sig->GetYaxis()->SetTitle("CF");
+          hCF_sig->GetYaxis()->SetRangeUser(0.0, 2.0);
+          hCF_sig->Draw("E1");
+        }
+        if (hCF_bg) {
+          hCF_bg->SetLineColor(kRed);
+          hCF_bg->SetMarkerColor(kRed);
+          hCF_bg->SetMarkerStyle(20);
+          hCF_bg->Draw("E1 same");
+        }
         TLegend *leg5 = new TLegend(0.15, 0.7, 0.55, 0.88);
-        leg5->AddEntry(h5_true, "True (SB Sub)", "pe");
-        if (h5_mix) leg5->AddEntry(h5_mix, "Mixed (SB Sub)", "pe");
+        if (hCF_sig) leg5->AddEntry(hCF_sig, "CF (Signal Window)", "pe");
+        if (hCF_bg) leg5->AddEntry(hCF_bg, "CF (Sideband)", "pe");
         leg5->Draw();
 
-        // --- 6ページ目: Correlation Function (After SB Subtraction) ---
+        // --- 6ページ目: Correlation Function (Constant Purity Corrected) ---
         c6->cd(j + 1);
-        if (h5_mix) {
-          TH1 *hCF_sb =
-              (TH1 *)h5_true->Clone(Form("hCF_sb_%s_CentBin%d", sp.Data(), j));
-          hCF_sb->SetTitle(
-              Form("CF (SB Subtracted) %s CentBin%d (%s)", sp.Data(), j, centLabels[j]));
-          hCF_sb->Divide(h5_mix);
+        if (hCF_sig && hCF_bg && h && hSB_tot_true) {
+          double sn = 5.217;
+          double purity = sn / (sn + 1.0);
+          
+          TH1 *hCF_sub = (TH1 *)hCF_sig->Clone(Form("hCF_sub_%s_CentBin%d", sp.Data(), j));
+          hCF_sub->SetTitle(Form("CF (Constant Purity Corrected) %s CentBin%d (%s)", sp.Data(), j, centLabels[j]));
+          
+          if (purity > 0) {
+            TH1 *hTerm2 = (TH1*)hCF_bg->Clone("hTerm2");
+            hTerm2->Scale(1.0 - purity);
+            hCF_sub->Add(hTerm2, -1.0);
+            hCF_sub->Scale(1.0 / purity);
+          } else {
+            hCF_sub->Reset();
+          }
 
-          // 黒色でプロット、Y軸の範囲を[0, 2]に固定
-          hCF_sb->SetLineColor(kBlack);
-          hCF_sb->SetMarkerColor(kBlack);
-          hCF_sb->GetYaxis()->SetTitle("C(k*) = True_sub / Mixed_sub");
-          hCF_sb->GetYaxis()->SetRangeUser(0.0, 2.0);
-
-          hCF_sb->Draw("E1");
+          hCF_sub->SetLineColor(kBlack);
+          hCF_sub->SetMarkerColor(kBlack);
+          hCF_sub->GetYaxis()->SetTitle(Form("CF (Corrected, P=%.3f)", purity));
+          hCF_sub->GetYaxis()->SetRangeUser(0.0, 2.0);
+          hCF_sub->Draw("E1");
         }
 
         if (hSBNeg_orig) delete hSBNeg_orig;
@@ -448,7 +440,7 @@ void draw_LambdaNuclearId_relamom() {
     }
 
     // マルチページPDFとして保存
-    TString outFile = Form("%s/kstar_%s.pdf", outDir.Data(), sp.Data());
+    TString outFile = Form("%s/kstar_CFsub_%s.pdf", outDir.Data(), sp.Data());
     c1->Print(outFile + "("); // 1ページ目 (Open)
     c2->Print(outFile);       // 2ページ目
     c3->Print(outFile);       // 3ページ目

@@ -14,8 +14,9 @@ void Draw_LambdaInvMass() {
 
   // 入力ファイル
   TString inputFile =
-      "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer/rootfile/"
-      "auau13p5_anaLambdaNuclearId/auau13p5_anaLambdaNuclearId_all.root";
+    "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer/rootfile/"
+    //      "auau13p5_anaLambdaNuclearId/auau13p5_anaLambdaNuclearId_all.root";
+    "auau13p5_anaLambdaNuclearId/auau13p5_anaLambdaNuclearId_all_LambdaImprove_WideSide.root";
   TFile *fIn = TFile::Open(inputFile, "READ");
   if (!fIn || fIn->IsZombie()) {
     std::cerr << "Error: Cannot open input file " << inputFile << std::endl;
@@ -69,11 +70,11 @@ void Draw_LambdaInvMass() {
   double massMin = mean - nsigma * sigma;
   double massMax = mean + nsigma * sigma;
 
-  double massSB1Min = mean - 2.0 * nsigma * sigma;
+  double massSB1Min = mean - 4.0 * nsigma * sigma;
   double massSB1Max = massMin;
 
   double massSB2Min = massMax;
-  double massSB2Max = mean + 2.0 * nsigma * sigma;
+  double massSB2Max = mean + 4.0 * nsigma * sigma;
 
   double yMax = h->GetMaximum();
 
