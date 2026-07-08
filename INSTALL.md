@@ -84,6 +84,11 @@ python script/setup_config_from_analysisinfo.py config/analysis/analysis_info_<a
 ```
 
 This creates `config/mainconf/main_<anaName>.yaml` and referenced cut/maker YAMLs.
+**Note:** If a destination YAML file already exists, the script will skip it to prevent overwriting your customized settings. If you want to force overwrite all existing files from templates, add the `--force` option:
+
+```bash
+python script/setup_config_from_analysisinfo.py config/analysis/analysis_info_<anaName>.yaml --force
+```
 
 Replace `<anaName>` with your token (e.g. `auau19_anaLambda`).
 
