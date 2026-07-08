@@ -29,7 +29,7 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   `submit.sh` replaces `__PROJECT_ROOT__` in the template with the actual project path, so the same template works for any user.
   Before submit it runs a preflight check: it infers **`anaName`** from the joblist basename (`joblist_<anaName>.xml` → `<anaName>`), then extracts the embedded **`config/mainconf/...yaml`** path from the joblist and uses that as the single source of truth for `libraryTag` resolution, rebuilds, ELF class consistency of `lib/*.so` vs `root4star`, and runtime linker sanity in the singularity context. This fails fast on mismatch and avoids secondary errors like missing `fromScratch` output after an early crash.
 
-  After preflight succeeds, **`submit.sh` creates `log/`, `err/`, and `rootfile/<scratchSubdir>/` under the joblist’s `workDir`** (parsed from `<stdout>`, `<stderr>`, and `<output toURL>` URLs) if they are missing, and verifies each directory is writable. This prevents SUMS from scheduling a job that later fails when copying ROOT output.
+  After preflight succeeds, **`submit.sh` creates the stdout, stderr, and ROOT output directories parsed from `<stdout>`, `<stderr>`, and `<output toURL>`** if they are missing, and verifies each directory is writable. Generated joblists use `analysis.workDir` for ROOT output and optional `analysis.logDir` / `analysis.errDir` for stdout/stderr. This prevents SUMS from scheduling a job that later fails when copying output.
 
    If preflight fails and you want the script to try recovery once, use:
    ```bash

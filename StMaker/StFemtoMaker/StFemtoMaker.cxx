@@ -129,6 +129,8 @@ void StFemtoMaker::Clear(Option_t* opt) {
   (void)opt;
   m_eventCandidates.clear();
   m_phiQaLoose.clear();
+  m_phiQaPreMassLoose.clear();
+  m_phiQaPreMassTofStrict.clear();
 }
 
 Int_t StFemtoMaker::Make() {
@@ -142,6 +144,8 @@ Int_t StFemtoMaker::Make() {
   mEventCounter++;
   m_eventCandidates.clear();
   m_phiQaLoose.clear();
+  m_phiQaPreMassLoose.clear();
+  m_phiQaPreMassTofStrict.clear();
 
   TVector3 pVtx = event->primaryVertex();
   Float_t vzVpd = event->vzVpd();
@@ -1432,7 +1436,7 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
       Double_t yLab = CalculatePairRapidity(invMass, phiMom);
       Double_t pairRapidity = ApplyRapidityFrame(yLab);
 
-      const Bool_t passStage =
+      const Bool_t passPreMassStage =
           (TMath::Abs(kaonsPlus[iPlus].DCA) <= phiCfg.maxDCAKaon) &&
           (TMath::Abs(kaonsMinus[iMinus].DCA) <= phiCfg.maxDCAKaon) &&
           (kaonsPlus[iPlus].pT >= trkCfg.minPt && kaonsPlus[iPlus].pT <= trkCfg.maxPt) &&
@@ -1440,9 +1444,20 @@ void StFemtoMaker::BuildResonanceCandidates(const std::string& speciesKey, const
           (kaonsPlus[iPlus].eta >= trkCfg.minEta && kaonsPlus[iPlus].eta <= trkCfg.maxEta) &&
           (kaonsMinus[iMinus].eta >= trkCfg.minEta && kaonsMinus[iMinus].eta <= trkCfg.maxEta) &&
           (TMath::Abs(kaonsPlus[iPlus].nSigmaKaon) <= phiCfg.nSigmaKaon) &&
-          (TMath::Abs(kaonsMinus[iMinus].nSigmaKaon) <= phiCfg.nSigmaKaon) &&
+          (TMath::Abs(kaonsMinus[iMinus].nSigmaKaon) <= phiCfg.nSigmaKaon);
+
+      const Bool_t passStage = passPreMassStage &&
           (openingAngle >= phiCfg.minOpeningAngle && openingAngle <= phiCfg.maxOpeningAngle) &&
           (pairRapidity >= phiCfg.minPairRapidity && pairRapidity <= phiCfg.maxPairRapidity);
+
+      if (passPreMassStage) {
+        FemtoCandidate preMassCand = MakePhiCandidate(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom,
+                                                      openingAngle, pairRapidity, dcaKK, eventIndex, speciesKey);
+        m_phiQaPreMassLoose.push_back(preMassCand);
+        if (PassPairTofCut(kaonsPlus[iPlus], kaonsMinus[iMinus])) {
+          m_phiQaPreMassTofStrict.push_back(preMassCand);
+        }
+      }
 
       if (passStage) {
         m_phiQaLoose.push_back(MakePhiCandidate(kaonsPlus[iPlus], kaonsMinus[iMinus], invMass, phiMom, openingAngle,
@@ -1631,11 +1646,16 @@ Double_t StFemtoMaker::ComputeMomentumAngleRad(const TVector3& pA, const TVector
   return TMath::ACos(cosTheta);
 }
 
-std::string StFemtoMaker::PhiPairMomAngleHistKey(const std::string& channel, Bool_t vsMkk, Bool_t tofStrict) const {
+std::string StFemtoMaker::PhiPairMomAngleHistKeyWithSuffix(const std::string& channel, Bool_t vsMkk,
+                                                                   const std::string& suffix) const {
   std::string key = vsMkk ? "hPhiPairMomAngle_vs_MKK_" : "hPhiPairMomAngle_";
   key += channel;
-  if (tofStrict) key += "_tofStrict";
+  key += suffix;
   return key;
+}
+
+std::string StFemtoMaker::PhiPairMomAngleHistKey(const std::string& channel, Bool_t vsMkk, Bool_t tofStrict) const {
+  return PhiPairMomAngleHistKeyWithSuffix(channel, vsMkk, tofStrict ? "_tofStrict" : "");
 }
 
 void StFemtoMaker::FillPhiBachelorPairAngleQa() {
@@ -1658,6 +1678,8 @@ void StFemtoMaker::FillPhiBachelorPairAngleQa() {
     const std::string h2dLoose = PhiPairMomAngleHistKey(channelName, kTRUE, kFALSE);
     const std::string h1dStrict = PhiPairMomAngleHistKey(channelName, kFALSE, kTRUE);
     const std::string h2dStrict = PhiPairMomAngleHistKey(channelName, kTRUE, kTRUE);
+    const std::string h2dPreMass = PhiPairMomAngleHistKeyWithSuffix(channelName, kTRUE, "_preMass");
+    const std::string h2dPreMassStrict = PhiPairMomAngleHistKeyWithSuffix(channelName, kTRUE, "_preMass_tofStrict");
 
     for (size_t ip = 0; ip < m_phiQaLoose.size(); ++ip) {
       const FemtoCandidate& phiCand = m_phiQaLoose[ip];
@@ -1673,6 +1695,36 @@ void StFemtoMaker::FillPhiBachelorPairAngleQa() {
         if (m_histManager->Get(h1dLoose.c_str())) m_histManager->Fill(h1dLoose.c_str(), angle);
         if (m_histManager->Get(h2dLoose.c_str())) {
           m_histManager->Fill(h2dLoose.c_str(), angle, (Double_t)phiCand.reso.invMass);
+        }
+      }
+    }
+
+    for (size_t ip = 0; ip < m_phiQaPreMassLoose.size(); ++ip) {
+      const FemtoCandidate& phiCand = m_phiQaPreMassLoose[ip];
+      TVector3 pPhi(phiCand.px, phiCand.py, phiCand.pz);
+      for (size_t jb = 0; jb < bachCands.size(); ++jb) {
+        const FemtoCandidate& bach = bachCands[jb];
+        if (TracksOverlap(phiCand, bach)) continue;
+        TVector3 pBach(bach.px, bach.py, bach.pz);
+        Double_t angle = ComputeMomentumAngleRad(pPhi, pBach);
+        if (angle < 0.0) continue;
+        if (m_histManager->Get(h2dPreMass.c_str())) {
+          m_histManager->Fill(h2dPreMass.c_str(), angle, (Double_t)phiCand.reso.invMass);
+        }
+      }
+    }
+
+    for (size_t ip = 0; ip < m_phiQaPreMassTofStrict.size(); ++ip) {
+      const FemtoCandidate& phiCand = m_phiQaPreMassTofStrict[ip];
+      TVector3 pPhi(phiCand.px, phiCand.py, phiCand.pz);
+      for (size_t jb = 0; jb < bachCands.size(); ++jb) {
+        const FemtoCandidate& bach = bachCands[jb];
+        if (TracksOverlap(phiCand, bach)) continue;
+        TVector3 pBach(bach.px, bach.py, bach.pz);
+        Double_t angle = ComputeMomentumAngleRad(pPhi, pBach);
+        if (angle < 0.0) continue;
+        if (m_histManager->Get(h2dPreMassStrict.c_str())) {
+          m_histManager->Fill(h2dPreMassStrict.c_str(), angle, (Double_t)phiCand.reso.invMass);
         }
       }
     }

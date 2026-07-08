@@ -140,8 +140,8 @@ def extract_batch_dirs_from_joblist(joblist_path):
     with open(joblist_path, 'r') as f:
         content = f.read()
     patterns = [
-        r'<stdout\s+URL="file:([^"]+/log)/',
-        r'<stderr\s+URL="file:([^"]+/err)/',
+        r'<stdout\s+URL="file:([^"]+)"',
+        r'<stderr\s+URL="file:([^"]+)"',
         r'<output[^>]*\s+toURL="file:([^"]+)"',
     ]
     dirs = []
@@ -153,6 +153,8 @@ def extract_batch_dirs_from_joblist(joblist_path):
             missing.append(label)
             continue
         path = match.group(1).rstrip('/')
+        if label in ('log', 'err'):
+            path = os.path.dirname(path)
         dirs.append(os.path.abspath(os.path.expandvars(os.path.expanduser(path))))
     if missing:
         print("ERROR: could not parse {} path(s) from joblist: {}".format(
@@ -278,7 +280,7 @@ def build_catalog_url(star_tag):
 
 
 def resolve_work_dir(analysis, project_root):
-    """Resolve analysis.workDir for generated log/err/output destinations."""
+    """Resolve analysis.workDir for generated ROOT output destinations."""
     raw = analysis.get('workDir')
     if raw is None:
         return project_root
@@ -293,6 +295,25 @@ def resolve_work_dir(analysis, project_root):
     # immediately editing analysis_info_temp.yaml.
     if 'Path/To/star-analyzer' in expanded:
         return project_root
+
+    if not os.path.isabs(expanded):
+        expanded = os.path.join(project_root, expanded)
+    return os.path.abspath(expanded)
+
+
+def resolve_batch_dir(analysis, key, fallback_dir, project_root):
+    """Resolve optional analysis.logDir/errDir with a fallback directory."""
+    raw = analysis.get(key)
+    if raw is None:
+        return fallback_dir
+
+    value = str(raw).strip()
+    if not value:
+        return fallback_dir
+
+    expanded = os.path.expandvars(os.path.expanduser(value))
+    if 'Path/To/star-analyzer' in expanded:
+        return fallback_dir
 
     if not os.path.isabs(expanded):
         expanded = os.path.join(project_root, expanded)
@@ -547,6 +568,8 @@ def main():
         if max_events is None or str(max_events).strip() == '':
             max_events = -1
         work_dir = resolve_work_dir(analysis, project_root)
+        log_dir = resolve_batch_dir(analysis, 'logDir', os.path.join(work_dir, 'log'), project_root)
+        err_dir = resolve_batch_dir(analysis, 'errDir', os.path.join(work_dir, 'err'), project_root)
         starver = star_tag.get('libraryTag', 'SL24y')
         catalog_url = build_catalog_url(star_tag)
 
@@ -566,6 +589,8 @@ def main():
             ('__MAINCONF__', mainconf_for_command),
             ('__MAX_EVENTS__', str(max_events)),
             ('__WORK_DIR__', work_dir),
+            ('__LOG_DIR__', log_dir),
+            ('__ERR_DIR__', err_dir),
             ('__CATALOG_URL__', catalog_url),
             ('__N_FILES__', str(n_files)),
             ('__ANA_SO_PREFIX__', ana_so_prefix),

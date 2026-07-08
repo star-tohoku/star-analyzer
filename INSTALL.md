@@ -53,8 +53,8 @@ Or clone with: `git clone --recurse-submodules <repository-url>` and skip the co
 mkdir -p log err rootfile
 ```
 
-- **log/** — job stdout (e.g. `log/stdout.$JOBID.out`).
-- **err/** — job stderr.
+- **log/** — default job stdout location (e.g. `log/stdout.$JOBID.out`) when `analysis.logDir` is unset.
+- **err/** — default job stderr location when `analysis.errDir` is unset.
 - **rootfile/** — output ROOT files (use subdirs per analysis, e.g. `rootfile/auau19_anaLambda/`).
 - **lib/** — produced by `make` (no need to create).
 - **share/figure/** — QA PDFs from `checkHistAnaPhi.sh` / `checkHistAnaLambda.sh` or the matching `singularity_checkHistAna*` scripts; often created on demand.
@@ -68,14 +68,15 @@ mkdir -p log err rootfile
 **Option A — use a mainconf already in the repo (e.g. Lambda / Phi)**
 
 1. Edit `config/analysis/analysis_info_temp.yaml` (or whatever your mainconf’s `analysis:` key references).
-2. Set **analysis.workDir** only if you want a specific destination for generated logs, stderr, and ROOT outputs. If left unset or left at the template placeholder, joblist generation falls back to the current project root. Batch runtime no longer depends on the repository living at `workDir`.
-3. Adjust **starTag.libraryTag** if your site needs a different `starver` tag.
-4. Use that mainconf in Step 6 (e.g. `config/mainconf/main_auau19_anaLambda.yaml`).
+2. Set **analysis.workDir** only if you want a specific destination for generated ROOT outputs. If left unset or left at the template placeholder, joblist generation falls back to the current project root. Batch runtime no longer depends on the repository living at `workDir`.
+3. Optionally set **analysis.logDir** and **analysis.errDir** to move batch stdout/stderr away from `workDir` (for example to `/tmp/oura/star-analyzer/log` and `/tmp/oura/star-analyzer/err`). If unset, they default to `workDir/log` and `workDir/err`.
+4. Adjust **starTag.libraryTag** if your site needs a different `starver` tag.
+5. Use that mainconf in Step 6 (e.g. `config/mainconf/main_auau19_anaLambda.yaml`).
 
 **Option B — new analysis from the template**
 
 1. Copy `config/analysis/analysis_info_temp.yaml` to `config/analysis/analysis_info_<anaName>.yaml`.
-2. Edit `anaName`, `workDir` (optional output base), macro names, and related keys (see [docs/REFERENCE.md](docs/REFERENCE.md) — Analysis info).
+2. Edit `anaName`, `workDir` (optional ROOT output base), optional `logDir` / `errDir`, macro names, and related keys (see [docs/REFERENCE.md](docs/REFERENCE.md) — Analysis info).
 3. Ensure `config/mainconf/mainconf.yaml` exists and uses the `__ANANAME__` placeholder where analysis-specific names are required.
 4. Generate configs:
 
@@ -241,13 +242,13 @@ After submit, see [job/run/README.md](job/run/README.md) for `configlog`, `clean
 | Wrong STAR / missing `root-config` | Re-source `script/setup.sh` / `script/setup.csh` (Step 6), then verify `echo $STAR`, `echo $STAR_HOST_SYS`, `which root-config`, and `root-config --cflags` before `make`. On hosts where host `make` fails, use **`script/singularity_make.sh <mainconf>`**. |
 | Library load errors at runtime | On **SL7**, run via **`script/run_anaXxx.sh`** (or match its `LD_LIBRARY_PATH`). On **AL9**, use **`singularity_run_anaLambda.sh`** / **`singularity_run_anaPhi.sh`** and **`singularity_checkHistAnaLambda.sh`** / **`singularity_checkHistAnaPhi.sh`** for QA PDFs. |
 | Joblist script errors | Install PyYAML for the same `python3` you use. |
-| Batch paths wrong | **analysis.workDir** in analysis_info (output destination only), plus any hand-written stdout/stderr/output paths in custom joblists (Step 4). |
+| Batch paths wrong | **analysis.workDir** for ROOT output, optional **analysis.logDir** / **analysis.errDir** for stdout/stderr, plus any hand-written stdout/stderr/output paths in custom joblists (Step 4). |
 
 ---
 
 ## Quick reference (existing Lambda mainconf)
 
-After editing `config/analysis/analysis_info_temp.yaml` (optionally **analysis.workDir** for output destinations):
+After editing `config/analysis/analysis_info_temp.yaml` (optionally **analysis.workDir** for ROOT output and **analysis.logDir** / **analysis.errDir** for batch logs):
 
 ```bash
 git submodule update --init --recursive

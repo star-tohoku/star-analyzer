@@ -93,6 +93,7 @@ docs/*
 !docs/ai/**
 !docs/REFERENCE.md
 legacy/
+.agents
 
 # job: root-level xml, job_run_* template copies, generated joblists, and job/run xml
 job/*.xml

@@ -96,6 +96,8 @@ class StFemtoMaker : public StMaker {
 
   FemtoCandidateStore m_eventCandidates;
   std::vector<FemtoCandidate> m_phiQaLoose;
+  std::vector<FemtoCandidate> m_phiQaPreMassLoose;
+  std::vector<FemtoCandidate> m_phiQaPreMassTofStrict;
   std::map<Int_t, std::deque<FemtoMixingEvent> > m_mixingPool;
 
   Bool_t PassEventCuts(Float_t vz, Float_t vr, Int_t refMult, Float_t vzVpd);
@@ -179,6 +181,7 @@ class StFemtoMaker : public StMaker {
   Bool_t TracksOverlap(const FemtoCandidate& phiCand, const FemtoCandidate& trkCand) const;
   static Double_t ComputeMomentumAngleRad(const TVector3& pA, const TVector3& pB);
   std::string PhiPairMomAngleHistKey(const std::string& channel, Bool_t vsMkk, Bool_t tofStrict) const;
+  std::string PhiPairMomAngleHistKeyWithSuffix(const std::string& channel, Bool_t vsMkk, const std::string& suffix) const;
   void FillPhiBachelorPairAngleQa();
 
   Int_t GetMixingBin(Float_t vz, Int_t cent9, Double_t psi2) const;

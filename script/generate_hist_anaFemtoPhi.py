@@ -18,6 +18,7 @@ COMMON_STOP_KEYS = {
 BACHELOR_PREFIXES = ("hP_", "hDeuteron_", "hTriton_", "hHe3_", "hHe4_")
 PHI_FEMTO_KEYS = {
     "hPhi_MKK_allForFemto",
+    "hPhi_MKK_vs_BetaGamma",
     "hPhi_MKK_signal",
     "hPhi_MKK_leftSB",
     "hPhi_MKK_rightSB",
@@ -135,6 +136,14 @@ def channel_block_from_template(tmpl: str, channel: str) -> str:
     return re.sub(r"phi_he4", channel, tmpl)
 
 
+def rename_hist_block(block: str, new_name: str) -> str:
+    return re.sub(r"^  h[A-Za-z0-9_]+:", f"  {new_name}:", block, count=1, flags=re.MULTILINE)
+
+
+def km_block(name: str, body: str) -> str:
+    return f"  {name}:\n{body}"
+
+
 def extract_bachelor_blocks(blocks: dict[str, str], prefix: str) -> dict[str, str]:
     return {k: v for k, v in blocks.items() if k.startswith(prefix)}
 
@@ -180,6 +189,18 @@ def phi_pair_mom_angle_block(channel: str, tof_strict: bool) -> list[str]:
     return list(zip(names, blocks))
 
 
+def phi_pair_mom_angle_premass_block(channel: str, tof_strict: bool) -> tuple[str, str]:
+    suffix = "_preMass_tofStrict" if tof_strict else "_preMass"
+    tag = "preMass tofStrict" if tof_strict else "preMass"
+    name = f"hPhiPairMomAngle_vs_MKK_{channel}{suffix}"
+    block = f"""  {name}:
+    xAxis: *OpeningAngle
+    yAxis: *MKK
+    title: "#theta_{{p}} vs M_{{KK}} ({channel}, {tag}; all M_{{KK}}, no KK opening/rapidity cut);#theta_{{p}} [rad];M_{{KK}} [GeV/c^{{2}}]"
+"""
+    return name, block
+
+
 def main() -> None:
     he4_text = (HIST_DIR / "hist_anaFemtoPhi4He.yaml").read_text()
     proton_text = (HIST_DIR / "hist_anaFemtoPhiProton.yaml").read_text()
@@ -194,6 +215,19 @@ def main() -> None:
         parse_axes(proton_text),
         parse_axes(deuteron_text),
     )
+    merged_axes = re.sub(
+        r"  Kstar: &Kstar\n    nBins: \d+\n    min: 0\.0\n    max: [\d.]+",
+        "  Kstar: &Kstar\n    nBins: 300\n    min: 0.0\n    max: 3.0",
+        merged_axes,
+        count=1,
+    )
+    if "  BetaGamma: &BetaGamma\n" not in merged_axes:
+        merged_axes = re.sub(
+            r"(  BetaY: &BetaY\n    nBins: \d+\n    min: 0\.0\n    max: [\d.]+\n\n)",
+            r"\1  BetaGamma: &BetaGamma\n    nBins: 200\n    min: 0.0\n    max: 10.0\n\n",
+            merged_axes,
+            count=1,
+        )
 
     common: dict[str, str] = {}
     for name, block in he4_blocks.items():
@@ -246,6 +280,15 @@ def main() -> None:
     for k, v in nsigma_extra.items():
         if k not in common:
             common[k] = v
+    common["hNSigmaProtonVsPt_Pos"] = """  hNSigmaProtonVsPt_Pos:
+    xAxis: *Pt
+    yAxis: *NSigmaY
+    title: "n#sigma_{p} vs p_{T} (positive charge tracks);p_{T} [GeV/c];n#sigma_{p}"
+"""
+    common["hNKaonMinusFemto"] = """  hNKaonMinusFemto:
+    axis: *NKaon
+    title: "N_{K^{-}} femto candidates per event;N_{K^{-}};Counts"
+"""
 
     bachelor: dict[str, str] = {}
     bachelor.update(extract_bachelor_blocks(proton_blocks, "hP_"))
@@ -276,10 +319,39 @@ def main() -> None:
         he4_blocks["hNHe4_vs_Cent9"], "hNHe4_", "hNHe3_", [("^{4}He", "^{3}He"), ("N_{^{4}He}", "N_{^{3}He}")]
     )
 
+    kaon_minus: dict[str, str] = {
+        "hKm_Pt_PreFemtoCut": km_block("hKm_Pt_PreFemtoCut", "    axis: *Pt\n    title: \"K^{-} p_{T} pre-femto cut;p_{T} [GeV/c];Counts\"\n"),
+        "hKm_Eta_PreFemtoCut": km_block("hKm_Eta_PreFemtoCut", "    axis: *Eta\n    title: \"K^{-} #eta pre-femto cut;#eta;Counts\"\n"),
+        "hKm_NSigmaKaon_PreFemtoCut": km_block("hKm_NSigmaKaon_PreFemtoCut", "    axis: *NSigmaY\n    title: \"K^{-} n#sigma_{K} pre-femto cut;n#sigma_{K};Counts\"\n"),
+        "hKm_DCA_PreFemtoCut": km_block("hKm_DCA_PreFemtoCut", "    axis: *DCA\n    title: \"K^{-} DCA pre-femto cut;DCA [cm];Counts\"\n"),
+        "hKm_Mass2_PreFemtoCut": km_block("hKm_Mass2_PreFemtoCut", "    axis: *Mass2Y\n    title: \"K^{-} TOF m^{2} pre-femto cut;m^{2} [(GeV/c^{2})^{2}];Counts\"\n"),
+        "hKm_Y_PreFemtoCut": km_block("hKm_Y_PreFemtoCut", "    axis: *PairRapidity\n    title: \"K^{-} y_{cm} pre-femto cut;y_{cm};Counts\"\n"),
+        "hKm_PtVsY_PreFemtoCut": km_block("hKm_PtVsY_PreFemtoCut", "    xAxis: *PairRapidity\n    yAxis: *PairPt\n    title: \"K^{-} p_{T} vs y_{cm} pre-femto;y_{cm};p_{T} [GeV/c]\"\n"),
+        "hKm_Y_FemtoCut": km_block("hKm_Y_FemtoCut", "    axis: *PairRapidity\n    title: \"K^{-} y_{cm} after femto cut;y_{cm};Counts\"\n"),
+        "hKm_PtVsY_FemtoCut": km_block("hKm_PtVsY_FemtoCut", "    xAxis: *PairRapidity\n    yAxis: *PairPt\n    title: \"K^{-} p_{T} vs y_{cm} femto cut;y_{cm};p_{T} [GeV/c]\"\n"),
+        "hKm_Mass2VsP": km_block("hKm_Mass2VsP", "    xAxis: *Momentum\n    yAxis: *Mass2Y\n    title: \"K^{-} TOF m^{2} vs p;p [GeV/c];m^{2}\"\n"),
+        "hKm_TofMatchVsP": km_block("hKm_TofMatchVsP", "    xAxis: *Momentum\n    yAxis: *Charge\n    title: \"K^{-} TOF match vs p;p [GeV/c];matched\"\n"),
+        "hKm_NHitsFit_FemtoCut": km_block("hKm_NHitsFit_FemtoCut", "    axis: *NHitsFit\n    title: \"K^{-} nHitsFit after femto cut;nHitsFit;Counts\"\n"),
+        "hKm_NHitsRatio_FemtoCut": km_block("hKm_NHitsRatio_FemtoCut", "    axis: *NHitsRatio\n    title: \"K^{-} nHitsFit/nHitsMax after femto cut;nHitsFit/nHitsMax;Counts\"\n"),
+        "hKm_Pt": km_block("hKm_Pt", "    axis: *Pt\n    title: \"K^{-} p_{T};p_{T} [GeV/c];Counts\"\n"),
+        "hKm_Eta": km_block("hKm_Eta", "    axis: *Eta\n    title: \"K^{-} #eta;#eta;Counts\"\n"),
+        "hKm_Phi": km_block("hKm_Phi", "    axis: *Phi\n    title: \"K^{-} #phi;#phi [rad];Counts\"\n"),
+        "hKm_NSigmaKaon": km_block("hKm_NSigmaKaon", "    axis: *NSigmaY\n    title: \"K^{-} n#sigma_{K};n#sigma_{K};Counts\"\n"),
+        "hKm_DCA": km_block("hKm_DCA", "    axis: *DCA\n    title: \"K^{-} DCA;DCA [cm];Counts\"\n"),
+        "hKm_Mass2": km_block("hKm_Mass2", "    axis: *Mass2Y\n    title: \"K^{-} TOF m^{2};m^{2} [(GeV/c^{2})^{2}];Counts\"\n"),
+        "hKm_NCand": km_block("hKm_NCand", "    axis: *NKaon\n    title: \"K^{-} candidates per event;N_{K^{-}};Counts\"\n"),
+    }
+
     phi_femto: dict[str, str] = {}
     for key in sorted(PHI_FEMTO_KEYS):
         if key in he4_blocks:
             phi_femto[key] = he4_blocks[key]
+    if "hPhi_MKK_vs_BetaGamma" not in phi_femto:
+        phi_femto["hPhi_MKK_vs_BetaGamma"] = """  hPhi_MKK_vs_BetaGamma:
+    xAxis: *MKK
+    yAxis: *BetaGamma
+    title: "#phi M_{KK} vs #beta#gamma (both K daughters TOF matched);M_{KK} [GeV/c^{2}];#beta#gamma"
+"""
 
     channels = [
         "phi_proton",
@@ -315,7 +387,7 @@ def main() -> None:
                 if ch == "phi_rot_proton":
                     new_name = base.replace("CHANNEL_ROT", "phi_rot_proton")
                     if hk in he4_blocks:
-                        channel_blocks[new_name] = channel_block_from_template(he4_blocks[hk], "phi_rot_proton")
+                        channel_blocks[new_name] = rename_hist_block(channel_block_from_template(he4_blocks[hk], "phi_rot_proton"), new_name)
                 continue
             if "CHANNEL" not in base:
                 continue
@@ -328,14 +400,14 @@ def main() -> None:
                 if src_key not in proton_blocks:
                     src_key = hk
                 else:
-                    channel_blocks[new_name] = channel_block_from_template(proton_blocks[src_key], ch)
+                    channel_blocks[new_name] = rename_hist_block(channel_block_from_template(proton_blocks[src_key], ch), new_name)
                     continue
             if ch.startswith("phi_deuteron"):
                 src_key = hk.replace("phi_he4", "phi_deuteron")
                 if src_key in deuteron_blocks:
-                    channel_blocks[new_name] = channel_block_from_template(deuteron_blocks[src_key], ch)
+                    channel_blocks[new_name] = rename_hist_block(channel_block_from_template(deuteron_blocks[src_key], ch), new_name)
                     continue
-            channel_blocks[new_name] = channel_block_from_template(he4_blocks[hk], ch)
+            channel_blocks[new_name] = rename_hist_block(channel_block_from_template(he4_blocks[hk], ch), new_name)
 
     mkk_kstar_blocks: dict[str, str] = {}
     for ch in SIGNAL_FEMTO_CHANNELS:
@@ -350,6 +422,8 @@ def main() -> None:
         for tof_strict in (False, True):
             for name, block in phi_pair_mom_angle_block(ch, tof_strict):
                 pair_angle_blocks[name] = block
+            name, block = phi_pair_mom_angle_premass_block(ch, tof_strict)
+            pair_angle_blocks[name] = block
 
     out_header = "# StFemtoMaker histogram definitions (auau3p85fxt_anaFemtoPhi unified)\n"
     out_header += "# 1D: axis: *Preset or nBins/min/max; title required\n"
@@ -365,6 +439,7 @@ def main() -> None:
     for nc in ("hNDeuteron_vs_Cent9", "hNTriton_vs_Cent9", "hNHe3_vs_Cent9", "hNHe4_vs_Cent9"):
         if nc in bachelor and nc not in ordered_names:
             ordered_names.append(nc)
+    ordered_names.extend(sorted(kaon_minus.keys()))
     ordered_names.extend(sorted(phi_femto.keys()))
     for ch in channels:
         for kind in ("hKstarSE_", "hKstarME_", "hCF_", "hKstarSEVsCent_", "hKstarMEVsCent_"):
@@ -381,10 +456,14 @@ def main() -> None:
             for name, _ in phi_pair_mom_angle_block(ch, tof_strict):
                 if name in pair_angle_blocks:
                     ordered_names.append(name)
+            name, _ = phi_pair_mom_angle_premass_block(ch, tof_strict)
+            if name in pair_angle_blocks:
+                ordered_names.append(name)
 
     merged: dict[str, str] = {}
     merged.update(common)
     merged.update(bachelor)
+    merged.update(kaon_minus)
     merged.update(phi_femto)
     merged.update(channel_blocks)
     merged.update(mkk_kstar_blocks)

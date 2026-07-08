@@ -40,9 +40,11 @@
 static Bool_t gConfigLoaded = kFALSE;
 
 static const Double_t kKstarHistXMin = 0.0;
-static const Double_t kKstarHistXMax = 2.0;
+static const Double_t kKstarHistXMax = 3.0;
 static const Double_t kCfKstarXMin = 0.0;
 static const Double_t kCfKstarXMax = 0.65;
+static const Double_t kCfYMin = -0.5;
+static const Double_t kCfYMax = 2.5;
 
 
 struct BachelorQaSpec {
@@ -83,6 +85,24 @@ static void setBachelorMass2AxisRange(TH1* h, Double_t ymax = 16.0) {
 }
 
 struct BachelorCuts {
+  BachelorCuts()
+    : maxDca(0.0),
+      minPMom(0.0),
+      maxPMom(0.0),
+      minPtPre(0.0),
+      maxPtPre(0.0),
+      minPtPair(0.0),
+      maxPtPair(0.0),
+      maxAbsEta(0.0),
+      maxAbsNSigma(0.0),
+      minMass2(0.0),
+      maxMass2(0.0),
+      minRapidityCm(0.0),
+      maxRapidityCm(0.0),
+      tofMomentumThreshold(0.0),
+      hasPMomWindow(kFALSE),
+      hasMaxPtPre(kFALSE) {}
+
   Double_t maxDca;
   Double_t minPMom;
   Double_t maxPMom;
@@ -96,6 +116,7 @@ struct BachelorCuts {
   Double_t maxMass2;
   Double_t minRapidityCm;
   Double_t maxRapidityCm;
+  Double_t tofMomentumThreshold;
   Bool_t hasPMomWindow;
   Bool_t hasMaxPtPre;
 };
@@ -115,6 +136,7 @@ static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix
   c.maxMass2 = 0.0;
   c.minRapidityCm = 0.0;
   c.maxRapidityCm = 0.0;
+  c.tofMomentumThreshold = 0.0;
   c.hasPMomWindow = kFALSE;
   c.hasMaxPtPre = kFALSE;
   if (!cutPrefix) return c;
@@ -129,6 +151,7 @@ static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix
     c.maxMass2 = fc.protonMaxMass2;
     c.minRapidityCm = fc.protonMinRapidityCm;
     c.maxRapidityCm = fc.protonMaxRapidityCm;
+    c.tofMomentumThreshold = fc.protonTofMomentumThreshold;
   } else if (strcmp(cutPrefix, "deuteron") == 0) {
     c.maxDca = fc.deuteronMaxDca;
     c.minPMom = fc.deuteronMinPMom;
@@ -143,6 +166,7 @@ static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix
     c.maxMass2 = fc.deuteronMaxMass2;
     c.minRapidityCm = fc.deuteronMinRapidityCm;
     c.maxRapidityCm = fc.deuteronMaxRapidityCm;
+    c.tofMomentumThreshold = fc.deuteronTofMomentumThreshold;
     c.hasPMomWindow = kTRUE;
     c.hasMaxPtPre = kTRUE;
   } else if (strcmp(cutPrefix, "triton") == 0) {
@@ -159,6 +183,7 @@ static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix
     c.maxMass2 = fc.tritonMaxMass2;
     c.minRapidityCm = fc.tritonMinRapidityCm;
     c.maxRapidityCm = fc.tritonMaxRapidityCm;
+    c.tofMomentumThreshold = fc.tritonTofMomentumThreshold;
     c.hasPMomWindow = kTRUE;
     c.hasMaxPtPre = kTRUE;
   } else if (strcmp(cutPrefix, "he3") == 0) {
@@ -175,6 +200,7 @@ static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix
     c.maxMass2 = fc.he3MaxMass2;
     c.minRapidityCm = fc.he3MinRapidityCm;
     c.maxRapidityCm = fc.he3MaxRapidityCm;
+    c.tofMomentumThreshold = fc.he3TofMomentumThreshold;
     c.hasPMomWindow = kTRUE;
     c.hasMaxPtPre = kTRUE;
   } else if (strcmp(cutPrefix, "he4") == 0) {
@@ -191,6 +217,7 @@ static BachelorCuts getBachelorCuts(const FemtoConfig& fc, const char* cutPrefix
     c.maxMass2 = fc.he4MaxMass2;
     c.minRapidityCm = fc.he4MinRapidityCm;
     c.maxRapidityCm = fc.he4MaxRapidityCm;
+    c.tofMomentumThreshold = fc.he4TofMomentumThreshold;
     c.hasPMomWindow = kTRUE;
     c.hasMaxPtPre = kTRUE;
   }
@@ -264,12 +291,17 @@ static std::string channelSignal(const std::string& base) { return base + "_sign
 static std::string channelLeftSb(const std::string& base) { return base + "_leftSB"; }
 static std::string channelRightSb(const std::string& base) { return base + "_rightSB"; }
 
-static TString phiPairMomAngleKey(const char* channelBase, Bool_t vsMkk, Bool_t tofStrict) {
+static TString phiPairMomAngleKeyWithSuffix(const char* channelBase, Bool_t vsMkk, const char* suffix) {
   const std::string ch = channelSignal(channelBase);
+  const char* sfx = suffix ? suffix : "";
   if (vsMkk) {
-    return TString("hPhiPairMomAngle_vs_MKK_") + ch.c_str() + (tofStrict ? "_tofStrict" : "");
+    return TString("hPhiPairMomAngle_vs_MKK_") + ch.c_str() + sfx;
   }
-  return TString("hPhiPairMomAngle_") + ch.c_str() + (tofStrict ? "_tofStrict" : "");
+  return TString("hPhiPairMomAngle_") + ch.c_str() + sfx;
+}
+
+static TString phiPairMomAngleKey(const char* channelBase, Bool_t vsMkk, Bool_t tofStrict) {
+  return phiPairMomAngleKeyWithSuffix(channelBase, vsMkk, tofStrict ? "_tofStrict" : "");
 }
 
 static TString resolveFigureRoot(const char* pwd) {
@@ -319,6 +351,16 @@ static void drawCutLine2DH(TH2* h, Double_t yVal, Int_t color = kRed, Int_t styl
   Double_t xlo = gPad->GetUxmin();
   Double_t xhi = gPad->GetUxmax();
   TLine* l = new TLine(xlo, yVal, xhi, yVal);
+  l->SetLineColor(color);
+  l->SetLineStyle(style);
+  l->Draw("same");
+}
+
+static void drawCutLine2DV(TH2* h, Double_t xVal, Int_t color = kRed, Int_t style = 2) {
+  if (!h || !gPad) return;
+  Double_t ylo = gPad->GetUymin();
+  Double_t yhi = gPad->GetUymax();
+  TLine* l = new TLine(xVal, ylo, xVal, yhi);
   l->SetLineColor(color);
   l->SetLineStyle(style);
   l->Draw("same");
@@ -692,7 +734,10 @@ static void drawCfGraph(TGraphErrors* gCF) {
   gCF->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
   gCF->Draw("AP");
   TH1* hFrame = gCF->GetHistogram();
-  if (hFrame) hFrame->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+  if (hFrame) {
+    hFrame->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+    hFrame->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+  }
 }
 
 static void drawCentSliceCf(TCanvas* canvas, Int_t pad, const std::string& channel,
@@ -1461,7 +1506,8 @@ static TGraphErrors* computeGenuineCfGraph(TFile* fin, const FemtoConfig::CfCent
     const Double_t cGen = 1.0 + numer / lambdaSig;
     const Double_t dGenDcMeas = 1.0 / lambdaSig;
     const Double_t dGenDcBkg = -lambdaBkg / lambdaSig;
-    const Double_t dGenDLam = -numer / (lambdaSig * lambdaSig) - (cBkg - 1.0);
+    // d/dlambda of 1 + numer/lambda, with lambda_bkg = 1 - lambda.
+    const Double_t dGenDLam = (cBkg - 1.0) / lambdaSig - numer / (lambdaSig * lambdaSig);
     const Double_t err = TMath::Sqrt(TMath::Power(dGenDcMeas * eMeas, 2) + TMath::Power(dGenDcBkg * eBkg, 2) +
                                      TMath::Power(dGenDLam * eLam, 2));
 
@@ -1515,6 +1561,7 @@ static void populatePurityGenuineCaches(TFile* fin, std::map<std::string, TGraph
 
 static void drawCfGraphOverlay(TGraphErrors* gA, TGraphErrors* gB, const char* labelA, const char* labelB) {
   if (!gA && !gB) return;
+  TGraphErrors* gFirst = gA ? gA : gB;
   if (gA) {
     gA->SetMarkerColor(kBlack);
     gA->SetLineColor(kBlack);
@@ -1527,7 +1574,13 @@ static void drawCfGraphOverlay(TGraphErrors* gA, TGraphErrors* gB, const char* l
     gB->SetLineColor(kBlue + 1);
     gB->SetMarkerStyle(21);
     TString opt = gA ? "P SAME" : "AP";
+    if (!gA) gB->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
     gB->Draw(opt);
+  }
+  TH1* hFrame = gFirst->GetHistogram();
+  if (hFrame) {
+    hFrame->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+    hFrame->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
   }
   if (gPad && (gA || gB)) {
     TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
@@ -1624,12 +1677,14 @@ static void drawPhiBachelorPairAngleQaPage(TCanvas* canvas, TFile* fin, TString 
   TH1* h1 = 0;
   TH2* h2 = 0;
   canvas->Clear();
-  canvas->Divide(2, 2);
+  canvas->Divide(2, 3);
 
   TString kLoose1d = phiPairMomAngleKey(spec.channelBase, kFALSE, kFALSE);
   TString kStrict1d = phiPairMomAngleKey(spec.channelBase, kFALSE, kTRUE);
   TString kLoose2d = phiPairMomAngleKey(spec.channelBase, kTRUE, kFALSE);
   TString kStrict2d = phiPairMomAngleKey(spec.channelBase, kTRUE, kTRUE);
+  TString kPreMass2d = phiPairMomAngleKeyWithSuffix(spec.channelBase, kTRUE, "_preMass");
+  TString kPreMassStrict2d = phiPairMomAngleKeyWithSuffix(spec.channelBase, kTRUE, "_preMass_tofStrict");
 
   const FemtoConfig::ChannelDef* chSig = 0;
   if (gConfigLoaded) {
@@ -1689,8 +1744,22 @@ static void drawPhiBachelorPairAngleQaPage(TCanvas* canvas, TFile* fin, TString 
                      Form("signal M_{KK}: %.3f - %.3f GeV/c^{2}", chSig->signalMin, chSig->signalMax));
     }
     lat->DrawLatex(0.05, 0.64, "Pad1: #theta_{p} (black=no TOF strict, red=tofStrict)");
-    lat->DrawLatex(0.05, 0.57, "Pad2/3: #theta_{p} vs M_{KK}; CF pipeline unchanged");
+    lat->DrawLatex(0.05, 0.57, "Pad2/3: signal-window #theta_{p} vs M_{KK}; CF pipeline unchanged");
+    lat->DrawLatex(0.05, 0.50, "Pad5/6: preMass = all M_{KK}, no KK opening/rapidity cut");
   }
+
+  canvas->cd(5);
+  h2 = (TH2*)fin->Get(kPreMass2d);
+  if (h2) {
+    h2->Draw("colz");
+  }
+
+  canvas->cd(6);
+  h2 = (TH2*)fin->Get(kPreMassStrict2d);
+  if (h2) {
+    h2->Draw("colz");
+  }
+
   canvas->Print(pdfName);
 }
 
@@ -1852,13 +1921,15 @@ static void drawBachelorFemtoQaPages(TCanvas* canvas, TFile* fin, TString pdfNam
       if (gConfigLoaded) {
         canvas->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2WidePre); if (h2) {
           prepareBachelorHist(h2, kM2WidePre, spec); h2->Draw("colz");
-          drawCutLine2DH(h2, cuts.minPMom);
-          drawCutLine2DH(h2, cuts.maxPMom);
+          drawCutLine2DH(h2, cuts.minMass2);
+          drawCutLine2DH(h2, cuts.maxMass2);
+          drawCutLine2DV(h2, cuts.tofMomentumThreshold);
         }
         canvas->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2Wide); if (h2) {
           prepareBachelorHist(h2, kM2Wide, spec); h2->Draw("colz");
-          drawCutLine2DH(h2, cuts.minPMom);
-          drawCutLine2DH(h2, cuts.maxPMom);
+          drawCutLine2DH(h2, cuts.minMass2);
+          drawCutLine2DH(h2, cuts.maxMass2);
+          drawCutLine2DV(h2, cuts.tofMomentumThreshold);
         }
       } else {
         canvas->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get(kM2WidePre);
@@ -1999,10 +2070,11 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   note += Form("CF cent slice: cent9 [%d, %d] projected from hKstarSEVsCent/hKstarMEVsCent (0-60%% for default 2-8); "
                "layout nCols x 2 (rows SE+ME overlay / CF, cols signal/leftSB/rightSB/rot).\n",
                cfCent9MinNote, cfCent9MaxNote);
-  note += "k* count histograms display 0-2.0 GeV/c; CF graphs remain 0-0.65 GeV/c.\n";
+  note += "k* count histograms display 0-3.0 GeV/c; CF graphs remain 0-0.65 GeV/c.\n";
   note += "hPhi_MKK_vs_BetaGamma: both K daughters must have TOF match (beta from btofBeta).\n";
   note += "hPhiPairMomAngle_*: #phi-bachelor 3-momentum angle QA only (not used in CF). "
-          "_signal = m_phiQaLoose + signal mass window; _tofStrict = betaGamma>0 + same window.\n";
+          "_signal = m_phiQaLoose + signal mass window; _tofStrict = betaGamma>0 + same window; "
+          "_preMass = all M_KK before opening/rapidity cuts.\n";
   if (gConfigLoaded) {
     const CentralityCutConfig& centCfg = ConfigManager::GetInstance().GetCentralityCuts();
     if (centCfg.cent9MaxRefMultCorrBin >= 0 && centCfg.cent9MaxRefMultCorr > 0.0) {
@@ -2014,6 +2086,7 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   note += "Single QA PDF only (no separate CF PDF). CF sideband slices: pct_0_10/20/30 x all channel bases.\n";
   note += "Topic 3: lambda_sig from scaled SE-ME MKK fit (gaus+const); C_bkg from ME mass shape; "
           "C_genuine = 1 + [(C_meas-1) - lambda_bkg(C_bkg-1)]/lambda_sig.\n";
+  note += "C_genuine error: analytic propagation; lambda error from gaus fit partial derivatives.\n";
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";
 
   std::map<std::string, TGraphErrors*> cfCache;
@@ -2518,6 +2591,40 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
     prepareBachelorHist(h2, "hNSigmaHe4VsP_All", kBachelorQaSpecs[4]);
     h2->Draw("colz");
   }
+  c1->cd(9); gPad->SetLogz(); h2 = (TH2*)fin->Get("hNSigmaProtonVsPt_Pos"); if (h2) h2->Draw("colz");
+  c1->Print(pdfName);
+
+  // Page 10b: K- femto candidate QA (used when kaon-minus species is enabled)
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hNKaonMinusFemto"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKm_NCand"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hKm_Pt_PreFemtoCut"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hKm_Eta_PreFemtoCut"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hKm_NSigmaKaon_PreFemtoCut"); if (h1) h1->Draw();
+  c1->cd(6); h1 = (TH1*)fin->Get("hKm_DCA_PreFemtoCut"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 10c: K- femto PID / rapidity QA
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); h1 = (TH1*)fin->Get("hKm_Pt"); if (h1) h1->Draw();
+  c1->cd(2); h1 = (TH1*)fin->Get("hKm_Eta"); if (h1) h1->Draw();
+  c1->cd(3); h1 = (TH1*)fin->Get("hKm_NSigmaKaon"); if (h1) h1->Draw();
+  c1->cd(4); h1 = (TH1*)fin->Get("hKm_DCA"); if (h1) h1->Draw();
+  c1->cd(5); h1 = (TH1*)fin->Get("hKm_Y_PreFemtoCut"); if (h1) h1->Draw();
+  c1->cd(6); h1 = (TH1*)fin->Get("hKm_Y_FemtoCut"); if (h1) h1->Draw();
+  c1->Print(pdfName);
+
+  // Page 10d: K- femto 2D / TOF QA
+  c1->Clear();
+  c1->Divide(3, 2);
+  c1->cd(1); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKm_PtVsY_PreFemtoCut"); if (h2) h2->Draw("colz");
+  c1->cd(2); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKm_PtVsY_FemtoCut"); if (h2) h2->Draw("colz");
+  c1->cd(3); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKm_Mass2VsP"); if (h2) h2->Draw("colz");
+  c1->cd(4); gPad->SetLogz(); h2 = (TH2*)fin->Get("hKm_TofMatchVsP"); if (h2) h2->Draw("colz");
+  c1->cd(5); h1 = (TH1*)fin->Get("hKm_Mass2_PreFemtoCut"); if (h1) h1->Draw();
+  c1->cd(6); h1 = (TH1*)fin->Get("hKm_Mass2"); if (h1) h1->Draw();
   c1->Print(pdfName);
 
   // Pages 11a-12c: bachelor QA per species
@@ -2750,6 +2857,11 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
                            "hCentrality",
                            "hNSigmaKaon_Raw",
                            "hK_Pt",
+                           "hNKaonMinusFemto",
+                           "hKm_Pt_PreFemtoCut",
+                           "hKm_Pt",
+                           "hKm_Mass2VsP",
+                           "hNSigmaProtonVsPt_Pos",
                            "hPairRapidity_vs_Pt",
                            "hOpeningAngle_Raw",
                            "hPairRapidity_AfterCuts",
