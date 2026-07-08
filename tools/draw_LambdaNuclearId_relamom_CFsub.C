@@ -78,8 +78,8 @@ void draw_LambdaNuclearId_relamom_CFsub() {
         Form("CF (Purity Corrected) for Lambda - %s", sp.Data()), 1200, 900);
     c6->Divide(3, 3);
 
-    // True event histograms are in the "nuclearid" subdirectory
-    TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
+    // True event histograms are in the "true" subdirectory
+    TDirectory *dirNuc = (TDirectory *)fIn->Get("true");
     TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
     for (int j = 0; j < nCentBins; ++j) {

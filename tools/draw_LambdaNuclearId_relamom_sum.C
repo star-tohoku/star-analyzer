@@ -42,7 +42,7 @@ void draw_LambdaNuclearId_relamom_sum() {
     else if (sp == "4He")
       nRebin = 10;
 
-    TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
+    TDirectory *dirNuc = (TDirectory *)fIn->Get("true");
     TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
     TString outFile = Form("%s/kstar_sum_%s.pdf", outDir.Data(), sp.Data());

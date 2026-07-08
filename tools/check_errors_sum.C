@@ -66,7 +66,7 @@ void check_errors_sum() {
   const char *species[] = {"d", "t", "3He", "4He"};
   int nSpecies = 4;
 
-  TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
+  TDirectory *dirNuc = (TDirectory *)fIn->Get("true");
   TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
   for (int i = 0; i < nSpecies; ++i) {

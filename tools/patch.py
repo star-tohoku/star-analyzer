@@ -34,7 +34,7 @@ old_canvas = r"""    // 2x1のキャンバスを作成 \(2つのCentrality Group
         Form\("CF \(SB Subtracted\) for Lambda - %s", sp.Data\(\)\), 1200, 1200\);
     c6->Divide\(2, 2\);
 
-    TDirectory \*dirNuc = \(TDirectory \*\)fIn->Get\("nuclearid"\);
+    TDirectory \*dirNuc = \(TDirectory \*\)fIn->Get\("true"\);
     TDirectory \*dirMix = \(TDirectory \*\)fIn->Get\("mix"\);
 
     for \(int group = 0; group < 2; \+\+group\) \{
@@ -44,7 +44,7 @@ old_canvas = r"""    // 2x1のキャンバスを作成 \(2つのCentrality Group
       int jStart = \(group == 0\) \? 0 : 6;
       int jEnd = \(group == 0\) \? 5 : 8;"""
 
-new_canvas = """    TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
+new_canvas = """    TDirectory *dirNuc = (TDirectory *)fIn->Get("true");
     TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
     TString outFile = Form("%s/kstar_sum_%s.pdf", outDir.Data(), sp.Data());

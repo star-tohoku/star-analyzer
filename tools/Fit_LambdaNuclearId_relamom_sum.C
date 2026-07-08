@@ -138,7 +138,7 @@ void Fit_LambdaNuclearId_relamom_sum() {
   TString sp = "4He";
   int nRebin = 10;
 
-  TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
+  TDirectory *dirNuc = (TDirectory *)fIn->Get("true");
   TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
   TString outFile = Form("%s/Fit_LL_%s.pdf", outDir.Data(), sp.Data());

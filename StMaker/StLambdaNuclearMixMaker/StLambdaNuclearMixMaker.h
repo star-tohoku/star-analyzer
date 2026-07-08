@@ -58,6 +58,7 @@ class StLambdaNuclearMixMaker : public StMaker {
   Int_t GetMixingBin(Float_t vz, Int_t cent9) const;
   void FillKstarMixed(Double_t k_star, Double_t q_lab, Int_t type, Int_t cent9 = -1);
   void FillKstarMixedSideband(Double_t k_star, Double_t q_lab, Int_t type, Int_t sbSign, Int_t cent9 = -1);
+  void FillKstarMassMixed(Double_t k_star, Double_t invMass, Int_t type, Int_t cent9 = -1);
 };
 
 // Factory for CINT

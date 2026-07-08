@@ -16,7 +16,7 @@ for i, line in enumerate(lines):
 
 if start_idx != -1 and end_idx != -1:
     new_code = """
-    TDirectory *dirNuc = (TDirectory *)fIn->Get("nuclearid");
+    TDirectory *dirNuc = (TDirectory *)fIn->Get("true");
     TDirectory *dirMix = (TDirectory *)fIn->Get("mix");
 
     TString outFile = Form("%s/kstar_sum_%s.pdf", outDir.Data(), sp.Data());

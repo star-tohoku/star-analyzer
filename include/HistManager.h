@@ -38,6 +38,9 @@ public:
   /** Write all owned histograms to current TDirectory. */
   void Write();
 
+  /** Write only histograms whose names contain the given substring. */
+  void WriteContaining(const char* substr);
+
   /** Relinquish ownership so destructor will not delete histograms (call after Write() when TFile will own them). */
   void ReleaseOwnership();
 

@@ -176,9 +176,8 @@ Int_t StLambdaNuclearMixMaker::Make() {
       double window  = nucCuts.nsigmaLambda * nucCuts.sigmaLambda;
 
       bool isSig   = (TMath::Abs(delta) <= window);
-      bool isSBPos = (!isSig && delta > window  && delta <= 2.0 * window);
-      bool isSBNeg = (!isSig && delta < -window && delta >= -2.0 * window);
-      if (!isSig && !isSBPos && !isSBNeg) continue;
+      bool isSBPos = (!isSig && delta > window  && delta <= 4.0 * window);
+      bool isSBNeg = (!isSig && delta < -window && delta >= -4.0 * window);
 
       TLorentzVector lambdaMom;
       lambdaMom.SetVectM(currentEvt.lambdas[il].momentum, kLambdaMass);
@@ -204,6 +203,10 @@ Int_t StLambdaNuclearMixMaker::Make() {
         lamRest.Boost(boostVec);
         double k_star = lamRest.P();
 
+        FillKstarMassMixed(k_star, invMass, nucType, m_cent9);
+
+        if (!isSig && !isSBPos && !isSBNeg) continue;
+
         if (isSig) FillKstarMixed(k_star, q_lab, nucType, m_cent9);
         else if (isSBPos) FillKstarMixedSideband(k_star, q_lab, nucType, +1, m_cent9);
         else if (isSBNeg) FillKstarMixedSideband(k_star, q_lab, nucType, -1, m_cent9);
@@ -217,9 +220,8 @@ Int_t StLambdaNuclearMixMaker::Make() {
       double window  = nucCuts.nsigmaLambda * nucCuts.sigmaLambda;
 
       bool isSig   = (TMath::Abs(delta) <= window);
-      bool isSBPos = (!isSig && delta > window  && delta <= 2.0 * window);
-      bool isSBNeg = (!isSig && delta < -window && delta >= -2.0 * window);
-      if (!isSig && !isSBPos && !isSBNeg) continue;
+      bool isSBPos = (!isSig && delta > window  && delta <= 4.0 * window);
+      bool isSBNeg = (!isSig && delta < -window && delta >= -4.0 * window);
 
       TLorentzVector lambdaMom;
       lambdaMom.SetVectM(mixEvt.lambdas[il].momentum, kLambdaMass);
@@ -244,6 +246,10 @@ Int_t StLambdaNuclearMixMaker::Make() {
         TLorentzVector lamRest = lambdaMom;
         lamRest.Boost(boostVec);
         double k_star = lamRest.P();
+
+        FillKstarMassMixed(k_star, invMass, nucType, m_cent9);
+
+        if (!isSig && !isSBPos && !isSBNeg) continue;
 
         if (isSig) FillKstarMixed(k_star, q_lab, nucType, m_cent9);
         else if (isSBPos) FillKstarMixedSideband(k_star, q_lab, nucType, +1, m_cent9);
@@ -307,6 +313,18 @@ void StLambdaNuclearMixMaker::FillKstarMixedSideband(Double_t k_star, Double_t q
   }
 }
 
+void StLambdaNuclearMixMaker::FillKstarMassMixed(Double_t k_star, Double_t invMass, Int_t type, Int_t cent9) {
+  if (!m_histManager) return;
+  const char* typeStr = "d";
+  if (type == 1) typeStr = "t";
+  else if (type == 2) typeStr = "3He";
+  else if (type == 3) typeStr = "4He";
+
+  if (cent9 >= 0 && cent9 <= 8) {
+    m_histManager->Fill(Form("hKstarMass_Mixed_%s_CentBin%d", typeStr, cent9), k_star, invMass);
+  }
+}
+
 //-----------------------------------------------------------------------------
 Int_t StLambdaNuclearMixMaker::Finish() {
   return kStOK;
@@ -315,6 +333,10 @@ Int_t StLambdaNuclearMixMaker::Finish() {
 //-----------------------------------------------------------------------------
 void StLambdaNuclearMixMaker::WriteHistograms() {
   if (m_histManager) {
-    m_histManager->Write();
+    // Write only Mixed-event histograms (names contain "Mixed").
+    // The HistManager is loaded from the same YAML as StNuclearIdMaker,
+    // so it also holds True-event histogram definitions; we must NOT
+    // write those here to avoid polluting the "mix" TDirectory.
+    m_histManager->WriteContaining("Mixed");
   }
 }

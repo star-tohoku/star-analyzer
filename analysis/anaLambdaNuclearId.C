@@ -221,10 +221,8 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
 
       // Classify Lambda candidate into signal or sideband regions
       bool isSig   = (TMath::Abs(delta) <= window);
-      bool isSBPos = (!isSig && delta > window  && delta <= 2.0 * window);
-      bool isSBNeg = (!isSig && delta < -window && delta >= -2.0 * window);
-
-      if (!isSig && !isSBPos && !isSBNeg) continue;
+      bool isSBPos = (!isSig && delta > window  && delta <= 4.0 * window);
+      bool isSBNeg = (!isSig && delta < -window && delta >= -4.0 * window);
 
       // Construct Lambda TLorentzVector using PDG mass
       TLorentzVector lambdaMom;
@@ -264,6 +262,10 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
 
         // Fill histograms based on region
         if (nuclearidMaker) {
+          nuclearidMaker->FillKstarMass(k_star, invMass, nucType, cent9);
+
+          if (!isSig && !isSBPos && !isSBNeg) continue;
+
           if (isSig) {
             nuclearidMaker->FillKstar(k_star, q_lab, nucType, cent9);
           } else if (isSBPos) {
@@ -298,7 +300,7 @@ void anaLambdaNuclearId(const Char_t* inputFile = "config/picoDstList/auau19GeV_
       }
       if (nuclearidMaker) {
         std::cout << "Writing NuclearId histograms..." << std::endl;
-        TDirectory* dirNuc = fout->mkdir("nuclearid");
+        TDirectory* dirNuc = fout->mkdir("true");
         dirNuc->cd();
         nuclearidMaker->WriteHistograms();
       }

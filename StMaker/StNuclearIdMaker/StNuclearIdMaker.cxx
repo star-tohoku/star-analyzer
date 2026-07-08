@@ -515,15 +515,29 @@ void StNuclearIdMaker::FillKstar(Double_t k_star, Double_t q_lab, Int_t type, In
 //-----------------------------------------------------------------------------
 void StNuclearIdMaker::FillKstarSideband(Double_t k_star, Double_t q_lab, Int_t type, Int_t sbSign, Int_t cent9) {
   if (!m_histManager) return;
-  static const char* kSpecies[] = {"d", "t", "3He", "4He"};
-  if (type < 0 || type > 3) return;
-  const char* sp = kSpecies[type];
-  const char* sbTag = (sbSign > 0) ? "SBPos" : "SBNeg";
+  const char* typeStr = "d";
+  if (type == 1) typeStr = "t";
+  else if (type == 2) typeStr = "3He";
+  else if (type == 3) typeStr = "4He";
 
-  m_histManager->Fill(Form("hKstar_%s_%s", sp, sbTag), k_star);
-  m_histManager->Fill(Form("hQlab_%s_%s",  sp, sbTag), q_lab);
+  const char* sbStr = (sbSign > 0) ? "SBPos" : "SBNeg";
+
+  m_histManager->Fill(Form("hKstar_%s_%s", typeStr, sbStr), k_star);
+  m_histManager->Fill(Form("hQlab_%s_%s",  typeStr, sbStr), q_lab);
 
   if (cent9 >= 0 && cent9 <= 8) {
-    m_histManager->Fill(Form("hKstar_%s_%s_CentBin%d", sp, sbTag, cent9), k_star);
+    m_histManager->Fill(Form("hKstar_%s_%s_CentBin%d", typeStr, sbStr, cent9), k_star);
+  }
+}
+
+void StNuclearIdMaker::FillKstarMass(Double_t k_star, Double_t invMass, Int_t type, Int_t cent9) {
+  if (!m_histManager) return;
+  const char* typeStr = "d";
+  if (type == 1) typeStr = "t";
+  else if (type == 2) typeStr = "3He";
+  else if (type == 3) typeStr = "4He";
+
+  if (cent9 >= 0 && cent9 <= 8) {
+    m_histManager->Fill(Form("hKstarMass_%s_CentBin%d", typeStr, cent9), k_star, invMass);
   }
 }

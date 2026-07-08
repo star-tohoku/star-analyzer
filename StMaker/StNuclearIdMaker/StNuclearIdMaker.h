@@ -31,6 +31,7 @@ class StNuclearIdMaker : public StMaker {
 
   void FillKstar(Double_t k_star, Double_t q_lab, Int_t type, Int_t cent9 = -1);
   void FillKstarSideband(Double_t k_star, Double_t q_lab, Int_t type, Int_t sbSign, Int_t cent9 = -1);
+  void FillKstarMass(Double_t k_star, Double_t invMass, Int_t type, Int_t cent9 = -1);
 
  private:
   StPicoDstMaker* mPicoDstMaker;

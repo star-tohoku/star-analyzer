@@ -242,6 +242,16 @@ void HistManager::Write() {
   }
 }
 
+void HistManager::WriteContaining(const char* substr) {
+  if (!substr) return;
+  std::string sub(substr);
+  for (std::map<std::string, TH1*>::iterator it = m_histograms.begin(); it != m_histograms.end(); ++it) {
+    if (it->second && it->first.find(sub) != std::string::npos) {
+      it->second->Write();
+    }
+  }
+}
+
 void HistManager::ReleaseOwnership() {
   m_ownershipReleased = kTRUE;
 }
