@@ -3,7 +3,7 @@
 """
 Create analysis-specific config files from templates using anaName from analysis_info.
 Usage:
-  python script/setup_config_from_analysisinfo.py ANALYSIS_INFO [--config-dir PATH]
+  python script/setup_config_from_analysisinfo.py ANALYSIS_INFO [--config-dir PATH] [--force]
 Example:
   python script/setup_config_from_analysisinfo.py config/analysis/analysis_info_pp500_anaPhi.yaml
 
@@ -17,7 +17,8 @@ Copies:
   maker/maker_anaPhi.yaml     -> maker/maker_{anaName}.yaml
 Creates:
   mainconf/main_{anaName}.yaml  (from mainconf/mainconf.yaml; __ANANAME__ placeholder is replaced)
-If a destination already exists, it is overwritten.
+If a destination already exists, it is SKIPPED (not overwritten).
+Use --force to overwrite existing files.
 """
 from __future__ import print_function
 import os
@@ -81,11 +82,14 @@ MAINCONF_TEMPLATE_REL = 'mainconf/mainconf.yaml'
 MAINCONF_TEMPLATE_ANANAME = '__ANANAME__'
 
 
-def write_mainconf(config_base, ana_name, analysis_rel):
+def write_mainconf(config_base, ana_name, analysis_rel, force=False):
     """Create mainconf/main_{anaName}.yaml from template, with analysis: -> analysis_rel."""
     template_path = os.path.join(config_base, MAINCONF_TEMPLATE_REL)
     mainconf_dir = os.path.join(config_base, 'mainconf')
     mainconf_dst = os.path.join(mainconf_dir, 'main_{}.yaml'.format(ana_name))
+    if not force and os.path.isfile(mainconf_dst):
+        print("Skipped (exists): {}".format(os.path.relpath(mainconf_dst, config_base)))
+        return
     if not os.path.isfile(template_path):
         print("WARNING: mainconf template not found, skip: {}".format(MAINCONF_TEMPLATE_REL))
         return
@@ -221,7 +225,14 @@ def main():
         default=default_config,
         help='Config directory (default: project_root/config)'
     )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        default=False,
+        help='Overwrite existing config files (default: skip if already exists)'
+    )
     args = parser.parse_args()
+    force = args.force
 
     config_base = os.path.abspath(args.config_dir)
     analysis_path = args.analysis_info
@@ -257,6 +268,9 @@ def main():
         dst = os.path.join(config_base, subdir, dst_name)
         if not os.path.isfile(src):
             print("WARNING: template not found, skip: {}".format(src_rel))
+            return
+        if not force and os.path.isfile(dst):
+            print("Skipped (exists): {}".format(os.path.relpath(dst, config_base)))
             return
         d = os.path.dirname(dst)
         if not os.path.isdir(d):
@@ -349,6 +363,8 @@ def main():
         maker_dst = os.path.join(config_base, MAKER_DIR, "{}_{}.yaml".format(MAKER_BASE, ana_name))
         if not os.path.isfile(maker_src):
             print("WARNING: template not found, skip: {}".format(maker_template_rel))
+        elif not force and os.path.isfile(maker_dst):
+            print("Skipped (exists): {}".format(os.path.relpath(maker_dst, config_base)))
         else:
             shutil.copy2(maker_src, maker_dst)
             print("Created: {}".format(os.path.relpath(maker_dst, config_base)))
@@ -369,6 +385,8 @@ def main():
             hist_dst = os.path.join(config_base, 'hist', dst_name)
             if not os.path.isfile(hist_src):
                 print("WARNING: hist template not found, skip: {}".format(src_name))
+            elif not force and os.path.isfile(hist_dst):
+                print("Skipped (exists): {}".format(os.path.relpath(hist_dst, config_base)))
             else:
                 shutil.copy2(hist_src, hist_dst)
                 print("Created: {}".format(os.path.relpath(hist_dst, config_base)))
@@ -386,11 +404,13 @@ def main():
             hist_dst = os.path.join(config_base, 'hist', 'hist_{}.yaml'.format(ana_name))
             if not os.path.isfile(hist_src):
                 print("WARNING: hist template not found, skip: {}".format(hist_template_rel))
+            elif not force and os.path.isfile(hist_dst):
+                print("Skipped (exists): {}".format(os.path.relpath(hist_dst, config_base)))
             else:
                 shutil.copy2(hist_src, hist_dst)
                 print("Created: {}".format(os.path.relpath(hist_dst, config_base)))
 
-    write_mainconf(config_base, ana_name, analysis_rel)
+    write_mainconf(config_base, ana_name, analysis_rel, force=force)
 
     # generate macros if base macros are defined
     if base_ana_macro and base_run_macro:

@@ -102,162 +102,7 @@ axes:
     max: 2.0
 
 histograms:
-  # --- Event (from Lambda) ---
-  hVz:
-    axis: *Vz
-    title: "Primary Vertex Z;V_{z} [cm];Counts"
-  hRefMult:
-    axis: *RefMult
-    title: "RefMult;RefMult;Counts"
 
-  hCentrality:
-    axis: *Cent9
-    title: "Centrality bin (cent9);cent9 (0=70-80%%, 8=0-5%%);Counts"
-  hCentralityRaw:
-    axis: *Cent9
-    title: "Centrality bin before bin cut;cent9 (0=70-80%%, 8=0-5%%);Counts"
-  hCentrality16:
-    axis: *Cent16
-    title: "Centrality bin (cent16);cent16;Counts"
-  hRefMultCorr:
-    axis: *RefMult
-    title: "Corrected multiplicity;refMult_{corr};Counts"
-  hRefMultWeight:
-    axis: *RefMultWeight
-    title: "StRefMultCorr event weight;weight;Counts"
-  hRefMultVsNTOFMatch:
-    xAxis: *TofMatchMult
-    yAxis: *RefMult
-    title: "nBTOFMatch vs refMult (before pileup cut);nBTOFMatch;refMult"
-  hRefMultVsNTOFMatchAfter:
-    xAxis: *TofMatchMult
-    yAxis: *RefMult
-    title: "nBTOFMatch vs refMult (after pileup cut);nBTOFMatch;refMult"
-  hCentralityVsVz:
-    xAxis: *Vz
-    yAxis: *Cent9
-    title: "cent9 vs V_{z};V_{z} [cm];cent9 (0=70-80%%, 8=0-5%%)"
-  hRawMult:
-    axis: *RefMult
-    title: "Raw multiplicity (refmult/fxtmult);mult;Counts"
-  hRawMult_vs_RefMultCorr:
-    xAxis: *RefMult
-    yAxis: *RefMult
-    title: "rawMult vs refMult_{corr};refMult_{corr};rawMult"
-  hRawMult_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *RefMult
-    title: "rawMult vs cent9;cent9 (0=70-80%%, 8=0-5%%);rawMult"
-  hRefMultCorr_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *RefMult
-    title: "refMult_{corr} vs cent9;cent9 (0=70-80%%, 8=0-5%%);refMult_{corr}"
-  hNTracks_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *NTracks
-    title: "N_{tracks} vs cent9;cent9 (0=70-80%%, 8=0-5%%);N_{tracks}"
-  hTofMatchMult_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *TofMatchMult
-    title: "nBTOFMatch vs cent9;cent9 (0=70-80%%, 8=0-5%%);nBTOFMatch"
-  hNProtonCand_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *NCand
-    title: "N_{proton cand.} vs cent9;cent9 (0=70-80%%, 8=0-5%%);N_{p}"
-  hNPionCand_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *NCand
-    title: "N_{#pi^{-} cand.} vs cent9;cent9 (0=70-80%%, 8=0-5%%);N_{#pi^{-}}"
-  hNLambdaPairs_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *NLambdaPairs
-    title: "Helix-pass p#pi^{-} pairs vs cent9;cent9 (0=70-80%%, 8=0-5%%);N_{pairs}"
-  hLambda_InvMass_vs_Cent9:
-    xAxis: *Cent9
-    yAxis: *InvMassLambda
-    title: "M_{p#pi^{-}} vs cent9;cent9 (0=70-80%%, 8=0-5%%);M_{p#pi^{-}} [GeV/c^{2}]"
-  hLambda_InvMass_vs_RefMultCorr:
-    xAxis: *RefMult
-    yAxis: *InvMassLambda
-    title: "M_{p#pi^{-}} vs refMult_{corr};refMult_{corr};M_{p#pi^{-}} [GeV/c^{2}]"
-  hLambda_InvMass_CentBin0:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=0 (70-80%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin1:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=1 (60-70%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin2:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=2 (50-60%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin3:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=3 (40-50%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin4:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=4 (30-40%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin5:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=5 (20-30%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin6:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=6 (10-20%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin7:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=7 (5-10%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_InvMass_CentBin8:
-    axis: *InvMassLambda
-    title: "M_{p#pi^{-}} cent9=8 (0-5%%);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-
-  # --- Lambda (from Lambda) ---
-  hLambda_InvMass:
-    axis: *InvMassLambda
-    title: "Lambda invariant mass (Helix);M_{p#pi^{-}} [GeV/c^{2}];Counts"
-  hLambda_Pt:
-    axis: *PtLambda
-    title: "Lambda p_{T};p_{T} [GeV/c];Counts"
-  hLambda_Eta:
-    axis: *EtaLambda
-    title: "Lambda #eta;#eta;Counts"
-  hLambda_Phi:
-    axis: *PhiLambda
-    title: "Lambda #phi;#phi [rad];Counts"
-  hDCA12:
-    axis: *DCA
-    title: "DCA between p and #pi^{-} at V0;DCA [cm];Counts"
-  hDCAV0:
-    axis: *DCA
-    title: "DCA of Lambda to PV;DCA [cm];Counts"
-  hCosPointing:
-    axis: *CosPointing
-    title: "cos(pointing angle);cos(#theta);Counts"
-  hNSigmaProton:
-    axis: *NSigmaY
-    title: "Proton n#sigma_{p};n#sigma_{p};Counts"
-  hNSigmaPion:
-    axis: *NSigmaY
-    title: "Pion n#sigma_{#pi};n#sigma_{#pi};Counts"
-  hLambda_InvMass_vs_Pt:
-    xAxis: *PtLambda
-    yAxis: *InvMassLambda
-    title: "M_{p#pi^{-}} vs p_{T};p_{T} [GeV/c];M_{p#pi^{-}} [GeV/c^{2}]"
-  hDCAV0_vs_InvMass:
-    xAxis: *InvMassLambda
-    yAxis: *DCA
-    title: "DCA_{V0} vs M_{p#pi^{-}};M_{p#pi^{-}} [GeV/c^{2}];DCA [cm]"
-  hCosPointing_vs_InvMass:
-    xAxis: *InvMassLambda
-    yAxis: *CosPointing
-    title: "cos(#theta) vs M_{p#pi^{-}};M_{p#pi^{-}} [GeV/c^{2}];cos(#theta)"
-  hLambda_InvMass_vs_TransDecayLength:
-    xAxis: *TransDecayLength
-    yAxis: *InvMassLambda
-    title: "M_{p#pi^{-}} vs Transverse Decay Length;L_{T} [cm];M_{p#pi^{-}} [GeV/c^{2}]"
-  hN:
-    nBins: 1
-    min: 0.0
-    max: 1.0
-    title: "N processed events;dummy;count"
-    type: TH1I
 
   # --- NuclearId (from NuclearId) ---
   hDedxP:
@@ -1185,3 +1030,291 @@ histograms:
   hKstar_Mixed_4He_SBNeg_CentBin8:
     axis: *Kstar
     title: "k* (Mixed Lambda - 4He, neg. SB) cent9=8 (0-5%);k* (GeV/c);Counts"
+  hKstarMass_d_CentBin0:
+    title: 'k* vs Lambda InvMass (d, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin0:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin1:
+    title: 'k* vs Lambda InvMass (d, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin1:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin2:
+    title: 'k* vs Lambda InvMass (d, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin2:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin3:
+    title: 'k* vs Lambda InvMass (d, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin3:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin4:
+    title: 'k* vs Lambda InvMass (d, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin4:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin5:
+    title: 'k* vs Lambda InvMass (d, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin5:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin6:
+    title: 'k* vs Lambda InvMass (d, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin6:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin7:
+    title: 'k* vs Lambda InvMass (d, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin7:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_d_CentBin8:
+    title: 'k* vs Lambda InvMass (d, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_d_CentBin8:
+    title: 'Mixed k* vs Lambda InvMass (d, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin0:
+    title: 'k* vs Lambda InvMass (t, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin0:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin1:
+    title: 'k* vs Lambda InvMass (t, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin1:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin2:
+    title: 'k* vs Lambda InvMass (t, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin2:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin3:
+    title: 'k* vs Lambda InvMass (t, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin3:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin4:
+    title: 'k* vs Lambda InvMass (t, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin4:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin5:
+    title: 'k* vs Lambda InvMass (t, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin5:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin6:
+    title: 'k* vs Lambda InvMass (t, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin6:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin7:
+    title: 'k* vs Lambda InvMass (t, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin7:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_t_CentBin8:
+    title: 'k* vs Lambda InvMass (t, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_t_CentBin8:
+    title: 'Mixed k* vs Lambda InvMass (t, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin0:
+    title: 'k* vs Lambda InvMass (3He, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin0:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin1:
+    title: 'k* vs Lambda InvMass (3He, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin1:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin2:
+    title: 'k* vs Lambda InvMass (3He, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin2:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin3:
+    title: 'k* vs Lambda InvMass (3He, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin3:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin4:
+    title: 'k* vs Lambda InvMass (3He, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin4:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin5:
+    title: 'k* vs Lambda InvMass (3He, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin5:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin6:
+    title: 'k* vs Lambda InvMass (3He, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin6:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin7:
+    title: 'k* vs Lambda InvMass (3He, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin7:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_3He_CentBin8:
+    title: 'k* vs Lambda InvMass (3He, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_3He_CentBin8:
+    title: 'Mixed k* vs Lambda InvMass (3He, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin0:
+    title: 'k* vs Lambda InvMass (4He, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin0:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 0)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin1:
+    title: 'k* vs Lambda InvMass (4He, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin1:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 1)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin2:
+    title: 'k* vs Lambda InvMass (4He, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin2:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 2)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin3:
+    title: 'k* vs Lambda InvMass (4He, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin3:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 3)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin4:
+    title: 'k* vs Lambda InvMass (4He, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin4:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 4)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin5:
+    title: 'k* vs Lambda InvMass (4He, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin5:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 5)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin6:
+    title: 'k* vs Lambda InvMass (4He, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin6:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 6)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin7:
+    title: 'k* vs Lambda InvMass (4He, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin7:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 7)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_4He_CentBin8:
+    title: 'k* vs Lambda InvMass (4He, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
+  hKstarMass_Mixed_4He_CentBin8:
+    title: 'Mixed k* vs Lambda InvMass (4He, Cent 8)'
+    xAxis: *Kstar
+    yAxis: *InvMassLambda
