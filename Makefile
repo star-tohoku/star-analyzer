@@ -1,6 +1,10 @@
-# Makefile for StPhiMaker and StarAnaConfig (STAR analysis framework)
+# Makefile for StarAnaConfig, StRefMultCorr, StCommon, and St*Maker libraries
 # Requires: STAR environment sourced via script/setup.sh or script/setup.csh
 # Usage: source ./script/setup.sh config/mainconf/main_<anaName>.yaml && make
+#
+# Maker convention (auto-discovered; no Makefile edit needed for new makers):
+#   StMaker/StXxxMaker/StXxxMaker.cxx + StXxxMaker.h -> lib/libStXxxMaker.so
+# Shared helpers under StMaker/common/*.cxx -> lib/libStCommon.so
 
 ifeq ($(STAR),)
   $(error STAR environment variable not set. Source script/setup.sh or script/setup.csh first)
@@ -81,7 +85,6 @@ endif
 STAR_INC_DIR := $(STAR_OBJ)/include
 STAR_LIB_DIR := $(STAR_OBJ)/lib
 
-STMAKER_DIR := StMaker/StPhiMaker
 COMMON_DIR := StMaker/common
 RMC_DIR := StRoot/StRefMultCorr
 LIB_DIR := lib
@@ -111,48 +114,27 @@ LDFLAGS_CONFIG := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,--whole-archive -L$(Y
 
 # --- libStRefMultCorr (vendored, no STAR link beyond headers) ---
 LIB_RMC_NAME := libStRefMultCorr.so
-RMC_SRCS := $(RMC_DIR)/StRefMultCorr.cxx $(RMC_DIR)/CentralityMaker.cxx $(RMC_DIR)/Param.cxx
 RMC_OBJS := $(LIB_DIR)/StRefMultCorr.o $(LIB_DIR)/CentralityMaker.o $(LIB_DIR)/Param.o
 CXXFLAGS_RMC := $(ARCH_FLAGS) -O2 -Wall -fPIC -std=c++11 $(ROOTCFLAGS) -IStRoot -I$(RMC_DIR)
 LDFLAGS_RMC := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared
 
-# --- libStPhiMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
-LIB_NAME := libStPhiMaker.so
+# --- Maker / common flags ---
 CXXFLAGS_MAKER := $(ARCH_FLAGS) -O2 -Wall -fPIC $(ROOTCFLAGS) -Iinclude -IStRoot -I$(COMMON_DIR) -I$(RMC_DIR) $(STAR_INC)
 LDFLAGS_MAKER := $(ARCH_FLAGS) $(ROOTLDFLAGS) -shared -Wl,-rpath,$(STAR_LIB_DIR)
-SRC := $(STMAKER_DIR)/StPhiMaker.cxx
-OBJ := $(LIB_DIR)/StPhiMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o
-CENTRALITY_HELPER_SRC := $(COMMON_DIR)/CentralityHelper.cxx
-PHI_KK_RECON_SRC := $(COMMON_DIR)/StPhiKKReconstruction.cxx
 
-# --- libStLambdaMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
-STLAMBDA_DIR := StMaker/StLambdaMaker
-LIB_LAMBDA_NAME := libStLambdaMaker.so
-SRC_LAMBDA := $(STLAMBDA_DIR)/StLambdaMaker.cxx
-OBJ_LAMBDA := $(LIB_DIR)/StLambdaMaker.o $(LIB_DIR)/CentralityHelper.o
+# --- libStCommon (StMaker/common helpers) ---
+COMMON_SRCS := $(wildcard $(COMMON_DIR)/*.cxx)
+COMMON_OBJS := $(patsubst $(COMMON_DIR)/%.cxx,$(LIB_DIR)/common_%.o,$(COMMON_SRCS))
+LIB_COMMON_NAME := libStCommon.so
 
-# --- libStNuclearIdMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
-STNUCLEARID_DIR := StMaker/StNuclearIdMaker
-LIB_NUCLEARID_NAME := libStNuclearIdMaker.so
-SRC_NUCLEARID := $(STNUCLEARID_DIR)/StNuclearIdMaker.cxx
-OBJ_NUCLEARID := $(LIB_DIR)/StNuclearIdMaker.o $(LIB_DIR)/CentralityHelper.o
-
-# --- libStFemtoMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
-STFEMTO_DIR := StMaker/StFemtoMaker
-LIB_FEMTO_NAME := libStFemtoMaker.so
-SRC_FEMTO := $(STFEMTO_DIR)/StFemtoMaker.cxx
-NUCLEAR_ID_HELPER_SRC := $(COMMON_DIR)/StNuclearIdHelper.cxx
-OBJ_FEMTO := $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/CentralityHelper.o $(LIB_DIR)/StPhiKKReconstruction.o $(LIB_DIR)/StNuclearIdHelper.o
-
-# --- libStLambdaNuclearMixMaker (depends on libStarAnaConfig + libStRefMultCorr) ---
-STMIX_DIR := StMaker/StLambdaNuclearMixMaker
-LIB_MIX_NAME := libStLambdaNuclearMixMaker.so
-SRC_MIX := $(STMIX_DIR)/StLambdaNuclearMixMaker.cxx
-OBJ_MIX := $(LIB_DIR)/StLambdaNuclearMixMaker.o $(LIB_DIR)/CentralityHelper.o
+# --- Auto-discover StMaker/St*Maker -> lib/libSt*Maker.so ---
+MAKER_DIRS := $(wildcard StMaker/St*Maker)
+MAKER_NAMES := $(notdir $(MAKER_DIRS))
+MAKER_LIBS := $(patsubst %,$(LIB_DIR)/lib%.so,$(MAKER_NAMES))
 
 .PHONY: all clean
 
-all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME) $(LIB_DIR)/$(LIB_MIX_NAME)
+all: $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR)/$(LIB_COMMON_NAME) $(MAKER_LIBS)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -210,49 +192,27 @@ $(LIB_DIR)/HistManager.o: src/HistManager.cpp include/HistManager.h
 $(LIB_DIR)/kinematics.o: src/kinematics.cpp include/kinematics.h
 	$(CXX) $(CXXFLAGS_CONFIG) -c src/kinematics.cpp -o $@
 
-# libStPhiMaker.so (links against libStarAnaConfig + libStRefMultCorr)
-$(LIB_DIR)/$(LIB_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+# libStCommon.so (helper classes: CentralityHelper, StPhiKKReconstruction, StNuclearIdHelper, ...)
+$(LIB_DIR)/$(LIB_COMMON_NAME): $(LIB_DIR) $(COMMON_OBJS) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(COMMON_OBJS) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
 
-$(LIB_DIR)/StPhiMaker.o: $(STMAKER_DIR)/StPhiMaker.cxx $(STMAKER_DIR)/StPhiMaker.h include/HistManager.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(STMAKER_DIR)/StPhiMaker.cxx -o $@
-$(LIB_DIR)/CentralityHelper.o: $(CENTRALITY_HELPER_SRC) $(COMMON_DIR)/CentralityHelper.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(CENTRALITY_HELPER_SRC) -o $@
+$(LIB_DIR)/common_%.o: $(COMMON_DIR)/%.cxx $(COMMON_DIR)/%.h | $(LIB_DIR)
+	$(CXX) $(CXXFLAGS_MAKER) -c $< -o $@
 
-$(LIB_DIR)/StPhiKKReconstruction.o: $(PHI_KK_RECON_SRC) $(COMMON_DIR)/StPhiKKReconstruction.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(PHI_KK_RECON_SRC) -o $@
+# Extra header-only dependency for nuclear ID calibration tables
+$(LIB_DIR)/common_StNuclearIdHelper.o: $(COMMON_DIR)/NuclearIdDeDxVsMom.h
 
-# libStLambdaMaker.so (links against libStarAnaConfig + libStRefMultCorr)
-$(LIB_DIR)/$(LIB_LAMBDA_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_LAMBDA)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(LIB_DIR)/StLambdaMaker.o $(LIB_DIR)/CentralityHelper.o -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+# Per-maker compile + link (directory name == class name == lib basename)
+define MAKER_RULE
+$(LIB_DIR)/$(1).o: StMaker/$(1)/$(1).cxx StMaker/$(1)/$(1).h | $(LIB_DIR)
+	$$(CXX) $$(CXXFLAGS_MAKER) -c $$< -o $$@
 
-$(LIB_DIR)/StLambdaMaker.o: $(SRC_LAMBDA) $(STLAMBDA_DIR)/StLambdaMaker.h include/HistManager.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_LAMBDA) -o $@
+$(LIB_DIR)/lib$(1).so: $(LIB_DIR)/$(1).o $(LIB_DIR)/$(LIB_COMMON_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
+	$$(CXX) $$(LDFLAGS_MAKER) -o $$@ $$< -L$$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -lStCommon -Wl,-rpath,$$(abspath $$(LIB_DIR)) $$(STAR_LDFLAGS) $$(ROOTLIBS)
+endef
 
-# libStFemtoMaker.so (links against libStarAnaConfig + libStRefMultCorr)
-$(LIB_DIR)/$(LIB_FEMTO_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_FEMTO)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_FEMTO) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
-
-$(LIB_DIR)/StFemtoMaker.o: $(SRC_FEMTO) $(STFEMTO_DIR)/StFemtoMaker.h include/HistManager.h include/FemtoCandidate.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_FEMTO) -o $@
-
-$(LIB_DIR)/StNuclearIdHelper.o: $(NUCLEAR_ID_HELPER_SRC) $(COMMON_DIR)/StNuclearIdHelper.h $(COMMON_DIR)/NuclearIdDeDxVsMom.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(NUCLEAR_ID_HELPER_SRC) -o $@
-
-# libStNuclearIdMaker.so
-$(LIB_DIR)/$(LIB_NUCLEARID_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_NUCLEARID)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_NUCLEARID) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
-
-$(LIB_DIR)/StNuclearIdMaker.o: $(SRC_NUCLEARID) $(STNUCLEARID_DIR)/StNuclearIdMaker.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_NUCLEARID) -o $@
-
-# libStLambdaNuclearMixMaker.so
-$(LIB_DIR)/$(LIB_MIX_NAME): $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME) $(LIB_DIR) $(OBJ_MIX)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(OBJ_MIX) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
-
-$(LIB_DIR)/StLambdaNuclearMixMaker.o: $(SRC_MIX) $(STMIX_DIR)/StLambdaNuclearMixMaker.h
-	$(CXX) $(CXXFLAGS_MAKER) -c $(SRC_MIX) -o $@
+$(foreach maker,$(MAKER_NAMES),$(eval $(call MAKER_RULE,$(maker))))
 
 clean:
-	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/$(LIB_NAME) $(LIB_DIR)/$(LIB_LAMBDA_NAME) $(LIB_DIR)/$(LIB_NUCLEARID_NAME) $(LIB_DIR)/$(LIB_FEMTO_NAME) $(LIB_DIR)/$(LIB_MIX_NAME) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
+	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/*.so
 	rm -rf $(YAML_CPP_BUILD)

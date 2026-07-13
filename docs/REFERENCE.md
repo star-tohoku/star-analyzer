@@ -150,7 +150,7 @@ source ./script/setup.sh config/mainconf/main_auau19_anaLambda.yaml
 make
 ```
 
-This builds `lib/libStarAnaConfig.so`, `lib/libStPhiMaker.so`, and `lib/libStLambdaMaker.so`. The Makefile uses `$STAR`, `$STAR_HOST_SYS`, and `root-config`; if `root-config` bitness does not match your setup, the build now fails early with a message telling you to re-source setup and verify `which root-config` / `root-config --cflags`.
+This builds `lib/libStarAnaConfig.so`, `lib/libStRefMultCorr.so`, `lib/libStCommon.so`, and every `lib/libSt*Maker.so` discovered under `StMaker/St*Maker/` (directory name must match `StXxxMaker/StXxxMaker.cxx`). The Makefile uses `$STAR`, `$STAR_HOST_SYS`, and `root-config`; if `root-config` bitness does not match your setup, the build now fails early with a message telling you to re-source setup and verify `which root-config` / `root-config --cflags`.
 
 ## How to run
 
@@ -336,7 +336,7 @@ Initial validation joblist (10 files): `job/joblist/joblist_auau3p85fxt_anaFemto
 ### Centrality (StRefMultCorr)
 
 - **Canonical reference:** [`StRoot/StRefMultCorr/README.md`](../StRoot/StRefMultCorr/README.md) — cent9/cent16 bin table, 0–60% ↔ cent9 2–8 mapping, `CentralityHelper` event order, YAML keys, femto `cfCent9Min`/`Max`. Agent skill: `docs/ai/skills/centrality-strefmultcorr.md`.
-- **Vendored library:** `StRoot/StRefMultCorr/` → `lib/libStRefMultCorr.so` (see `PROVENANCE.md`). Loaded by `run_anaPhi.C` / `run_anaLambda.C` / `run_anaFemtoPhiProton.C` before `libStPhiMaker.so` / `libStLambdaMaker.so` / `libStFemtoMaker.so`.
+- **Vendored library:** `StRoot/StRefMultCorr/` → `lib/libStRefMultCorr.so` (see `PROVENANCE.md`). Loaded by `run_ana*.C` before `libStCommon.so` and the analysis Maker `.so` files.
 - **mainconf key:** `centrality: cuts/centrality/centrality_<anaName>.yaml` — `mode` is `refmult` (19 GeV collider) or `fxtmult` (FXT).
 - **Bin index (`cent9`):** **larger index = more central** (cent9 0 = 70–80%, cent9 8 = 0–5%). Do not confuse bin **0** with “0–5% central”. Makers store `getCentralityBin9()` without remapping.
 - **`acceptedCentBins`:** comma-separated **cent9 indices** (e.g. most central only: `8` or `7,8`). Empty = all 0–8.
@@ -454,13 +454,13 @@ Each analysis has:
 
 ### 2. Build the shared library
 
-- In the **Makefile**, add a target for `lib/libStXXXMaker.so` (same pattern as `libStPhiMaker.so` / `libStLambdaMaker.so`). If the Maker uses config, link against `libStarAnaConfig`.
-- Run `make` so that `lib/libStXXXMaker.so` exists.
+- Place sources as `StMaker/StXXXMaker/StXXXMaker.h` and `StMaker/StXXXMaker/StXXXMaker.cxx`. The Makefile auto-discovers `StMaker/St*Maker/` and builds `lib/libStXXXMaker.so` (no Makefile edit). Shared helpers belong in `StMaker/common/` and link via `lib/libStCommon.so`.
+- Run `make` so that `lib/libStXXXMaker.so` (and `lib/libStCommon.so` if common sources changed) exists.
 
 ### 3. Runner macro (run_anaXxx.C)
 
 - Copy `analysis/run_anaPhi.C` (or `run_anaLambda.C`) to `analysis/run_anaXxx.C`.
-- Replace the analysis name in: function name, library `libStXXXMaker.so`, macro `anaXxx.C+`, and call `anaXxx(...)`. If using config, keep loading `libStarAnaConfig.so` and pass the config path as the 5th argument where applicable.
+- Replace the analysis name in: function name, library `libStXXXMaker.so`, macro `anaXxx.C+`, and call `anaXxx(...)`. Load order: `libStarAnaConfig.so` → `libStRefMultCorr.so` → `libStCommon.so` → Maker `.so`. Keep `-lStCommon` in `AddLinkedLibs`, and pass the config path as the 5th argument where applicable.
 
 ### 4. Analysis macro (anaXxx.C)
 

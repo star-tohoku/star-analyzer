@@ -23,6 +23,10 @@ void run_anaFemtoPhiDeuteron(const Char_t* inputFile,
     std::cerr << "ERROR: failed to load libStRefMultCorr.so" << std::endl;
     return;
   }
+  if (gSystem->Load(TString(pwd) + "/lib/libStCommon.so") < 0) {
+    std::cerr << "ERROR: failed to load libStCommon.so" << std::endl;
+    return;
+  }
   if (gSystem->Load(TString(pwd) + "/lib/libStFemtoMaker.so") < 0) {
     std::cerr << "ERROR: failed to load libStFemtoMaker.so" << std::endl;
     return;
@@ -32,7 +36,7 @@ void run_anaFemtoPhiDeuteron(const Char_t* inputFile,
   gInterpreter->AddIncludePath(TString::Format("%s/include", pwd));
   gInterpreter->AddIncludePath(TString::Format("%s/StMaker/common", pwd));
   gInterpreter->AddIncludePath("$STAR/StRoot");
-  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStFemtoMaker -Wl,-rpath,%s/lib", pwd, pwd));
+  gSystem->AddLinkedLibs(TString::Format("-L%s/lib -lStarAnaConfig -lStRefMultCorr -lStCommon -lStFemtoMaker -Wl,-rpath,%s/lib", pwd, pwd));
 
   gROOT->ProcessLine(TString::Format(".L %s/analysis/anaFemtoPhiDeuteron.C+", pwd));
   anaFemtoPhiDeuteron(inputFile, outputFile, jobid, nEventsMax, configPath);

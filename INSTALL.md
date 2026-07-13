@@ -11,7 +11,7 @@ Confirm the following **before** cloning (each line: what / why).
 | Requirement | What | Why |
 |-------------|------|-----|
 | **STAR stack** | You can run `starver` and use `root4star`. | Makers and macros assume STAR ROOT and libraries. |
-| **Build** | `gcc`, `make`, CMake; `root-config` on `PATH` after `starver`. | Builds `libStarAnaConfig.so` and Maker `.so` files. |
+| **Build** | `gcc`, `make`, CMake; `root-config` on `PATH` after `starver`. | Builds `libStarAnaConfig.so`, `libStCommon.so`, and `libSt*Maker.so` files. |
 | **Git** | Clone and submodules. | `yaml-cpp` lives in a submodule. |
 | **Python 3** | `python3` available. | Used by `setup_config_from_analysisinfo.py` and optional list/joblist scripts. |
 | **PyYAML** | `python3 -m pip install --user pyyaml` (if you lack it). | **Required** for `./script/generate_joblist.sh` (batch). Optional for local-only runs if you do not generate joblists. |

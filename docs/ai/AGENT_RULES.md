@@ -15,7 +15,7 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 
 ## Adding analyses and scripts
 
-- **New analysis** requires: Maker code, Makefile target, `run_anaXxx.C`, `anaXxx.C`, `script/run_anaXxx.sh`, mainconf, referenced YAMLs, and analysis_info.
+- **New analysis** requires: Maker code under `StMaker/StXXXMaker/` (auto-built; no Makefile edit), `run_anaXxx.C` that Loads/links `libStCommon` before the Maker `.so`, `anaXxx.C`, `script/run_anaXxx.sh`, mainconf, referenced YAMLs, and analysis_info.
 - **Joblist generation**: Use `script/generate_joblist.sh <mainconf>` and produce `job/joblist/joblist_<anaName>.xml` (`analysis.anaName`); the batch runtime mainconf is the one passed to `generate_joblist.sh`.
 - **Skill sync after docs edits**: If a task adds/updates `docs/ai/skills/*.md`, run `script/sync_and_check_skills.sh` before finishing.
 - **Scripts and workflow docs**: When script or run flow changes, update:

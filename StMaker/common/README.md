@@ -1,6 +1,12 @@
 # StMaker/common
 
-Shared compiled helpers linked into multiple Maker libraries (same object file pattern as `CentralityHelper.o`).
+Shared compiled helpers built into `lib/libStCommon.so` and loaded by every `run_ana*.C` before Maker libraries.
+
+## Build / load
+
+- Sources: `StMaker/common/*.cxx` (auto-collected by the Makefile).
+- Output: `lib/libStCommon.so` (links against `libStarAnaConfig` and `libStRefMultCorr`).
+- Each `libSt*Maker.so` links `-lStCommon`; runners must `gSystem->Load(".../lib/libStCommon.so")` and include `-lStCommon` in `AddLinkedLibs`.
 
 ## Phi KK reconstruction
 
