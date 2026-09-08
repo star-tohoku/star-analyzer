@@ -5,6 +5,7 @@
 #include "cuts/V0CutConfig.h"
 #include "cuts/PhiCutConfig.h"
 #include "cuts/LambdaCutConfig.h"
+#include "cuts/KfParticleCutConfig.h"
 #include "cuts/Lambda1520CutConfig.h"
 #include "cuts/Sigma1385CutConfig.h"
 #include "cuts/NuclearIdCutConfig.h"
@@ -37,7 +38,7 @@ ConfigManager& ConfigManager::GetInstance() {
 
 ConfigManager::ConfigManager() 
   : eventCuts(0), trackCuts(0), pidCuts(0), v0Cuts(0),
-    phiCuts(0), lambdaCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), nuclearIdCuts(0), mixingConfig(0),
+    phiCuts(0), lambdaCuts(0), kfParticleCuts(0), lambda1520Cuts(0), sigma1385Cuts(0), nuclearIdCuts(0), mixingConfig(0),
     centralityCuts(0), femtoConfig(0), phiMesicNucleusConfig(0), isLoaded(kFALSE) {
   // Initialize all cut config instances
   eventCuts = &EventCutConfig::GetInstance();
@@ -46,6 +47,7 @@ ConfigManager::ConfigManager()
   v0Cuts = &V0CutConfig::GetInstance();
   phiCuts = &PhiCutConfig::GetInstance();
   lambdaCuts = &LambdaCutConfig::GetInstance();
+  kfParticleCuts = &KfParticleCutConfig::GetInstance();
   lambda1520Cuts = &Lambda1520CutConfig::GetInstance();
   sigma1385Cuts = &Sigma1385CutConfig::GetInstance();
   nuclearIdCuts = &NuclearIdCutConfig::GetInstance();
@@ -152,6 +154,12 @@ Bool_t ConfigManager::ParseMainConfig(const Char_t* filename) {
     }
   } else {
     std::cerr << "WARNING: 'lambda' key not found in main config" << std::endl;
+  }
+
+  if (values.find("kf") != values.end()) {
+    if (!LoadConfigFile(basePath.c_str(), values["kf"].c_str(), "kf")) {
+      success = kFALSE;
+    }
   }
   
   if (values.find("lambda1520") != values.end()) {
@@ -329,6 +337,8 @@ Bool_t ConfigManager::LoadConfigFile(const Char_t* basePath, const Char_t* relat
     return phiCuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "lambda") == 0) {
     return lambdaCuts->LoadFromFile(fullPath.c_str());
+  } else if (strcmp(configType, "kf") == 0) {
+    return kfParticleCuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "lambda1520") == 0) {
     return lambda1520Cuts->LoadFromFile(fullPath.c_str());
   } else if (strcmp(configType, "sigma1385") == 0) {
@@ -374,6 +384,10 @@ PhiCutConfig& ConfigManager::GetPhiCuts() {
 
 LambdaCutConfig& ConfigManager::GetLambdaCuts() {
   return *lambdaCuts;
+}
+
+KfParticleCutConfig& ConfigManager::GetKfParticleCuts() {
+  return *kfParticleCuts;
 }
 
 Lambda1520CutConfig& ConfigManager::GetLambda1520Cuts() {

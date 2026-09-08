@@ -1,0 +1,26 @@
+# Dedicated KF copy; the existing AuAu19 Helix event file is unchanged.
+# Event Level Cuts
+
+minVz: -100.0         # cm, minVz <= Vz <= maxVz
+maxVz: 100.0          # cm
+maxVr: 2.0            # cm, Vr < maxVr
+minRefMult: 0.0       # Minimum RefMult
+maxRefMult: 1000.0    # Maximum RefMult
+maxVzDiff: 3.0        # cm, |Vz_TPC - Vz_VPD| < maxVzDiff (pileup rejection)
+maxAbsVzVpd: 200.0    # cm; use VPD (hVzDiff / vzDiff cut) only when |vzVpd| < this
+maxNTr: 0             # Event-level: skip event if nTracks > maxNTr (0 = no limit)
+
+# KF-only vertex profiles, selected by analysis.mode in the referenced analysis_info.
+# Profile values override the flat minVz/maxVz/maxVr/center ONLY inside the KF Maker.
+# Different field names intentionally avoid the legacy flat YamlParser's key collisions.
+# Vz ranges follow setup_config_from_analysisinfo.py's refmult/fxtmult convention.
+# FXT XY: xwu2 KFTree_lambda IsGoodPV reference, not a fitted Run20 calibration.
+vertexByMode:
+  refmult:
+    vzRange: [-100.0, 100.0]
+    center: [0.0, 0.0]
+    radius: 2.0
+  fxtmult:
+    vzRange: [198.0, 202.0]
+    center: [-0.4, -2.0]
+    radius: 2.0

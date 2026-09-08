@@ -1,0 +1,9 @@
+# config-generator: manual
+# Full KF reconstruction: active settings only; paths relative to config/.
+# All daughter quality/PID/Finder/final cuts come from kf:.
+# No generic track/pid/v0/mixing or legacy lambda settings are read.
+event:         cuts/event/event_auau13p5_anaLambda_KFParticle.yaml
+centrality:    cuts/centrality/centrality_auau13p5_anaLambda_KFParticle.yaml
+kf:            cuts/kf/kf_auau13p5_anaLambda_KFParticle.yaml
+hist:          hist/hist_auau13p5_anaLambda_KFParticle.yaml
+analysis:      analysis/analysis_info_auau13p5_anaLambda_KFParticle.yaml
