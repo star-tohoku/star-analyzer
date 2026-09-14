@@ -59,7 +59,7 @@ deuteronMinRapidityCm: -1.0
 deuteronMaxRapidityCm: 0.0
 
 # ---- tree I/O ----
-treeSchemaVersion: 2
+treeSchemaVersion: 3        # packed event row as well
 treeWriteEvent: true
 treeWriteTrack: true
 treeWritePhiPair: false        # schema 2 does not support it; pairs are rebuilt downstream
@@ -89,13 +89,18 @@ envMaxPt: 10.0
 envMinEta: -2.0
 envMaxEta: 0.2                 # inert in this frame: FXT primaries all have eta < 0
 envMaxChi2: 5.0                # variations: 3.0 / 5.0
-envMaxAbsNSigmaKaon: 5.0       # variations: 2.0 / 2.5 / 3.0, plus pi-contamination study
+envMaxAbsNSigmaKaon: 3.0       # loosest planned variation; 5.0 kept nothing any cut uses
+# Restrict the kaon store to what the production daughter PID can use. Measured to be
+# lossless: signal phi, ROT, MIX and the K-p kaon species all apply PassPhiDaughterTofPid,
+# and tofFallbackMode only gates the loose collection, which reaches QA histograms alone.
+envKaonRequireTofOrLowP: true
+envKaonLowPMax: 0.5            # must equal pid.pMomKaonPID
 envMaxAbsNSigmaDeuteron: 5.0   # variations: 2.0 / 3.0 / 5.0
-envMaxAbsNSigmaProton: 4.0     # variations: 2.0 / 2.5 / 3.0
+envMaxAbsNSigmaProton: 3.0     # loosest planned variation
 envMaxDcaKaon: 3.0
 envDeuteronMaxDca: 2.0         # variations: 1.0 / 2.0
 envDeuteronMinPMom: 0.15
 envDeuteronMaxPMom: 4.0
-envProtonMaxDca: 2.0           # variations: 1.0 / 1.5 / 2.0
+envProtonMaxDca: 1.5           # loosest planned variation
 envProtonMinPt: 0.15
 envMinNHitsDedxNuclear: 10

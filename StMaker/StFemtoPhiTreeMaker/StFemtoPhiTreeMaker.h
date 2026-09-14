@@ -69,6 +69,7 @@ class StFemtoPhiTreeMaker : public StMaker {
   femto_phi_tree::TrackRow mTrk;
   femto_phi_tree::PhiPairRow mPair;
   femto_phi_tree::EventRowV2 mEvt2;
+  femto_phi_tree::EventRowV3 mEvt3;
   femto_phi_tree::TrackRowV2 mTrk2;
   femto_phi_tree::PackStats mPackStats;
 
@@ -99,6 +100,8 @@ class StFemtoPhiTreeMaker : public StMaker {
   Double_t mEnvMaxEta;
   Double_t mEnvMaxChi2;
   Double_t mEnvMaxAbsNSigmaKaon;
+  Bool_t mEnvKaonRequireTofOrLowP;
+  Double_t mEnvKaonLowPMax;
   Double_t mEnvMaxAbsNSigmaDeuteron;
   Double_t mEnvMaxAbsNSigmaProton;
   Double_t mEnvMaxDcaKaon;
@@ -127,6 +130,8 @@ class StFemtoPhiTreeMaker : public StMaker {
   void BookTrees();
   void BookTreesV1();
   void BookTreesV2();
+  void BookEventTreeV3();
+  void FillEventRowV3();
   UShort_t SourceFileIndex(const TString& path);
   void FillTriggerInfo(StPicoEvent* event);
   void WriteSourceFileTable();

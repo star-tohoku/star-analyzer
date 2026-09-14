@@ -93,6 +93,8 @@ StFemtoPhiTreeMaker::StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoM
       mEnvMaxEta(0.2),
       mEnvMaxChi2(5.0),
       mEnvMaxAbsNSigmaKaon(5.0),
+      mEnvKaonRequireTofOrLowP(kFALSE),
+      mEnvKaonLowPMax(0.5),
       mEnvMaxAbsNSigmaDeuteron(5.0),
       mEnvMaxAbsNSigmaProton(4.0),
       mEnvMaxDcaKaon(3.0),
@@ -194,6 +196,10 @@ Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
   if (values.find("envMaxEta") != values.end()) mEnvMaxEta = YamlParser::ToDouble(values["envMaxEta"], mEnvMaxEta);
   if (values.find("envMaxChi2") != values.end()) mEnvMaxChi2 = YamlParser::ToDouble(values["envMaxChi2"], mEnvMaxChi2);
   if (values.find("envMaxAbsNSigmaKaon") != values.end()) mEnvMaxAbsNSigmaKaon = YamlParser::ToDouble(values["envMaxAbsNSigmaKaon"], mEnvMaxAbsNSigmaKaon);
+  if (values.find("envKaonRequireTofOrLowP") != values.end())
+    mEnvKaonRequireTofOrLowP = YamlParser::ToBool(values["envKaonRequireTofOrLowP"], mEnvKaonRequireTofOrLowP);
+  if (values.find("envKaonLowPMax") != values.end())
+    mEnvKaonLowPMax = YamlParser::ToDouble(values["envKaonLowPMax"], mEnvKaonLowPMax);
   if (values.find("envMaxAbsNSigmaDeuteron") != values.end()) mEnvMaxAbsNSigmaDeuteron = YamlParser::ToDouble(values["envMaxAbsNSigmaDeuteron"], mEnvMaxAbsNSigmaDeuteron);
   if (values.find("envMaxAbsNSigmaProton") != values.end()) mEnvMaxAbsNSigmaProton = YamlParser::ToDouble(values["envMaxAbsNSigmaProton"], mEnvMaxAbsNSigmaProton);
   if (values.find("envMaxDcaKaon") != values.end()) mEnvMaxDcaKaon = YamlParser::ToDouble(values["envMaxDcaKaon"], mEnvMaxDcaKaon);
@@ -215,7 +221,9 @@ Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
             << " writeEvent=" << mWriteEvent << " writeTrack=" << mWriteTrack
             << " writePhiPair=" << mWritePhiPair << " storeP=" << mStoreProtons
             << " storeD=" << mStoreDeuterons << " compress=" << mCompressLevel
-            << " schemaVersion=" << mSchemaVersion << " nTriggerIds=" << mTriggerIds.size()
+            << " schemaVersion=" << mSchemaVersion
+            << " kaonRequireTofOrLowP=" << mEnvKaonRequireTofOrLowP
+            << " kaonLowPMax=" << mEnvKaonLowPMax << " nTriggerIds=" << mTriggerIds.size()
             << " pidCorrectionState=" << mPidCorrectionState << std::endl;
   return kTRUE;
 }
@@ -229,7 +237,9 @@ void StFemtoPhiTreeMaker::BookTrees() {
 }
 
 void StFemtoPhiTreeMaker::BookTreesV2() {
-  if (mWriteEvent) {
+  if (mSchemaVersion >= femto_phi_tree::kSchemaVersionV3) {
+    BookEventTreeV3();
+  } else if (mWriteEvent) {
     mEventTree = new TTree("FemtoEventTree", "accepted femto events (schema 2)");
     mEventTree->SetAutoFlush(mAutoFlush);
     mEventTree->Branch("schemaVersion", &mEvt2.schemaVersion, "schemaVersion/i");
@@ -271,7 +281,7 @@ void StFemtoPhiTreeMaker::BookTreesV2() {
     mEventTree->Branch("nProton", &mEvt2.nProton, "nProton/I");
   }
   if (mWriteTrack) {
-    mTrackTree = new TTree("FemtoTrackTree", "envelope candidate tracks (schema 2, packed)");
+    mTrackTree = new TTree("FemtoTrackTree", "envelope candidate tracks (packed)");
     mTrackTree->SetAutoFlush(mAutoFlush);
     mTrackTree->Branch("eventUID", &mTrk2.eventUID, "eventUID/l");
     mTrackTree->Branch("trackIndex", &mTrk2.trackIndex, "trackIndex/s");
@@ -295,6 +305,80 @@ void StFemtoPhiTreeMaker::BookTreesV2() {
     std::cerr << "[StFemtoPhiTreeMaker] treeWritePhiPair is not supported in schema 2; "
               << "phi pairs are rebuilt downstream (plan sec 2 item 3)" << std::endl;
   }
+}
+
+void StFemtoPhiTreeMaker::BookEventTreeV3() {
+  if (!mWriteEvent) return;
+  mEventTree = new TTree("FemtoEventTree", "accepted femto events (schema 3, packed)");
+  mEventTree->SetAutoFlush(mAutoFlush);
+  mEventTree->Branch("schemaVersion", &mEvt3.schemaVersion, "schemaVersion/i");
+  mEventTree->Branch("eventUID", &mEvt3.eventUID, "eventUID/l");
+  mEventTree->Branch("sourceFileHash", &mEvt3.sourceFileHash, "sourceFileHash/i");
+  mEventTree->Branch("sourceFileIndex", &mEvt3.sourceFileIndex, "sourceFileIndex/s");
+  mEventTree->Branch("sourceEntry", &mEvt3.sourceEntry, "sourceEntry/I");
+  mEventTree->Branch("subjobId", &mEvt3.subjobId, "subjobId/i");
+  mEventTree->Branch("triggerId", &mEvt3.triggerId, "triggerId/i");
+  mEventTree->Branch("triggerBits", &mEvt3.triggerBits, "triggerBits/s");
+  mEventTree->Branch("vx", &mEvt3.vx, "vx/S");
+  mEventTree->Branch("vy", &mEvt3.vy, "vy/S");
+  mEventTree->Branch("vz", &mEvt3.vz, "vz/S");
+  mEventTree->Branch("vzVpd", &mEvt3.vzVpd, "vzVpd/S");
+  mEventTree->Branch("vr", &mEvt3.vr, "vr/s");
+  mEventTree->Branch("bField", &mEvt3.bField, "bField/F");
+  mEventTree->Branch("refMult", &mEvt3.refMult, "refMult/s");
+  mEventTree->Branch("rawMult", &mEvt3.rawMult, "rawMult/s");
+  mEventTree->Branch("nBTOFMatch", &mEvt3.nBTOFMatch, "nBTOFMatch/s");
+  mEventTree->Branch("nTracks", &mEvt3.nTracks, "nTracks/s");
+  mEventTree->Branch("refMultCorr", &mEvt3.refMultCorr, "refMultCorr/s");
+  mEventTree->Branch("centWeight", &mEvt3.centWeight, "centWeight/s");
+  mEventTree->Branch("centralityPercent", &mEvt3.centralityPercent, "centralityPercent/s");
+  mEventTree->Branch("cent9", &mEvt3.cent9, "cent9/B");
+  mEventTree->Branch("cent16", &mEvt3.cent16, "cent16/B");
+  mEventTree->Branch("qx", &mEvt3.qx, "qx/S");
+  mEventTree->Branch("qy", &mEvt3.qy, "qy/S");
+  mEventTree->Branch("psi2", &mEvt3.psi2, "psi2/S");
+  mEventTree->Branch("eventFlags", &mEvt3.eventFlags, "eventFlags/b");
+  mEventTree->Branch("nKp", &mEvt3.nKp, "nKp/s");
+  mEventTree->Branch("nKm", &mEvt3.nKm, "nKm/s");
+  mEventTree->Branch("nDeuteron", &mEvt3.nDeuteron, "nDeuteron/s");
+  mEventTree->Branch("nProton", &mEvt3.nProton, "nProton/s");
+}
+
+// Pack the schema 2 event row (already filled from the event) into schema 3.
+void StFemtoPhiTreeMaker::FillEventRowV3() {
+  using namespace femto_phi_tree;
+  mEvt3.Reset();
+  mEvt3.eventUID = mEvt2.eventUID;
+  mEvt3.sourceFileHash = mEvt2.sourceFileHash;
+  mEvt3.sourceFileIndex = mEvt2.sourceFileIndex;
+  mEvt3.sourceEntry = (Int_t)mEvt2.sourceEntry;
+  mEvt3.subjobId = mEvt2.subjobId;
+  mEvt3.triggerId = mEvt2.triggerId;
+  mEvt3.triggerBits = mEvt2.triggerBits;
+  mEvt3.vx = PackI16(mEvt2.vx, escale::kVxy, mPackStats.evVertex);
+  mEvt3.vy = PackI16(mEvt2.vy, escale::kVxy, mPackStats.evVertex);
+  mEvt3.vz = PackI16(mEvt2.vz, escale::kVz, mPackStats.evVertex);
+  mEvt3.vzVpd = PackI16(mEvt2.vzVpd, escale::kVzVpd, mPackStats.evVertex);
+  mEvt3.vr = PackU16(mEvt2.vr, escale::kVr, mPackStats.evVertex);
+  mEvt3.bField = mEvt2.bField;
+  mEvt3.refMult = PackU16(mEvt2.refMult, 1.0, mPackStats.evMult);
+  mEvt3.rawMult = PackU16(mEvt2.rawMult, 1.0, mPackStats.evMult);
+  mEvt3.nBTOFMatch = PackU16(mEvt2.nBTOFMatch, 1.0, mPackStats.evMult);
+  mEvt3.nTracks = PackU16(mEvt2.nTracks, 1.0, mPackStats.evMult);
+  mEvt3.refMultCorr = PackU16(mEvt2.refMultCorr, escale::kRefMultCorr, mPackStats.evCent);
+  mEvt3.centWeight = PackU16(mEvt2.centWeight, escale::kCentWeight, mPackStats.evCent);
+  mEvt3.centralityPercent =
+      PackU16(mEvt2.centralityPercent, escale::kCentPercent, mPackStats.evCent);
+  mEvt3.cent9 = (Char_t)mEvt2.cent9;
+  mEvt3.cent16 = (Char_t)mEvt2.cent16;
+  mEvt3.qx = PackI16(mEvt2.qx, escale::kQ, mPackStats.evQ);
+  mEvt3.qy = PackI16(mEvt2.qy, escale::kQ, mPackStats.evQ);
+  mEvt3.psi2 = PackI16(mEvt2.psi2, escale::kPsi2, mPackStats.evQ);
+  mEvt3.eventFlags = (UChar_t)(mEvt2.eventFlags & 0xFFu);
+  mEvt3.nKp = PackU16(mEvt2.nKp, 1.0, mPackStats.evMult);
+  mEvt3.nKm = PackU16(mEvt2.nKm, 1.0, mPackStats.evMult);
+  mEvt3.nDeuteron = PackU16(mEvt2.nDeuteron, 1.0, mPackStats.evMult);
+  mEvt3.nProton = PackU16(mEvt2.nProton, 1.0, mPackStats.evMult);
 }
 
 void StFemtoPhiTreeMaker::BookTreesV1() {
@@ -883,7 +967,14 @@ Int_t StFemtoPhiTreeMaker::Make() {
     if (PassNominalTrackCuts(trk, pVtx)) ts.selFlags |= femto_phi_tree::kSelTrackQualityNom;
     if (ts.tofMatch) ts.selFlags |= femto_phi_tree::kSelTofMatch;
 
-    if (mStoreKaons && TMath::Abs(ts.nSigmaKaon) <= mEnvMaxAbsNSigmaKaon && ts.DCA <= mEnvMaxDcaKaon) {
+    // Storage rule for kaons. With envKaonRequireTofOrLowP the store is restricted to what
+    // the production daughter PID can ever use: K+ is TPC-only up to pMomKaonPID and needs
+    // TOF above it, K- always needs TOF. Signal, ROT, MIX and the K-p kaon species all run
+    // through PassPhiDaughterTofPid, so nothing downstream sees a kaon outside this set.
+    const Bool_t kaonStoreOk =
+        !mEnvKaonRequireTofOrLowP || ts.tofMatch || (pMom.Mag() < mEnvKaonLowPMax);
+    if (mStoreKaons && kaonStoreOk && TMath::Abs(ts.nSigmaKaon) <= mEnvMaxAbsNSigmaKaon &&
+        ts.DCA <= mEnvMaxDcaKaon) {
       if (PassNominalKaonCuts(trk, pVtx)) ts.selFlags |= femto_phi_tree::kSelKaonCutsNom;
       if (PassTofKaonPid(ts)) ts.selFlags |= femto_phi_tree::kSelLoosePid;
       if (PassPhiDaughterTofPid(ts)) ts.selFlags |= femto_phi_tree::kSelNominalPid;
@@ -1007,6 +1098,7 @@ Int_t StFemtoPhiTreeMaker::Make() {
     mEvt2.nKp = nKp;  mEvt2.nKm = nKm;  mEvt2.nDeuteron = nD;  mEvt2.nProton = nP;
   }
 
+  if (mSchemaVersion >= femto_phi_tree::kSchemaVersionV3) FillEventRowV3();
   if (mEventTree) mEventTree->Fill();
   mNAccepted++;
   return kStOK;
@@ -1087,7 +1179,8 @@ void StFemtoPhiTreeMaker::WriteMetadata() {
   WriteNamed("packSaturationDetail",
              TString::Format("pT=%lld eta=%lld phi=%lld dEdx=%lld nSigma=%lld tofBeta=%lld "
                              "dca=%lld trackIndex=%lld nHits=%lld nSigmaK=%lld nSigmaPi=%lld "
-                             "nSigmaP=%lld nSigmaD=%lld sentinel=%lld",
+                             "nSigmaP=%lld nSigmaD=%lld sentinel=%lld evVertex=%lld "
+                             "evQ=%lld evMult=%lld evCent=%lld",
                              (long long)mPackStats.pT, (long long)mPackStats.eta,
                              (long long)mPackStats.phi, (long long)mPackStats.dEdx,
                              (long long)0, (long long)mPackStats.tofBeta,
@@ -1095,7 +1188,9 @@ void StFemtoPhiTreeMaker::WriteMetadata() {
                              (long long)mPackStats.nHits, (long long)mPackStats.nSigmaKaon,
                              (long long)mPackStats.nSigmaPion, (long long)mPackStats.nSigmaProton,
                              (long long)mPackStats.nSigmaDeuteron,
-                             (long long)mPackStats.nSigmaSentinel));
+                             (long long)mPackStats.nSigmaSentinel, (long long)mPackStats.evVertex,
+                             (long long)mPackStats.evQ, (long long)mPackStats.evMult,
+                             (long long)mPackStats.evCent));
   WriteNamed("gitRevision", EnvOrEmpty("STAR_ANA_GIT_REV"));
   WriteNamed("gitDirty", EnvOrEmpty("STAR_ANA_GIT_DIRTY"));
   WriteNamed("mainconfPath", mMainconfPath.c_str());
@@ -1162,7 +1257,9 @@ Int_t StFemtoPhiTreeMaker::Finish() {
               << " trackIndex=" << mPackStats.trackIndex << " nHits=" << mPackStats.nHits
               << " nSigmaK=" << mPackStats.nSigmaKaon << " nSigmaPi=" << mPackStats.nSigmaPion
               << " nSigmaP=" << mPackStats.nSigmaProton
-              << " nSigmaD=" << mPackStats.nSigmaDeuteron << ")"
+              << " nSigmaD=" << mPackStats.nSigmaDeuteron
+              << " evVertex=" << mPackStats.evVertex << " evQ=" << mPackStats.evQ
+              << " evMult=" << mPackStats.evMult << " evCent=" << mPackStats.evCent << ")"
               << "  nSigmaSentinel=" << mPackStats.nSigmaSentinel << " (intended)" << std::endl;
     if (mPackStats.Total() > 0)
       std::cerr << "[StFemtoPhiTreeMaker] WARNING: packed values were saturated; a stored "

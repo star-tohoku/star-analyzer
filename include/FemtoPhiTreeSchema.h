@@ -11,8 +11,9 @@ namespace femto_phi_tree {
 //            Float16/Double32 range syntax, so narrowing must be done with the C++
 //            type itself. See implementation-plan-20260913.md §3.2 and §10.
 const UInt_t kSchemaVersionV1 = 1;
-const UInt_t kSchemaVersionV2 = 2;
-const UInt_t kSchemaVersion = kSchemaVersionV2;
+const UInt_t kSchemaVersionV2 = 2;  // packed track row, Float_t event row (pilot only)
+const UInt_t kSchemaVersionV3 = 3;  // packed event row as well
+const UInt_t kSchemaVersion = kSchemaVersionV3;
 
 enum SpeciesCode {
   kSpeciesUnknown = 0,
@@ -248,16 +249,19 @@ struct PackStats {
   Long64_t pT, eta, phi, dEdx, tofBeta, dca, trackIndex, nHits;
   Long64_t nSigmaKaon, nSigmaPion, nSigmaProton, nSigmaDeuteron;
   Long64_t nSigmaSentinel;  // deliberate sentinel encodings, not a failure
+  // The event row gets its own counters. Sharing a track counter hides which field clipped.
+  Long64_t evVertex, evQ, evMult, evCent;
   PackStats() { Reset(); }
   void Reset() {
     pT = eta = phi = dEdx = tofBeta = dca = trackIndex = nHits = 0;
     nSigmaKaon = nSigmaPion = nSigmaProton = nSigmaDeuteron = 0;
     nSigmaSentinel = 0;
+    evVertex = evQ = evMult = evCent = 0;
   }
   // Sentinel encodings are excluded: they are intended, not truncation.
   Long64_t Total() const {
     return pT + eta + phi + dEdx + tofBeta + dca + trackIndex + nHits + nSigmaKaon +
-           nSigmaPion + nSigmaProton + nSigmaDeuteron;
+           nSigmaPion + nSigmaProton + nSigmaDeuteron + evVertex + evQ + evMult + evCent;
   }
 };
 
@@ -419,6 +423,115 @@ struct EventRowV2 {
     eventFlags = 0;
     nKp = nKm = nDeuteron = nProton = 0;
   }
+};
+
+
+// ---------------------------------------------------------------------------
+// Schema 3 packed event row
+//
+// Schema 2 packed the track row but left the event row as Float_t; measured at
+// 49.33 B/event against 20.25 B/event packed, i.e. 66 GB over the full dataset.
+//
+//   branch             type       scale  range                  resolution
+//   eventUID           ULong64_t    -    (runId<<32)|eventId     exact
+//   sourceFileHash     UInt_t       -    FNV-1a of the path      exact
+//   sourceFileIndex    UShort_t     -    row of SourceFileTable  exact
+//   sourceEntry        Int_t        -    entry in that file      exact
+//   subjobId           UInt_t       -    FNV-1a of the jobid     exact
+//   triggerId          UInt_t       -    first configured match  exact
+//   triggerBits        UShort_t     -    mask over the list      exact
+//   vx, vy             Short_t    1e3    +-32.767 cm             10 um
+//   vz                 Short_t    1e2    +-327.67 cm             100 um
+//   vzVpd              Short_t    1e1    +-3276.7 cm             1 mm
+//                                  the FXT VPD is not usable: measured range -1725..+1289 cm,
+//                                  and the event cut ignores it unless |vzVpd| < maxAbsVzVpd
+//   vr                 UShort_t   1e3    0 .. 65.535 cm          10 um
+//   bField             Float_t      -    kilogauss               exact
+//   refMult ..nTracks  UShort_t     -    0 .. 65535              exact
+//   refMultCorr        UShort_t   1e2    0 .. 655.35             0.01
+//   centWeight         UShort_t   1e4    0 .. 6.5535             1e-4
+//   centralityPercent  UShort_t   1e2    0 .. 655.35 %           0.01 %
+//   cent9, cent16      Char_t       -    -1 .. 15                exact
+//   qx, qy             Short_t    1e2    +-327.67                0.01
+//   psi2               Short_t    1e4    +-3.2767 rad            1e-4
+//   eventFlags         UChar_t      -    8 bits                  exact
+//   nKp..nProton       UShort_t     -    0 .. 65535              exact
+//
+// Dropped relative to schema 2, with the reason:
+//   runId, eventId   -> both recoverable from eventUID
+//   mixVzBin, mixCentBin, mixEpBin, mixBin
+//                    -> derived from vz / cent9 / psi2 and the mixing YAML. Storing them
+//                       would freeze the binning, and varying it is one of the reasons the
+//                       tree exists at all.
+// ---------------------------------------------------------------------------
+
+namespace escale {
+const Double_t kVxy = 1000.0;
+const Double_t kVz = 100.0;
+const Double_t kVzVpd = 10.0;
+const Double_t kVr = 1000.0;
+const Double_t kRefMultCorr = 100.0;
+const Double_t kCentWeight = 10000.0;
+const Double_t kCentPercent = 100.0;
+const Double_t kQ = 100.0;
+const Double_t kPsi2 = 10000.0;
+}  // namespace escale
+
+struct EventRowV3 {
+  UInt_t schemaVersion;
+  ULong64_t eventUID;
+  UInt_t sourceFileHash;
+  UShort_t sourceFileIndex;
+  Int_t sourceEntry;
+  UInt_t subjobId;
+  UInt_t triggerId;
+  UShort_t triggerBits;
+  Short_t vx, vy, vz, vzVpd;
+  UShort_t vr;
+  Float_t bField;
+  UShort_t refMult, rawMult, nBTOFMatch, nTracks;
+  UShort_t refMultCorr, centWeight, centralityPercent;
+  Char_t cent9, cent16;
+  Short_t qx, qy, psi2;
+  UChar_t eventFlags;
+  UShort_t nKp, nKm, nDeuteron, nProton;
+
+  EventRowV3() { Reset(); }
+
+  void Reset() {
+    schemaVersion = kSchemaVersionV3;
+    eventUID = 0;
+    sourceFileHash = 0;
+    sourceFileIndex = 0;
+    sourceEntry = -1;
+    subjobId = 0;
+    triggerId = 0;
+    triggerBits = 0;
+    vx = vy = vz = vzVpd = 0;
+    vr = 0;
+    bField = 0.0f;
+    refMult = rawMult = nBTOFMatch = nTracks = 0;
+    refMultCorr = centWeight = centralityPercent = 0;
+    cent9 = cent16 = -1;
+    qx = qy = 0;
+    psi2 = 0;
+    eventFlags = 0;
+    nKp = nKm = nDeuteron = nProton = 0;
+  }
+
+  Int_t RunId() const { return (Int_t)(UInt_t)(eventUID >> 32); }
+  Int_t EventId() const { return (Int_t)(UInt_t)(eventUID & 0xFFFFFFFFull); }
+  Double_t Vx() const { return UnpackI16(vx, escale::kVxy); }
+  Double_t Vy() const { return UnpackI16(vy, escale::kVxy); }
+  Double_t Vz() const { return UnpackI16(vz, escale::kVz); }
+  Double_t VzVpd() const { return UnpackI16(vzVpd, escale::kVzVpd); }
+  Double_t Vr() const { return UnpackU16(vr, escale::kVr); }
+  Double_t RefMultCorr() const { return UnpackU16(refMultCorr, escale::kRefMultCorr); }
+  Double_t CentWeight() const { return UnpackU16(centWeight, escale::kCentWeight); }
+  Double_t CentralityPercent() const { return UnpackU16(centralityPercent, escale::kCentPercent); }
+  Double_t Qx() const { return UnpackI16(qx, escale::kQ); }
+  Double_t Qy() const { return UnpackI16(qy, escale::kQ); }
+  Double_t Psi2() const { return UnpackI16(psi2, escale::kPsi2); }
 };
 
 inline ULong64_t MakeEventUID(Int_t runId, Int_t eventId) {
