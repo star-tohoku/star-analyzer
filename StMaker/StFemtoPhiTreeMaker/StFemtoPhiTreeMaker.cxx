@@ -107,6 +107,12 @@ StFemtoPhiTreeMaker::StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoM
       mEnvMinNHitsDedxNuclear(10),
       mEnvKaonRequireDaughterPidReach(kFALSE),
       mWriteKaonOrigin(kTRUE),
+      mStoreTriton(kFALSE),
+      mStoreHe3(kFALSE),
+      mStoreHe4(kFALSE),
+      mEnvMaxAbsNSigmaTriton(5.0),
+      mEnvMaxAbsNSigmaHe3(5.0),
+      mEnvMaxAbsNSigmaHe4(5.0),
       mKaonOriginTree(0),
       mEnvKaonMass2Lo(0.05),
       mEnvKaonMass2Hi(0.50),
@@ -122,6 +128,9 @@ StFemtoPhiTreeMaker::StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoM
       mNKm(0),
       mNDeuteron(0),
       mNProton(0),
+      mNTriton(0),
+      mNHe3(0),
+      mNHe4(0),
       mNPhiPair(0) {}
 
 StFemtoPhiTreeMaker::~StFemtoPhiTreeMaker() {
@@ -215,6 +224,12 @@ Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
   if (values.find("envProtonMaxDca") != values.end()) mEnvProtonMaxDca = YamlParser::ToDouble(values["envProtonMaxDca"], mEnvProtonMaxDca);
   if (values.find("envProtonMinPt") != values.end()) mEnvProtonMinPt = YamlParser::ToDouble(values["envProtonMinPt"], mEnvProtonMinPt);
   if (values.find("envMinNHitsDedxNuclear") != values.end()) mEnvMinNHitsDedxNuclear = YamlParser::ToInt(values["envMinNHitsDedxNuclear"], mEnvMinNHitsDedxNuclear);
+  if (values.find("treeStoreTriton") != values.end()) mStoreTriton = YamlParser::ToBool(values["treeStoreTriton"], mStoreTriton);
+  if (values.find("treeStoreHe3") != values.end()) mStoreHe3 = YamlParser::ToBool(values["treeStoreHe3"], mStoreHe3);
+  if (values.find("treeStoreHe4") != values.end()) mStoreHe4 = YamlParser::ToBool(values["treeStoreHe4"], mStoreHe4);
+  if (values.find("envMaxAbsNSigmaTriton") != values.end()) mEnvMaxAbsNSigmaTriton = YamlParser::ToDouble(values["envMaxAbsNSigmaTriton"], mEnvMaxAbsNSigmaTriton);
+  if (values.find("envMaxAbsNSigmaHe3") != values.end()) mEnvMaxAbsNSigmaHe3 = YamlParser::ToDouble(values["envMaxAbsNSigmaHe3"], mEnvMaxAbsNSigmaHe3);
+  if (values.find("envMaxAbsNSigmaHe4") != values.end()) mEnvMaxAbsNSigmaHe4 = YamlParser::ToDouble(values["envMaxAbsNSigmaHe4"], mEnvMaxAbsNSigmaHe4);
   if (values.find("treeWriteKaonOrigin") != values.end()) mWriteKaonOrigin = YamlParser::ToBool(values["treeWriteKaonOrigin"], mWriteKaonOrigin);
   if (values.find("envKaonRequireDaughterPidReach") != values.end()) mEnvKaonRequireDaughterPidReach = YamlParser::ToBool(values["envKaonRequireDaughterPidReach"], mEnvKaonRequireDaughterPidReach);
   if (values.find("envKaonMass2Lo") != values.end()) mEnvKaonMass2Lo = YamlParser::ToDouble(values["envKaonMass2Lo"], mEnvKaonMass2Lo);
@@ -749,6 +764,95 @@ Bool_t StFemtoPhiTreeMaker::PassFemtoDeuteronCuts(const TrackState& trk) const {
   return kTRUE;
 }
 
+// StFemtoMaker's PassFemtoTritonCuts / PassFemtoHe3Cuts / PassFemtoHe4Cuts are the same predicate
+// three times over, differing only in which config prefix they read. Reproducing them as three
+// copies here would be three chances to drift out of step with the maker, so the config values
+// are selected once and the body written once.
+Bool_t StFemtoPhiTreeMaker::PassFemtoNuclearCuts(const TrackState& trk, Double_t nSigma,
+                                                 Int_t nucSpecies) const {
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  Double_t maxDca, minPMom, maxPMom, minPtPre, maxPtPre, maxAbsEta, maxAbsNSigma, minNHitsRatio;
+  Double_t tofPThr, minMass2, maxMass2, minPtPair, maxPtPair, minYCm, maxYCm;
+  Short_t minNHitsFit;
+  if (nucSpecies == kNucTriton) {
+    maxDca = fc.tritonMaxDca; minPMom = fc.tritonMinPMom; maxPMom = fc.tritonMaxPMom;
+    minPtPre = fc.tritonMinPtPre; maxPtPre = fc.tritonMaxPtPre;
+    maxAbsEta = fc.tritonMaxAbsEta; maxAbsNSigma = fc.tritonMaxAbsNSigma;
+    minNHitsFit = fc.tritonMinNHitsFit; minNHitsRatio = fc.tritonMinNHitsRatio;
+    tofPThr = fc.tritonTofMomentumThreshold; minMass2 = fc.tritonMinMass2;
+    maxMass2 = fc.tritonMaxMass2; minPtPair = fc.tritonMinPtPair; maxPtPair = fc.tritonMaxPtPair;
+    minYCm = fc.tritonMinRapidityCm; maxYCm = fc.tritonMaxRapidityCm;
+  } else if (nucSpecies == kNucHe3) {
+    maxDca = fc.he3MaxDca; minPMom = fc.he3MinPMom; maxPMom = fc.he3MaxPMom;
+    minPtPre = fc.he3MinPtPre; maxPtPre = fc.he3MaxPtPre;
+    maxAbsEta = fc.he3MaxAbsEta; maxAbsNSigma = fc.he3MaxAbsNSigma;
+    minNHitsFit = fc.he3MinNHitsFit; minNHitsRatio = fc.he3MinNHitsRatio;
+    tofPThr = fc.he3TofMomentumThreshold; minMass2 = fc.he3MinMass2;
+    maxMass2 = fc.he3MaxMass2; minPtPair = fc.he3MinPtPair; maxPtPair = fc.he3MaxPtPair;
+    minYCm = fc.he3MinRapidityCm; maxYCm = fc.he3MaxRapidityCm;
+  } else {
+    maxDca = fc.he4MaxDca; minPMom = fc.he4MinPMom; maxPMom = fc.he4MaxPMom;
+    minPtPre = fc.he4MinPtPre; maxPtPre = fc.he4MaxPtPre;
+    maxAbsEta = fc.he4MaxAbsEta; maxAbsNSigma = fc.he4MaxAbsNSigma;
+    minNHitsFit = fc.he4MinNHitsFit; minNHitsRatio = fc.he4MinNHitsRatio;
+    tofPThr = fc.he4TofMomentumThreshold; minMass2 = fc.he4MinMass2;
+    maxMass2 = fc.he4MaxMass2; minPtPair = fc.he4MinPtPair; maxPtPair = fc.he4MaxPtPair;
+    minYCm = fc.he4MinRapidityCm; maxYCm = fc.he4MaxRapidityCm;
+  }
+  if (trk.charge <= 0) return kFALSE;
+  if (trk.DCA >= maxDca) return kFALSE;
+  const TVector3 p = TrackMomentum(trk);
+  const Double_t pmom = p.Mag();
+  if (pmom < minPMom || pmom > maxPMom) return kFALSE;
+  if (trk.pT < minPtPre || trk.pT > maxPtPre) return kFALSE;
+  if (TMath::Abs(trk.eta) >= maxAbsEta) return kFALSE;
+  if (TMath::Abs(nSigma) >= maxAbsNSigma) return kFALSE;
+  if (trk.nHitsFit < minNHitsFit) return kFALSE;
+  if (trk.nHitsMax <= 0) return kFALSE;
+  if ((Float_t)trk.nHitsFit / (Float_t)trk.nHitsMax < minNHitsRatio) return kFALSE;
+  const Bool_t passTofRule =
+      (pmom < tofPThr) ||
+      (pmom > tofPThr && trk.tofMatch && trk.mass2 >= minMass2 && trk.mass2 <= maxMass2);
+  if (!passTofRule) return kFALSE;
+  if (trk.pT < minPtPair || trk.pT > maxPtPair) return kFALSE;
+  const TLorentzVector lv =
+      StNuclearIdHelper::NuclearP4(p, (NuclearSpecies)nucSpecies);
+  const Double_t yCm = ApplyRapidityFrame(lv.Rapidity());
+  if (yCm < minYCm || yCm > maxYCm) return kFALSE;
+  return kTRUE;
+}
+
+// Store one light-nucleus row. The nuclear nSigma rides in the nSigmaDeuteron slot; speciesCode
+// says which hypothesis it belongs to.
+void StFemtoPhiTreeMaker::StoreNuclearSpecies(TrackState& ts, StPicoTrack* trk,
+                                              const NuclearTrackState& nucState, Int_t nucSpecies,
+                                              UChar_t speciesCode, Double_t envMaxAbsNSigma,
+                                              ULong64_t eventUID, Int_t& counter) {
+  const Double_t nSigma =
+      StNuclearIdHelper::GetNSigma((NuclearSpecies)nucSpecies, nucState.pMag, nucState.dedx);
+  if (TMath::Abs(nSigma) > envMaxAbsNSigma) return;
+  if (ts.DCA > mEnvDeuteronMaxDca) return;
+  const Double_t pmom = TrackMomentum(ts).Mag();
+  if (pmom < mEnvDeuteronMinPMom || pmom > mEnvDeuteronMaxPMom) return;
+  TrackState nTrk = ts;
+  nTrk.nSigmaDeuteron = (Float_t)nSigma;
+  Bool_t isSpecies = kFALSE;
+  if (nucSpecies == kNucTriton) isSpecies = StNuclearIdHelper::IsTriton(nucState);
+  else if (nucSpecies == kNucHe3) isSpecies = StNuclearIdHelper::IsHe3(nucState);
+  else isSpecies = StNuclearIdHelper::IsHe4(nucState);
+  if (isSpecies) nTrk.selFlags |= femto_phi_tree::kSelNominalPid;
+  nTrk.selFlags |= femto_phi_tree::kSelLoosePid;
+  if (PassFemtoNuclearCuts(nTrk, nSigma, nucSpecies)) {
+    nTrk.selFlags |= femto_phi_tree::kSelNominalFemto;
+  }
+  FillTrackTree(nTrk, speciesCode, eventUID);
+  ++counter;
+  if (nucSpecies == kNucTriton) ++mNTriton;
+  else if (nucSpecies == kNucHe3) ++mNHe3;
+  else ++mNHe4;
+  (void)trk;
+}
+
 Bool_t StFemtoPhiTreeMaker::PassFemtoProtonCuts(const TrackState& trk) const {
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   if (fc.protonChargeMode == "positive" && trk.charge <= 0) return kFALSE;
@@ -1011,6 +1115,7 @@ Int_t StFemtoPhiTreeMaker::Make() {
   const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
   const PIDCutConfig& pidCfg = ConfigManager::GetInstance().GetPIDCuts();
 
+  Int_t nT = 0, nH3 = 0, nH4 = 0;
   Int_t nKp = 0, nKm = 0, nD = 0, nP = 0;
   const ULong64_t eventUID = femto_phi_tree::MakeEventUID(runId, eventId);
 
@@ -1088,6 +1193,26 @@ Int_t StFemtoPhiTreeMaker::Make() {
         FillTrackTree(dTrk, femto_phi_tree::kSpeciesDeuteron, eventUID);
         nD++;
         mNDeuteron++;
+      }
+    }
+
+    // Light nuclei beyond the deuteron. Same gate as the deuteron block; each species is
+    // independent, so unlike StFemtoMaker there is no `continue` leaking from one into the next.
+    if ((mStoreTriton || mStoreHe3 || mStoreHe4) && trk->nHitsDedx() >= mEnvMinNHitsDedxNuclear &&
+        ts.dEdx > 0 && ts.charge > 0) {
+      NuclearTrackState nucState;
+      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+      if (mStoreTriton) {
+        StoreNuclearSpecies(ts, trk, nucState, kNucTriton, femto_phi_tree::kSpeciesTriton,
+                            mEnvMaxAbsNSigmaTriton, eventUID, nT);
+      }
+      if (mStoreHe3) {
+        StoreNuclearSpecies(ts, trk, nucState, kNucHe3, femto_phi_tree::kSpeciesHe3,
+                            mEnvMaxAbsNSigmaHe3, eventUID, nH3);
+      }
+      if (mStoreHe4) {
+        StoreNuclearSpecies(ts, trk, nucState, kNucHe4, femto_phi_tree::kSpeciesHe4,
+                            mEnvMaxAbsNSigmaHe4, eventUID, nH4);
       }
     }
 
@@ -1329,6 +1454,7 @@ Int_t StFemtoPhiTreeMaker::Finish() {
             << " nBadRun=" << mNBadRun << " nFailEventCuts=" << mNFailEventCuts
             << " nPileup=" << mNPileup << " nFailCent=" << mNFailCent
             << " nKp=" << mNKp << " nKm=" << mNKm << " nD=" << mNDeuteron << " nP=" << mNProton
+            << " nT=" << mNTriton << " nHe3=" << mNHe3 << " nHe4=" << mNHe4
             << " nPhiPair=" << mNPhiPair << std::endl;
   if (mSchemaVersion >= femto_phi_tree::kSchemaVersionV2) {
     std::cout << "[StFemtoPhiTreeMaker] schema=" << mSchemaVersion

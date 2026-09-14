@@ -73,6 +73,15 @@ treeAutoFlush: 10000
 # quantity, and kaons are 0.66% of stored rows once the daughter-PID reach gate is applied. On
 # every row the same three components would cost +32%. Decision log, 2026-09-14.
 treeWriteKaonOrigin: true
+# Light nuclei beyond the deuteron. OFF pending the capacity decision: they serve 18 of the
+# analysis's 34 channels but the headroom against 2.0 TB is thin. Measured cost in
+# results/nuclei-cost-20260914.md.
+treeStoreTriton: false
+treeStoreHe3: false
+treeStoreHe4: false
+envMaxAbsNSigmaTriton: 3.0
+envMaxAbsNSigmaHe3: 3.0
+envMaxAbsNSigmaHe4: 3.0
 
 # ---- provenance ----
 # Recorded per event; no selection is applied on them here, so a trigger variation

@@ -20,7 +20,15 @@ enum SpeciesCode {
   kSpeciesKp = 1,
   kSpeciesKm = 2,
   kSpeciesDeuteron = 3,
-  kSpeciesProton = 4
+  kSpeciesProton = 4,
+  // Light nuclei beyond the deuteron. Their nuclear nSigma rides in the nSigmaDeuteron slot --
+  // see NSigmaNuclear() -- because a row carries exactly one nuclear hypothesis and three more
+  // Short fields would cost ~6 B on EVERY row, roughly +20% of the tree, to serve 3% of it.
+  // For He3 and He4 the stored pT/eta/phi are the TRACK (rigidity) values; the physical momentum
+  // is ChargeNumber x p, which the reader applies from speciesCode alone.
+  kSpeciesTriton = 5,
+  kSpeciesHe3 = 6,
+  kSpeciesHe4 = 7
 };
 
 enum SelFlag {
@@ -235,7 +243,8 @@ namespace scale {
 const Double_t kPt = 6000.0;       // 0 .. 10.9225 GeV/c   (envMaxPt = 10.0)
 const Double_t kEta = 10000.0;     // +-3.2767             (envMinEta = -2.0)
 const Double_t kPhi = 10000.0;     // +-3.2767 rad
-const Double_t kDedx = 600.0;      // 0 .. 109.2 keV/cm    (observed max 91.98)
+const Double_t kDedx = 250.0;      // 0 .. 262.1 keV/cm. Singly-charged tracks reach 92, but
+                                  // Z=2 nuclei ionise ~4x and clipped at the old 600 (max 109.2).      // 0 .. 109.2 keV/cm    (observed max 91.98)
 const Double_t kNSigma = 100.0;    // +-327.67             (PicoDst caps K/pi/p at +-32.767)
 const Double_t kTofBeta = 8000.0;  // +-4.096              (PicoDst caps beta at 3.2768)
 const Double_t kDca = 10000.0;     // 0 .. 6.5535 cm       (envMaxDca = 3.0)
@@ -357,6 +366,14 @@ struct TrackRowV2 {
   Double_t NSigmaProton() const { return UnpackNSigma(nSigmaProton); }
   Bool_t NSigmaProtonValid() const { return NSigmaValid(nSigmaProton); }
   Double_t NSigmaDeuteron() const { return UnpackNSigma(nSigmaDeuteron); }
+  // The nuclear hypothesis this row was identified under: deuteron for speciesCode 3, triton for
+  // 5, He3 for 6, He4 for 7. Prefer this to NSigmaDeuteron() on any nuclear row.
+  Double_t NSigmaNuclear() const { return UnpackNSigma(nSigmaDeuteron); }
+  // Charge number of the stored species. For He3/He4 the stored pT/eta/phi are the TRACK
+  // (rigidity) values and the physical momentum is this factor times them.
+  Int_t NuclearChargeNumber() const {
+    return (speciesCode == kSpeciesHe3 || speciesCode == kSpeciesHe4) ? 2 : 1;
+  }
   Bool_t NSigmaDeuteronValid() const { return NSigmaValid(nSigmaDeuteron); }
   Double_t TofBeta() const { return UnpackI16(tofBeta, scale::kTofBeta); }
   Double_t Dca() const { return UnpackU16(dca, scale::kDca); }

@@ -3,6 +3,7 @@
 
 #include "StMaker.h"
 #include "StPhiKKReconstruction.h"
+#include "StNuclearIdHelper.h"
 #include "FemtoPhiTreeSchema.h"
 #include <string>
 #include <vector>
@@ -82,6 +83,14 @@ class StFemtoPhiTreeMaker : public StMaker {
   Bool_t mStoreDeuterons;
   Bool_t mStoreKaons;
   Bool_t mWriteKaonOrigin;
+  // Light nuclei beyond the deuteron, off by default: they add rows for channels the tree study
+  // was not originally scoped to serve, and the capacity headroom is thin.
+  Bool_t mStoreTriton;
+  Bool_t mStoreHe3;
+  Bool_t mStoreHe4;
+  Double_t mEnvMaxAbsNSigmaTriton;
+  Double_t mEnvMaxAbsNSigmaHe3;
+  Double_t mEnvMaxAbsNSigmaHe4;
   Int_t mCompressLevel;
   Int_t mAutoFlush;
   UInt_t mSchemaVersion;
@@ -130,6 +139,9 @@ class StFemtoPhiTreeMaker : public StMaker {
   Long64_t mNKm;
   Long64_t mNDeuteron;
   Long64_t mNProton;
+  Long64_t mNTriton;
+  Long64_t mNHe3;
+  Long64_t mNHe4;
   Long64_t mNPhiPair;
 
   Bool_t LoadTreeConfig();
@@ -158,6 +170,12 @@ class StFemtoPhiTreeMaker : public StMaker {
   Bool_t PassTofProtonPid(const TrackState& trk) const;
   Bool_t PassNominalKaonCuts(StPicoTrack* trk, TVector3& pVtx) const;
   Bool_t PassFemtoDeuteronCuts(const TrackState& trk) const;
+  // One implementation for triton / He3 / He4: StFemtoMaker's three PassFemto*Cuts differ only in
+  // which config prefix they read, so mirroring them separately would be three chances to drift.
+  Bool_t PassFemtoNuclearCuts(const TrackState& trk, Double_t nSigma, Int_t nucSpecies) const;
+  void StoreNuclearSpecies(TrackState& ts, StPicoTrack* trk, const NuclearTrackState& nucState,
+                           Int_t nucSpecies, UChar_t speciesCode, Double_t envMaxAbsNSigma,
+                           ULong64_t eventUID, Int_t& counter);
   Bool_t PassFemtoProtonCuts(const TrackState& trk) const;
   Double_t ApplyRapidityFrame(Double_t yLab) const;
   Double_t DeuteronRapidityCm(const TrackState& trk) const;
