@@ -1,0 +1,441 @@
+#ifndef FEMTO_PHI_TREE_SCHEMA_H
+#define FEMTO_PHI_TREE_SCHEMA_H
+
+#include "Rtypes.h"
+#include <cmath>
+
+namespace femto_phi_tree {
+
+// Schema 1 : Float_t track row, written up to 2026-09-13.
+// Schema 2 : scaled-integer ("packed") track row. ROOT 5.34 ignores the leaflist
+//            Float16/Double32 range syntax, so narrowing must be done with the C++
+//            type itself. See implementation-plan-20260913.md §3.2 and §10.
+const UInt_t kSchemaVersionV1 = 1;
+const UInt_t kSchemaVersionV2 = 2;
+const UInt_t kSchemaVersion = kSchemaVersionV2;
+
+enum SpeciesCode {
+  kSpeciesUnknown = 0,
+  kSpeciesKp = 1,
+  kSpeciesKm = 2,
+  kSpeciesDeuteron = 3,
+  kSpeciesProton = 4
+};
+
+enum SelFlag {
+  kSelTrackQualityNom = 1u << 0,
+  kSelLoosePid = 1u << 1,
+  kSelNominalPid = 1u << 2,
+  kSelNominalFemto = 1u << 3,
+  kSelTofMatch = 1u << 4,
+  kSelKaonCutsNom = 1u << 5
+};
+
+enum EventFlag {
+  kEvtPassEventCuts = 1u << 0,
+  kEvtPassPileup = 1u << 1,
+  kEvtPassCent = 1u << 2,
+  kEvtPassMaxNTr = 1u << 3
+};
+
+enum PairFlag {
+  kPairPassTof = 1u << 0,
+  kPairPassKinematics = 1u << 1
+};
+
+// Schema 1 rows. Kept so that trees written before 2026-09-13 remain readable.
+struct EventRow {
+  UInt_t schemaVersion;
+  ULong64_t eventUID;
+  Int_t runId;
+  Int_t eventId;
+  UInt_t sourceFileHash;
+  Long64_t sourceEntry;
+  UInt_t subjobId;
+  Float_t vx;
+  Float_t vy;
+  Float_t vz;
+  Float_t vr;
+  Float_t vzVpd;
+  Float_t bField;
+  Int_t refMult;
+  Int_t rawMult;
+  Int_t nBTOFMatch;
+  Int_t nTracks;
+  Float_t refMultCorr;
+  Float_t centWeight;
+  Float_t centralityPercent;
+  Int_t cent9;
+  Int_t cent16;
+  Float_t qx;
+  Float_t qy;
+  Float_t psi2;
+  Int_t mixVzBin;
+  Int_t mixCentBin;
+  Int_t mixEpBin;
+  Int_t mixBin;
+  UInt_t eventFlags;
+  Int_t nKp;
+  Int_t nKm;
+  Int_t nDeuteron;
+  Int_t nProton;
+
+  EventRow() { Reset(); }
+
+  void Reset() {
+    schemaVersion = kSchemaVersionV1;
+    eventUID = 0;
+    runId = 0;
+    eventId = 0;
+    sourceFileHash = 0;
+    sourceEntry = -1;
+    subjobId = 0;
+    vx = vy = vz = vr = vzVpd = bField = 0.0f;
+    refMult = rawMult = nBTOFMatch = nTracks = 0;
+    refMultCorr = centWeight = centralityPercent = 0.0f;
+    cent9 = cent16 = -1;
+    qx = qy = 0.0f;
+    psi2 = -1.0f;
+    mixVzBin = mixCentBin = mixEpBin = mixBin = 0;
+    eventFlags = 0;
+    nKp = nKm = nDeuteron = nProton = 0;
+  }
+};
+
+struct TrackRow {
+  ULong64_t eventUID;
+  Int_t trackIndex;
+  UChar_t speciesCode;
+  Short_t charge;
+  Float_t px;
+  Float_t py;
+  Float_t pz;
+  Float_t dEdx;
+  Float_t nSigmaKaon;
+  Float_t nSigmaDeuteron;
+  Float_t nSigmaProton;
+  Char_t tofMatch;
+  Float_t tofBeta;
+  Float_t mass2;
+  Float_t deltaOneOverBeta;
+  Float_t dca;
+  Short_t nHitsFit;
+  Short_t nHitsMax;
+  Short_t nHitsDedx;
+  Float_t chi2;
+  Float_t originX;
+  Float_t originY;
+  Float_t originZ;
+  Float_t bField;
+  UInt_t selFlags;
+
+  TrackRow() { Reset(); }
+
+  void Reset() {
+    eventUID = 0;
+    trackIndex = -1;
+    speciesCode = kSpeciesUnknown;
+    charge = 0;
+    px = py = pz = 0.0f;
+    dEdx = 0.0f;
+    nSigmaKaon = nSigmaDeuteron = nSigmaProton = 0.0f;
+    tofMatch = 0;
+    tofBeta = -1.0f;
+    mass2 = -999.0f;
+    deltaOneOverBeta = 999.0f;
+    dca = 0.0f;
+    nHitsFit = nHitsMax = nHitsDedx = 0;
+    chi2 = 0.0f;
+    originX = originY = originZ = 0.0f;
+    bField = 0.0f;
+    selFlags = 0;
+  }
+};
+
+struct PhiPairRow {
+  ULong64_t eventUID;
+  Int_t dauPlusIndex;
+  Int_t dauMinusIndex;
+  Float_t px;
+  Float_t py;
+  Float_t pz;
+  Float_t mKK;
+  Float_t dcaDaughters;
+  Float_t openingAngle;
+  Float_t rapidity;
+  UInt_t pairFlags;
+
+  PhiPairRow() { Reset(); }
+
+  void Reset() {
+    eventUID = 0;
+    dauPlusIndex = dauMinusIndex = -1;
+    px = py = pz = 0.0f;
+    mKK = 0.0f;
+    dcaDaughters = 0.0f;
+    openingAngle = 0.0f;
+    rapidity = 0.0f;
+    pairFlags = 0;
+  }
+};
+
+
+// ---------------------------------------------------------------------------
+// Schema 2 packed track row
+//
+// Step 0 specification table. Every stored quantity, its C++ type, the integer
+// scale factor, the representable range and the resulting resolution.
+//
+//   branch        type       scale   range                    resolution
+//   eventUID      ULong64_t    -     (runId<<32)|eventId       exact
+//   trackIndex    UShort_t     -     0 .. 65535                exact
+//   speciesCode   UChar_t      -     0 .. 255                  exact
+//   pT            UShort_t   6e3     0 .. 10.9225 GeV/c        1.67e-4 GeV/c
+//   eta           Short_t    1e4     -3.2768 .. 3.2767         1e-4
+//   phi           Short_t    1e4     -3.2768 .. 3.2767 rad     1e-4 rad
+//   dEdx          UShort_t   600     0 .. 109.225 keV/cm       1.67e-3 keV/cm
+//   nSigmaKaon    Short_t    100     -327.68 .. 327.66         0.01
+//                                    32767 = "not computable" sentinel
+//   nSigmaPion    Short_t    100     same                      0.01
+//   nSigmaProton  Short_t    100     same                      0.01
+//   nSigmaDeutron Short_t    100     same                      0.01
+//   tofBeta       Short_t    8e3     -4.096 .. 4.0959          1.25e-4
+//   dca           UShort_t   1e4     0 .. 6.5535 cm            1e-4 cm
+//   nHitsFit      Char_t       -     -127 .. 127, sign = charge  exact
+//   nHitsMax      UChar_t      -     0 .. 255                  exact
+//   nHitsDedx     UChar_t      -     0 .. 255                  exact
+//   selFlags      UShort_t     -     16 bits                   exact
+//
+// Dropped relative to schema 1, with the reason:
+//   px, py, pz            -> replaced by pT/eta/phi (same information, half the bytes)
+//   charge                -> sign of nHitsFit
+//   tofMatch              -> kSelTofMatch bit of selFlags
+//   mass2                 -> recomputable: p^2 (1/beta^2 - 1)
+//   deltaOneOverBeta      -> recomputable: 1/beta - sqrt(m^2 + p^2)/p
+//   chi2                  -> not used by any planned cut
+//   originX/Y/Z, bField   -> only needed for the maxDCAKK cut, which is disabled
+//                            (maxDCAKK: 200). See plan §10.5: if it is ever enabled
+//                            these go into a companion tree, not the primary tree.
+//   TPC hit topology      -> measured to carry no two-track information (plan §10).
+// ---------------------------------------------------------------------------
+
+namespace scale {
+// Every range below was set from the measured extremes of the loose storage envelope,
+// not from a guess. Step 2 asserts that no value is ever clipped.
+const Double_t kPt = 6000.0;       // 0 .. 10.9225 GeV/c   (envMaxPt = 10.0)
+const Double_t kEta = 10000.0;     // +-3.2767             (envMinEta = -2.0)
+const Double_t kPhi = 10000.0;     // +-3.2767 rad
+const Double_t kDedx = 600.0;      // 0 .. 109.2 keV/cm    (observed max 91.98)
+const Double_t kNSigma = 100.0;    // +-327.67             (PicoDst caps K/pi/p at +-32.767)
+const Double_t kTofBeta = 8000.0;  // +-4.096              (PicoDst caps beta at 3.2768)
+const Double_t kDca = 10000.0;     // 0 .. 6.5535 cm       (envMaxDca = 3.0)
+}  // namespace scale
+
+// NuclearIdDeDxVsMom::GetNSigma returns 999.0 to mean "not computable here" (momentum
+// outside the parameterisation, or sigma <= 0). That is a sentinel, not a large nSigma,
+// so it is preserved as its own packed code instead of being clipped to +327.67.
+const Double_t kNSigmaSentinel = 999.0;
+// A track that reached the BTOF cannot physically have beta this small at the envelope
+// minimum momentum of 0.15 GeV/c; such values are timing failures. Recomputing m^2 from
+// them produces numbers of order 1e8, so they are reported as "not measured" instead.
+const Double_t kMinUsableBeta = 0.1;
+const Double_t kNSigmaSentinelThreshold = 900.0;
+const Short_t kNSigmaPackedInvalid = 32767;
+
+// Saturation bookkeeping. Every packing call that clips increments a counter, so a
+// production job can assert that no physics value was silently truncated.
+struct PackStats {
+  Long64_t pT, eta, phi, dEdx, tofBeta, dca, trackIndex, nHits;
+  Long64_t nSigmaKaon, nSigmaPion, nSigmaProton, nSigmaDeuteron;
+  Long64_t nSigmaSentinel;  // deliberate sentinel encodings, not a failure
+  PackStats() { Reset(); }
+  void Reset() {
+    pT = eta = phi = dEdx = tofBeta = dca = trackIndex = nHits = 0;
+    nSigmaKaon = nSigmaPion = nSigmaProton = nSigmaDeuteron = 0;
+    nSigmaSentinel = 0;
+  }
+  // Sentinel encodings are excluded: they are intended, not truncation.
+  Long64_t Total() const {
+    return pT + eta + phi + dEdx + tofBeta + dca + trackIndex + nHits + nSigmaKaon +
+           nSigmaPion + nSigmaProton + nSigmaDeuteron;
+  }
+};
+
+inline UShort_t PackU16(Double_t v, Double_t s, Long64_t& sat) {
+  Double_t r = (v >= 0) ? std::floor(v * s + 0.5) : std::ceil(v * s - 0.5);
+  if (r > 65535.0) { r = 65535.0; ++sat; }
+  if (r < 0.0) { r = 0.0; ++sat; }
+  return (UShort_t)r;
+}
+inline Short_t PackI16(Double_t v, Double_t s, Long64_t& sat) {
+  Double_t r = (v >= 0) ? std::floor(v * s + 0.5) : std::ceil(v * s - 0.5);
+  if (r > 32767.0) { r = 32767.0; ++sat; }
+  if (r < -32768.0) { r = -32768.0; ++sat; }
+  return (Short_t)r;
+}
+inline Double_t UnpackU16(UShort_t v, Double_t s) { return (Double_t)v / s; }
+inline Double_t UnpackI16(Short_t v, Double_t s) { return (Double_t)v / s; }
+
+inline Short_t PackNSigma(Double_t v, Long64_t& sat, Long64_t& sentinel) {
+  if (v >= kNSigmaSentinelThreshold || v <= -kNSigmaSentinelThreshold) {
+    ++sentinel;
+    return kNSigmaPackedInvalid;
+  }
+  return PackI16(v, scale::kNSigma, sat);
+}
+inline Double_t UnpackNSigma(Short_t v) {
+  if (v == kNSigmaPackedInvalid) return kNSigmaSentinel;
+  return UnpackI16(v, scale::kNSigma);
+}
+inline Bool_t NSigmaValid(Short_t v) { return v != kNSigmaPackedInvalid; }
+
+struct TrackRowV2 {
+  ULong64_t eventUID;
+  UShort_t trackIndex;
+  UChar_t speciesCode;
+  UShort_t pT;
+  Short_t eta;
+  Short_t phi;
+  UShort_t dEdx;
+  Short_t nSigmaKaon;
+  Short_t nSigmaPion;
+  Short_t nSigmaProton;
+  Short_t nSigmaDeuteron;
+  Short_t tofBeta;
+  UShort_t dca;
+  Char_t nHitsFit;  // sign carries the charge
+  UChar_t nHitsMax;
+  UChar_t nHitsDedx;
+  UShort_t selFlags;
+
+  TrackRowV2() { Reset(); }
+
+  void Reset() {
+    eventUID = 0;
+    trackIndex = 0;
+    speciesCode = kSpeciesUnknown;
+    pT = 0;
+    eta = phi = 0;
+    dEdx = 0;
+    nSigmaKaon = nSigmaPion = nSigmaProton = nSigmaDeuteron = 0;
+    tofBeta = 0;
+    dca = 0;
+    nHitsFit = 0;
+    nHitsMax = nHitsDedx = 0;
+    selFlags = 0;
+  }
+
+  // ---- decoded accessors, the only supported way to read a packed row ----
+  Double_t Pt() const { return UnpackU16(pT, scale::kPt); }
+  Double_t Eta() const { return UnpackI16(eta, scale::kEta); }
+  Double_t Phi() const { return UnpackI16(phi, scale::kPhi); }
+  Double_t Px() const { return Pt() * std::cos(Phi()); }
+  Double_t Py() const { return Pt() * std::sin(Phi()); }
+  Double_t Pz() const { return Pt() * std::sinh(Eta()); }
+  Double_t P() const { return Pt() * std::cosh(Eta()); }
+  Double_t Dedx() const { return UnpackU16(dEdx, scale::kDedx); }
+  Double_t NSigmaKaon() const { return UnpackNSigma(nSigmaKaon); }
+  Bool_t NSigmaKaonValid() const { return NSigmaValid(nSigmaKaon); }
+  Double_t NSigmaPion() const { return UnpackNSigma(nSigmaPion); }
+  Bool_t NSigmaPionValid() const { return NSigmaValid(nSigmaPion); }
+  Double_t NSigmaProton() const { return UnpackNSigma(nSigmaProton); }
+  Bool_t NSigmaProtonValid() const { return NSigmaValid(nSigmaProton); }
+  Double_t NSigmaDeuteron() const { return UnpackNSigma(nSigmaDeuteron); }
+  Bool_t NSigmaDeuteronValid() const { return NSigmaValid(nSigmaDeuteron); }
+  Double_t TofBeta() const { return UnpackI16(tofBeta, scale::kTofBeta); }
+  Double_t Dca() const { return UnpackU16(dca, scale::kDca); }
+  Int_t NHitsFit() const { return (nHitsFit >= 0) ? nHitsFit : -nHitsFit; }
+  Int_t Charge() const { return (nHitsFit >= 0) ? 1 : -1; }
+  Bool_t HasTof() const { return (selFlags & kSelTofMatch) != 0; }
+
+  // Derived quantities that schema 1 stored explicitly.
+  //
+  // Precision note. m^2 = p^2 (1/beta^2 - 1), so d(m^2)/d(beta) = -2 p^2 / beta^3: the
+  // 1.25e-4 quantization step of tofBeta is amplified as 1/beta^3. Measured against the
+  // schema 1 stored value on 2.97e6 TOF tracks:
+  //   whole sample                       RMS 6.1e-4 GeV^2/c^4
+  //   -0.2 < m^2 < 6 (99.3% of tracks,   RMS 4.5e-4, i.e. 1/442 of the narrowest planned
+  //   where every planned PID window lives)      PID window, kaon m^2 0.16-0.36
+  // Outside that region the amplification grows; those are slow or mistimed tracks that no
+  // planned selection uses. Below kMinUsableBeta the result is not a measurement at all, so
+  // the sentinel is returned rather than a number that looks like one.
+  Double_t Mass2() const {
+    if (!HasTof()) return -999.0;
+    Double_t b = TofBeta();
+    if (b <= kMinUsableBeta) return -999.0;
+    Double_t p = P();
+    return p * p * (1.0 / (b * b) - 1.0);
+  }
+  Double_t DeltaOneOverBeta(Double_t mass) const {
+    if (!HasTof()) return 999.0;
+    Double_t b = TofBeta();
+    if (b <= kMinUsableBeta) return 999.0;
+    Double_t p = P();
+    if (p <= 0) return 999.0;
+    return 1.0 / b - std::sqrt(mass * mass + p * p) / p;
+  }
+};
+
+struct EventRowV2 {
+  UInt_t schemaVersion;
+  ULong64_t eventUID;
+  Int_t runId;
+  Int_t eventId;
+  UInt_t sourceFileHash;    // 32-bit FNV-1a, kept for backward comparison only
+  UShort_t sourceFileIndex; // index into the per-file path table; the invertible key
+  Long64_t sourceEntry;
+  UInt_t subjobId;
+  UInt_t triggerId;    // first configured trigger this event fired, 0 if none
+  UShort_t triggerBits;  // bitmask over the configured trigger list
+  Float_t vx, vy, vz, vr, vzVpd;
+  Float_t bField;
+  Int_t refMult, rawMult, nBTOFMatch, nTracks;
+  Float_t refMultCorr, centWeight, centralityPercent;
+  Int_t cent9, cent16;
+  Float_t qx, qy, psi2;
+  Int_t mixVzBin, mixCentBin, mixEpBin, mixBin;
+  UInt_t eventFlags;
+  Int_t nKp, nKm, nDeuteron, nProton;
+
+  EventRowV2() { Reset(); }
+
+  void Reset() {
+    schemaVersion = kSchemaVersionV2;
+    eventUID = 0;
+    runId = eventId = 0;
+    sourceFileHash = 0;
+    sourceFileIndex = 0;
+    sourceEntry = -1;
+    subjobId = 0;
+    triggerId = 0;
+    triggerBits = 0;
+    vx = vy = vz = vr = vzVpd = bField = 0.0f;
+    refMult = rawMult = nBTOFMatch = nTracks = 0;
+    refMultCorr = centWeight = centralityPercent = 0.0f;
+    cent9 = cent16 = -1;
+    qx = qy = 0.0f;
+    psi2 = -1.0f;
+    mixVzBin = mixCentBin = mixEpBin = mixBin = 0;
+    eventFlags = 0;
+    nKp = nKm = nDeuteron = nProton = 0;
+  }
+};
+
+inline ULong64_t MakeEventUID(Int_t runId, Int_t eventId) {
+  return (static_cast<ULong64_t>(static_cast<UInt_t>(runId)) << 32) |
+         static_cast<ULong64_t>(static_cast<UInt_t>(eventId));
+}
+
+inline UInt_t HashStringFnv(const char* s) {
+  UInt_t h = 2166136261u;
+  if (!s) return 0;
+  while (*s) {
+    h ^= static_cast<UInt_t>(static_cast<unsigned char>(*s++));
+    h *= 16777619u;
+  }
+  return h;
+}
+
+}  // namespace femto_phi_tree
+
+#endif
