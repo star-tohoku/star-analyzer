@@ -319,6 +319,65 @@ Bool_t PassDeuteronNominal(const femto_phi_tree::TrackRowV2& t, const Var& v) {
   return PassTrackQuality(t, v);
 }
 
+// Rebuild the FULL species femto cut from stored fields, with only the varied parameters moved.
+//
+// A loosening variation cannot ride on kSelNominalFemto -- the flag has already applied the
+// nominal value -- so the whole predicate has to be reconstructed. An earlier version rebuilt only
+// nSigma and DCA and returned true, silently dropping the TOF / mass2 rule, the pT windows, eta,
+// the hit counts and the rapidity window: dNSigma=3.0 then returned 685,895 deuterons against a
+// nominal 240,995, a factor 2.8 that looked like a working variation. Every field this needs is
+// stored, so there is no reason to approximate it.
+Bool_t PassFemtoSpeciesRebuild(const femto_phi_tree::TrackRowV2& t, Bool_t isProton,
+                               Double_t nsMax, Double_t dcaMax) {
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
+  const Double_t mass = isProton ? kProtonMass : kDeuteronMass;
+  const Double_t maxDca = (dcaMax > 0) ? dcaMax
+                                       : (isProton ? fc.protonMaxDca : fc.deuteronMaxDca);
+  const Double_t maxNSigma =
+      (nsMax > 0) ? nsMax : (isProton ? fc.protonMaxAbsNSigma : fc.deuteronMaxAbsNSigma);
+  const Double_t minPtPre = isProton ? fc.protonMinPtPre : fc.deuteronMinPtPre;
+  const Double_t maxPtPre = isProton ? 1e9 : fc.deuteronMaxPtPre;
+  const Double_t maxAbsEta = isProton ? fc.protonMaxAbsEta : fc.deuteronMaxAbsEta;
+  const Short_t minNHitsFit = isProton ? fc.protonMinNHitsFit : fc.deuteronMinNHitsFit;
+  const Double_t minNHitsRatio = isProton ? fc.protonMinNHitsRatio : fc.deuteronMinNHitsRatio;
+  const Double_t tofPThr =
+      isProton ? fc.protonTofMomentumThreshold : fc.deuteronTofMomentumThreshold;
+  const Double_t minMass2 = isProton ? fc.protonMinMass2 : fc.deuteronMinMass2;
+  const Double_t maxMass2 = isProton ? fc.protonMaxMass2 : fc.deuteronMaxMass2;
+  const Double_t minPtPair = isProton ? fc.protonMinPtPair : fc.deuteronMinPtPair;
+  const Double_t maxPtPair = isProton ? fc.protonMaxPtPair : fc.deuteronMaxPtPair;
+  const Double_t minYCm = isProton ? fc.protonMinRapidityCm : fc.deuteronMinRapidityCm;
+  const Double_t maxYCm = isProton ? fc.protonMaxRapidityCm : fc.deuteronMaxRapidityCm;
+
+  if (isProton) {
+    if (fc.protonChargeMode == "positive" && t.Charge() <= 0) return kFALSE;
+    if (fc.protonChargeMode == "negative" && t.Charge() >= 0) return kFALSE;
+  } else {
+    if (t.Charge() <= 0) return kFALSE;
+  }
+  if (t.Dca() >= maxDca) return kFALSE;
+  const Double_t pmom = t.P();
+  if (!isProton && (pmom < fc.deuteronMinPMom || pmom > fc.deuteronMaxPMom)) return kFALSE;
+  if (t.Pt() < minPtPre || t.Pt() > maxPtPre) return kFALSE;
+  if (TMath::Abs(t.Eta()) >= maxAbsEta) return kFALSE;
+  const Double_t ns = isProton ? t.NSigmaProton() : t.NSigmaNuclear();
+  if (TMath::Abs(ns) >= maxNSigma) return kFALSE;
+  if (t.NHitsFit() < minNHitsFit) return kFALSE;
+  if (t.nHitsMax <= 0) return kFALSE;
+  if ((Double_t)t.NHitsFit() / (Double_t)t.nHitsMax < minNHitsRatio) return kFALSE;
+  const Bool_t passTofRule =
+      (pmom < tofPThr) ||
+      (pmom > tofPThr && t.HasTof() && t.Mass2() >= minMass2 && t.Mass2() <= maxMass2);
+  if (!passTofRule) return kFALSE;
+  if (t.Pt() < minPtPair || t.Pt() > maxPtPair) return kFALSE;
+  TVector3 p = Momentum(t);
+  TLorentzVector lv(p, TMath::Sqrt(mass * mass + p.Mag2()));
+  const Double_t yCm = phiCfg.ApplyAnalysisRapidity(lv.Rapidity());
+  if (yCm < minYCm || yCm > maxYCm) return kFALSE;
+  return kTRUE;
+}
+
 Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
   if (t.speciesCode != femto_phi_tree::kSpeciesDeuteron) return kFALSE;
   if (!PassNuclearDedxHits(t, v.dNHitsDedx)) return kFALSE;
@@ -333,11 +392,7 @@ Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) 
   const Bool_t tightenOnly = (v.dNSigma < 0 || v.dNSigma <= fc.deuteronMaxAbsNSigma) &&
                              (v.dDca < 0 || v.dDca <= fc.deuteronMaxDca);
   if (tightenOnly && !(t.selFlags & femto_phi_tree::kSelNominalFemto)) return kFALSE;
-  const Double_t ns = (v.dNSigma > 0) ? v.dNSigma : fc.deuteronMaxAbsNSigma;
-  const Double_t dc = (v.dDca > 0) ? v.dDca : fc.deuteronMaxDca;
-  if (TMath::Abs(t.NSigmaDeuteron()) >= ns) return kFALSE;
-  if (t.Dca() >= dc) return kFALSE;
-  return kTRUE;
+  return PassFemtoSpeciesRebuild(t, kFALSE, v.dNSigma, v.dDca);
 }
 
 Bool_t PassProtonVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
@@ -351,11 +406,7 @@ Bool_t PassProtonVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
   const Bool_t tightenOnly = (v.pNSigma < 0 || v.pNSigma <= fc.protonMaxAbsNSigma) &&
                              (v.pDca < 0 || v.pDca <= fc.protonMaxDca);
   if (tightenOnly && !(t.selFlags & femto_phi_tree::kSelNominalFemto)) return kFALSE;
-  const Double_t ns = (v.pNSigma > 0) ? v.pNSigma : fc.protonMaxAbsNSigma;
-  const Double_t dc = (v.pDca > 0) ? v.pDca : fc.protonMaxDca;
-  if (TMath::Abs(t.NSigmaProton()) >= ns) return kFALSE;
-  if (t.Dca() >= dc) return kFALSE;
-  return kTRUE;
+  return PassFemtoSpeciesRebuild(t, kTRUE, v.pNSigma, v.pDca);
 }
 
 // StFemtoMaker reaches the proton collection through PassProtonCuts, which begins with the same
