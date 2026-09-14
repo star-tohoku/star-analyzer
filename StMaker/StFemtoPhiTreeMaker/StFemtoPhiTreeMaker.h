@@ -111,6 +111,9 @@ class StFemtoPhiTreeMaker : public StMaker {
   Double_t mEnvProtonMaxDca;
   Double_t mEnvProtonMinPt;
   Int_t mEnvMinNHitsDedxNuclear;
+  Bool_t mEnvKaonRequireDaughterPidReach;
+  Double_t mEnvKaonMass2Lo;
+  Double_t mEnvKaonMass2Hi;
 
   Long64_t mNInput;
   Long64_t mNNoPico;

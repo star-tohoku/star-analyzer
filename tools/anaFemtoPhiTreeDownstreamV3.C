@@ -24,6 +24,8 @@
 #include "TMath.h"
 #include "TString.h"
 #include "TNamed.h"
+#include "TObjArray.h"
+#include "TObjString.h"
 #include "TRandom3.h"
 #include "ConfigManager.h"
 #include "cuts/PhiCutConfig.h"
@@ -32,6 +34,7 @@
 #include "cuts/EventCutConfig.h"
 #include "cuts/PIDCutConfig.h"
 #include "cuts/NuclearIdCutConfig.h"
+#include "cuts/TrackCutConfig.h"
 #include "FemtoPhiTreeSchema.h"
 
 #include <deque>
@@ -108,6 +111,93 @@ Int_t MixBinOf(Double_t vz, Int_t cent9, Double_t psi2) {
   return vzBin + mix.nVzBins * (centBin + mix.nCentralityBins * epBin);
 }
 
+// ---------------------------------------------------------------------------
+// Systematic variations (Step 5).
+//
+// Spec string, "key=value,key=value"; empty means nominal everywhere. The rule throughout is
+// that a nominal decision is READ from the flag the maker stored, and only a varied one is
+// recomputed from the packed row -- a variation moves a cut by far more than the quantization,
+// while the nominal must reproduce the maker exactly.
+//
+//   nHitsFit  trkDca  trkPt   track cuts; chi2 is held at nominal through kSelTrackChi2Nom
+//   chi2                      track chi2; only the storage-envelope value is representable,
+//                             because chi2 itself is not stored (see the warning below)
+//   kNSigma                   phi-daughter kaon |nSigma_K|
+//   kM2Lo  kM2Hi              phi-daughter kaon m2 window
+//   kmRequireTof              0/1, phiDaughterKaonMinusRequireTof
+//   dNSigma  dDca  dNHitsDedx deuteron
+//   pNSigma  pDca             proton
+// ---------------------------------------------------------------------------
+struct Var {
+  Double_t nHitsFit, trkDca, trkPt, chi2;
+  Double_t kNSigma, kM2Lo, kM2Hi;
+  Int_t kmRequireTof;
+  Double_t dNSigma, dDca;
+  Int_t dNHitsDedx;
+  Double_t pNSigma, pDca;
+  Bool_t anyTrack, anyKaon, anyPid;
+  TString spec;
+  Var()
+      : nHitsFit(-1), trkDca(-1), trkPt(-1), chi2(-1), kNSigma(-1), kM2Lo(-1), kM2Hi(-1),
+        kmRequireTof(-1), dNSigma(-1), dDca(-1), dNHitsDedx(-1), pNSigma(-1), pDca(-1),
+        anyTrack(kFALSE), anyKaon(kFALSE), anyPid(kFALSE), spec("nominal") {}
+};
+
+Bool_t ParseVariation(const Char_t* text, Var& v) {
+  TString in(text ? text : "");
+  in.ReplaceAll(" ", "");
+  if (in.Length() == 0) return kTRUE;
+  v.spec = in;
+  TObjArray* items = in.Tokenize(",");
+  Bool_t ok = kTRUE;
+  for (Int_t i = 0; i < items->GetEntries(); ++i) {
+    TString kv = ((TObjString*)items->At(i))->GetString();
+    Int_t eq = kv.Index("=");
+    if (eq <= 0) { std::cerr << "ERROR: bad variation item '" << kv << "'" << std::endl; ok = kFALSE; continue; }
+    TString k = kv(0, eq);
+    Double_t val = TString(kv(eq + 1, kv.Length())).Atof();
+    if (k == "nHitsFit") { v.nHitsFit = val; v.anyTrack = kTRUE; }
+    else if (k == "trkDca") { v.trkDca = val; v.anyTrack = kTRUE; }
+    else if (k == "trkPt") { v.trkPt = val; v.anyTrack = kTRUE; }
+    else if (k == "chi2") { v.chi2 = val; v.anyTrack = kTRUE; }
+    else if (k == "kNSigma") { v.kNSigma = val; v.anyKaon = kTRUE; }
+    else if (k == "kM2Lo") { v.kM2Lo = val; v.anyPid = kTRUE; }
+    else if (k == "kM2Hi") { v.kM2Hi = val; v.anyPid = kTRUE; }
+    else if (k == "kmRequireTof") { v.kmRequireTof = (Int_t)val; v.anyPid = kTRUE; }
+    else if (k == "dNSigma") v.dNSigma = val;
+    else if (k == "dDca") v.dDca = val;
+    else if (k == "dNHitsDedx") v.dNHitsDedx = (Int_t)val;
+    else if (k == "pNSigma") v.pNSigma = val;
+    else if (k == "pDca") v.pDca = val;
+    else { std::cerr << "ERROR: unknown variation key '" << k << "'" << std::endl; ok = kFALSE; }
+  }
+  delete items;
+  return ok;
+}
+
+// The nominal track-quality decision is the kSelTrackQualityNom bit. Any track-cut variation has
+// to be rebuilt from stored fields instead -- and that is only possible because kSelTrackChi2Nom
+// carries the one input that is not stored. Without that bit a row failing kSelTrackQualityNom
+// could have failed on nHitsFit, on chi2, or on both, and the two are indistinguishable.
+Bool_t PassTrackQuality(const femto_phi_tree::TrackRowV2& t, const Var& v) {
+  if (!v.anyTrack) return (t.selFlags & femto_phi_tree::kSelTrackQualityNom) != 0;
+  const TrackCutConfig& tc = ConfigManager::GetInstance().GetTrackCuts();
+  if (v.chi2 < 0 || v.chi2 <= tc.maxChi2) {
+    if (!(t.selFlags & femto_phi_tree::kSelTrackChi2Nom)) return kFALSE;
+  }
+  const Int_t nhf = (v.nHitsFit > 0) ? (Int_t)v.nHitsFit : (Int_t)tc.minNHitsFit;
+  const Double_t dcaMax = (v.trkDca > 0) ? v.trkDca : tc.maxDCA;
+  const Double_t ptMin = (v.trkPt > 0) ? v.trkPt : tc.minPt;
+  if (t.NHitsFit() < nhf) return kFALSE;
+  if (t.nHitsMax <= 0) return kFALSE;
+  if ((Double_t)t.NHitsFit() / (Double_t)t.nHitsMax < tc.minNHitsRatio) return kFALSE;
+  if ((Int_t)t.nHitsDedx < tc.minNHitsDedx) return kFALSE;
+  if (t.Pt() < ptMin || t.Pt() > tc.maxPt) return kFALSE;
+  if (t.Eta() < tc.minEta || t.Eta() > tc.maxEta) return kFALSE;
+  if (t.Dca() > dcaMax) return kFALSE;
+  return kTRUE;
+}
+
 // Production phi-daughter PID, evaluated on a packed row with mass2 / deltaOneOverBeta
 // recomputed rather than read.
 //
@@ -119,19 +209,23 @@ Int_t MixBinOf(Double_t vz, Int_t cent9, Double_t psi2) {
 // harmless (1.7e-4 GeV/c); what is not harmless is letting it decide a boolean the maker already
 // decided. A variation moves the edge by far more than the quantization, so recomputing is fine
 // there.
-Bool_t RecomputeDaughterPid(const femto_phi_tree::TrackRowV2& t) {
+Bool_t RecomputeDaughterPid(const femto_phi_tree::TrackRowV2& t, const Var& v) {
   const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
   const Double_t p = t.P();
   const Bool_t tof = t.HasTof();
   const Short_t q = (Short_t)t.Charge();
+  const Bool_t kmTof =
+      (v.kmRequireTof >= 0) ? (v.kmRequireTof != 0) : pid.phiDaughterKaonMinusRequireTof;
+  const Double_t m2Lo = (v.kM2Lo > 0) ? v.kM2Lo : pid.minMass2Kaon;
+  const Double_t m2Hi = (v.kM2Hi > 0) ? v.kM2Hi : pid.maxMass2Kaon;
   if (!tof) {
-    if (q < 0 && pid.phiDaughterKaonMinusRequireTof) return kFALSE;
+    if (q < 0 && kmTof) return kFALSE;
     return p <= pid.pMomKaonPID;
   }
   Bool_t pass = kTRUE;
   if (pid.tofUseMass2Cut) {
     const Double_t m2 = t.Mass2();
-    pass = pass && (m2 >= pid.minMass2Kaon && m2 <= pid.maxMass2Kaon);
+    pass = pass && (m2 >= m2Lo && m2 <= m2Hi);
   }
   if (pid.tofUseDeltaInvBetaCut) {
     const Double_t d = t.DeltaOneOverBeta(kKaonMass);
@@ -140,14 +234,51 @@ Bool_t RecomputeDaughterPid(const femto_phi_tree::TrackRowV2& t) {
   return pass;
 }
 
-Bool_t PassDaughterPid(const femto_phi_tree::TrackRowV2& t, Bool_t recompute) {
-  if (!recompute) return (t.selFlags & femto_phi_tree::kSelNominalPid) != 0;
-  return RecomputeDaughterPid(t);
+Bool_t PassDaughterPid(const femto_phi_tree::TrackRowV2& t, const Var& v, Bool_t recompute) {
+  if (!recompute && !v.anyPid) return (t.selFlags & femto_phi_tree::kSelNominalPid) != 0;
+  return RecomputeDaughterPid(t, v);
 }
 
-Bool_t PassKaonForPhi(const femto_phi_tree::TrackRowV2& t) {
-  const UInt_t need = femto_phi_tree::kSelKaonCutsNom | femto_phi_tree::kSelLoosePid;
-  return (t.selFlags & need) == need;
+// StPhiKKReconstruction::PassTofKaonPid, the loose-collection filter the maker stored as
+// kSelLoosePid. It reads the SAME pid.minMass2Kaon / maxMass2Kaon the production daughter PID
+// uses, so an m2 systematic moves both and the flag cannot be reused: the loose filter has to be
+// rebuilt here too, or the widened window admits nothing. How far it can be widened is bounded by
+// envKaonMass2Lo / envKaonMass2Hi, the storage gate.
+Bool_t RecomputeLoosePid(const femto_phi_tree::TrackRowV2& t, const Var& v) {
+  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+  if (!pid.requireTOF) return kTRUE;
+  TString fb(pid.tofFallbackMode.c_str());
+  fb.ToLower();
+  if (fb.IsNull()) fb = "acceptlowpt";
+  if (fb == "acceptlowpt" && t.Pt() <= pid.pTofFallbackMax) return kTRUE;
+  if (!t.HasTof()) return (fb == "tpconly");
+  Bool_t pass = kTRUE;
+  if (pid.tofUseMass2Cut) {
+    const Double_t m2Lo = (v.kM2Lo > 0) ? v.kM2Lo : pid.minMass2Kaon;
+    const Double_t m2Hi = (v.kM2Hi > 0) ? v.kM2Hi : pid.maxMass2Kaon;
+    pass = pass && (t.Mass2() >= m2Lo && t.Mass2() <= m2Hi);
+  }
+  if (pid.tofUseDeltaInvBetaCut) {
+    pass = pass && (TMath::Abs(t.DeltaOneOverBeta(kKaonMass)) <= pid.maxAbsDeltaOneOverBetaKaon);
+  }
+  return pass;
+}
+
+// kSelKaonCutsNom is PassNominalKaonCuts = nominal track cuts + phi.maxDCAKaon + phi.nSigmaKaon.
+// A track-cut or kaon-nSigma variation has to rebuild it; everything it needs is stored.
+Bool_t PassKaonForPhi(const femto_phi_tree::TrackRowV2& t, const Var& v) {
+  if (v.anyPid) {
+    if (!RecomputeLoosePid(t, v)) return kFALSE;
+  } else if (!(t.selFlags & femto_phi_tree::kSelLoosePid)) {
+    return kFALSE;
+  }
+  if (!v.anyTrack && !v.anyKaon) return (t.selFlags & femto_phi_tree::kSelKaonCutsNom) != 0;
+  const PhiCutConfig& phi = ConfigManager::GetInstance().GetPhiCuts();
+  if (!PassTrackQuality(t, v)) return kFALSE;
+  if (t.Dca() > phi.maxDCAKaon) return kFALSE;
+  const Double_t ns = (v.kNSigma > 0) ? v.kNSigma : phi.nSigmaKaon;
+  if (TMath::Abs(t.NSigmaKaon()) > ns) return kFALSE;
+  return kTRUE;
 }
 
 // StFemtoMaker.cxx:494 gates the nuclear-ID deuteron collection on
@@ -170,28 +301,49 @@ Bool_t PassNuclearDedxHits(const femto_phi_tree::TrackRowV2& t, Int_t minNHitsDe
 // with chi2 or nHitsFit outside the nominal track cuts that the maker-direct chain never sees.
 // Keeping it a flag rather than an envelope is what makes the track-cut systematics
 // (nHitsFit 15/17/20, chi2 3/5, DCA 1/2/3, pT 0.15/0.2) reproducible from the tree.
-Bool_t PassDeuteronNominal(const femto_phi_tree::TrackRowV2& t) {
-  const UInt_t need = femto_phi_tree::kSelTrackQualityNom | femto_phi_tree::kSelNominalPid |
-                      femto_phi_tree::kSelNominalFemto;
-  return (t.selFlags & need) == need;
+Bool_t PassDeuteronNominal(const femto_phi_tree::TrackRowV2& t, const Var& v) {
+  const UInt_t need = femto_phi_tree::kSelNominalPid | femto_phi_tree::kSelNominalFemto;
+  if ((t.selFlags & need) != need) return kFALSE;
+  return PassTrackQuality(t, v);
 }
 
-Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, Double_t nSigmaMax,
-                             Double_t dcaMax, Int_t minNHitsDedx) {
+Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
   if (t.speciesCode != femto_phi_tree::kSpeciesDeuteron) return kFALSE;
-  if (!PassNuclearDedxHits(t, minNHitsDedx)) return kFALSE;
+  if (!PassNuclearDedxHits(t, v.dNHitsDedx)) return kFALSE;
   if (!(t.selFlags & femto_phi_tree::kSelNominalPid)) return kFALSE;
-  if (nSigmaMax < 0 && dcaMax < 0) return PassDeuteronNominal(t);
-  const Bool_t tightenOnly = (nSigmaMax < 0 || nSigmaMax <= 2.0) && (dcaMax < 0 || dcaMax <= 1.0);
-  if (tightenOnly) {
-    if (!PassDeuteronNominal(t)) return kFALSE;
-    if (nSigmaMax > 0 && TMath::Abs(t.NSigmaDeuteron()) > nSigmaMax) return kFALSE;
-    if (dcaMax > 0 && t.Dca() >= dcaMax) return kFALSE;
-    return kTRUE;
+  if (!PassTrackQuality(t, v)) return kFALSE;
+  if (v.dNSigma < 0 && v.dDca < 0) {
+    return (t.selFlags & femto_phi_tree::kSelNominalFemto) != 0;
   }
-  if (nSigmaMax > 0 && TMath::Abs(t.NSigmaDeuteron()) > nSigmaMax) return kFALSE;
-  if (dcaMax > 0 && t.Dca() >= dcaMax) return kFALSE;
-  return (t.selFlags & femto_phi_tree::kSelTrackQualityNom) ? kTRUE : kFALSE;
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  // Tightening can ride on top of kSelNominalFemto; loosening cannot, because the flag has
+  // already applied the nominal value, so the whole femto cut has to be rebuilt.
+  const Bool_t tightenOnly = (v.dNSigma < 0 || v.dNSigma <= fc.deuteronMaxAbsNSigma) &&
+                             (v.dDca < 0 || v.dDca <= fc.deuteronMaxDca);
+  if (tightenOnly && !(t.selFlags & femto_phi_tree::kSelNominalFemto)) return kFALSE;
+  const Double_t ns = (v.dNSigma > 0) ? v.dNSigma : fc.deuteronMaxAbsNSigma;
+  const Double_t dc = (v.dDca > 0) ? v.dDca : fc.deuteronMaxDca;
+  if (TMath::Abs(t.NSigmaDeuteron()) >= ns) return kFALSE;
+  if (t.Dca() >= dc) return kFALSE;
+  return kTRUE;
+}
+
+Bool_t PassProtonVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
+  if (t.speciesCode != femto_phi_tree::kSpeciesProton) return kFALSE;
+  if (!(t.selFlags & femto_phi_tree::kSelNominalPid)) return kFALSE;
+  if (!PassTrackQuality(t, v)) return kFALSE;
+  if (v.pNSigma < 0 && v.pDca < 0) {
+    return (t.selFlags & femto_phi_tree::kSelNominalFemto) != 0;
+  }
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  const Bool_t tightenOnly = (v.pNSigma < 0 || v.pNSigma <= fc.protonMaxAbsNSigma) &&
+                             (v.pDca < 0 || v.pDca <= fc.protonMaxDca);
+  if (tightenOnly && !(t.selFlags & femto_phi_tree::kSelNominalFemto)) return kFALSE;
+  const Double_t ns = (v.pNSigma > 0) ? v.pNSigma : fc.protonMaxAbsNSigma;
+  const Double_t dc = (v.pDca > 0) ? v.pDca : fc.protonMaxDca;
+  if (TMath::Abs(t.NSigmaProton()) >= ns) return kFALSE;
+  if (t.Dca() >= dc) return kFALSE;
+  return kTRUE;
 }
 
 // StFemtoMaker reaches the proton collection through PassProtonCuts, which begins with the same
@@ -200,12 +352,6 @@ Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, Double_t nSigm
 // PassFemtoProtonCuts. The tree maker records exactly that split across the three flags below, so
 // the nominal proton is the same triple as the nominal deuteron. There is no nuclear-ID dE/dx hit
 // requirement on this path.
-Bool_t PassProtonNominal(const femto_phi_tree::TrackRowV2& t) {
-  const UInt_t need = femto_phi_tree::kSelTrackQualityNom | femto_phi_tree::kSelNominalPid |
-                      femto_phi_tree::kSelNominalFemto;
-  return (t.selFlags & need) == need;
-}
-
 Bool_t SharedTrack(const Cand& phi, const Cand& d) {
   return d.trackIndex >= 0 && (d.trackIndex == phi.dau1 || d.trackIndex == phi.dau2);
 }
@@ -214,12 +360,16 @@ Bool_t SharedTrack(const Cand& phi, const Cand& d) {
 void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
                                  const Char_t* mainconf, Int_t bufferSizeOverride = -1,
                                  const Char_t* mixingModeOverride = "bufferAll",
-                                 Double_t nSigmaDeuteronMax = -1.0, Double_t dcaDeuteronMax = -1.0,
-                                 Double_t signalMin = -1.0, Double_t signalMax = -1.0,
-                                 Int_t minNHitsDedxNuclear = -1,
+                                 const Char_t* variation = "", Double_t signalMin = -1.0,
+                                 Double_t signalMax = -1.0,
                                  Bool_t recomputeDaughterPid = kFALSE,
                                  Bool_t recomputeMixBin = kFALSE) {
   using namespace femto_phi_tree;
+  Var var;
+  if (!ParseVariation(variation, var)) {
+    std::cerr << "ERROR: could not parse variation '" << variation << "'" << std::endl;
+    return;
+  }
   if (!ConfigManager::GetInstance().LoadConfig(mainconf)) {
     std::cerr << "ERROR: failed to load " << mainconf << std::endl;
     return;
@@ -269,6 +419,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   tr->SetBranchAddress("pT", &t.pT);
   tr->SetBranchAddress("eta", &t.eta);
   tr->SetBranchAddress("phi", &t.phi);
+  tr->SetBranchAddress("nSigmaKaon", &t.nSigmaKaon);
+  tr->SetBranchAddress("nSigmaProton", &t.nSigmaProton);
   tr->SetBranchAddress("nSigmaDeuteron", &t.nSigmaDeuteron);
   tr->SetBranchAddress("tofBeta", &t.tofBeta);
   tr->SetBranchAddress("dca", &t.dca);
@@ -325,7 +477,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
     for (size_t k = 0; k < idxs.size(); ++k) {
       tr->GetEntry(idxs[k]);
       if (t.speciesCode == kSpeciesKp || t.speciesCode == kSpeciesKm) {
-        if (!PassKaonForPhi(t)) continue;
+        if (!PassKaonForPhi(t, var)) continue;
         kmap[t.trackIndex] = t;
         Cand c;
         c.trackIndex = t.trackIndex;
@@ -335,7 +487,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         c.p4 = TLorentzVector(p, TMath::Sqrt(kKaonMass * kKaonMass + p.Mag2()));
         if (t.speciesCode == kSpeciesKp) kp.push_back(c); else km.push_back(c);
       } else if (t.speciesCode == kSpeciesDeuteron) {
-        if (!PassDeuteronVariation(t, nSigmaDeuteronMax, dcaDeuteronMax, minNHitsDedxNuclear)) continue;
+        if (!PassDeuteronVariation(t, var)) continue;
         Cand c;
         c.trackIndex = t.trackIndex;
         c.mKK = 0;
@@ -344,7 +496,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         c.p4 = TLorentzVector(p, TMath::Sqrt(kDeuteronMass * kDeuteronMass + p.Mag2()));
         part[kPartDeuteron].push_back(c);
       } else if (t.speciesCode == kSpeciesProton) {
-        if (!PassProtonNominal(t)) continue;
+        if (!PassProtonVariation(t, var)) continue;
         Cand c;
         c.trackIndex = t.trackIndex;
         c.mKK = 0;
@@ -359,7 +511,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       for (size_t j = 0; j < km.size(); ++j) {
         const TrackRowV2& a = kmap[kp[i].trackIndex];
         const TrackRowV2& b = kmap[km[j].trackIndex];
-        if (!PassDaughterPid(a, recomputeDaughterPid) || !PassDaughterPid(b, recomputeDaughterPid))
+        if (!PassDaughterPid(a, var, recomputeDaughterPid) ||
+            !PassDaughterPid(b, var, recomputeDaughterPid))
           continue;
         TVector3 pa = Momentum(a), pb = Momentum(b);
         Double_t ea = TMath::Sqrt(kKaonMass * kKaonMass + pa.Mag2());
@@ -492,11 +645,14 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   TNamed("nP", TString::Format("%lld", nPartTot[kPartProton]).Data()).Write();
   TNamed("nPhi", TString::Format("%lld", nPhiTot).Data()).Write();
   TNamed("nD", TString::Format("%lld", nPartTot[kPartDeuteron]).Data()).Write();
-  TNamed("daughterPid", recomputeDaughterPid ? "recomputed" : "kSelNominalPid").Write();
+  TNamed("variation", var.spec.Data()).Write();
+  TNamed("daughterPid",
+         (recomputeDaughterPid || var.anyPid) ? "recomputed" : "kSelNominalPid")
+      .Write();
   TNamed("mixBinSource", recomputeMixBin ? "recomputed" : "stored").Write();
   TNamed("minNHitsDedxNuclear",
-         TString::Format("%d", (minNHitsDedxNuclear > 0)
-                                   ? minNHitsDedxNuclear
+         TString::Format("%d", (var.dNHitsDedx > 0)
+                                   ? var.dNHitsDedx
                                    : (Int_t)ConfigManager::GetInstance()
                                          .GetNuclearIdCuts()
                                          .minNHitsDedxNuclear)

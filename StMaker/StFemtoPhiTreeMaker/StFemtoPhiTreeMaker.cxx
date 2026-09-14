@@ -104,6 +104,9 @@ StFemtoPhiTreeMaker::StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoM
       mEnvProtonMaxDca(2.0),
       mEnvProtonMinPt(0.15),
       mEnvMinNHitsDedxNuclear(10),
+      mEnvKaonRequireDaughterPidReach(kFALSE),
+      mEnvKaonMass2Lo(0.05),
+      mEnvKaonMass2Hi(0.50),
       mNInput(0),
       mNNoPico(0),
       mNBadRun(0),
@@ -209,6 +212,9 @@ Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
   if (values.find("envProtonMaxDca") != values.end()) mEnvProtonMaxDca = YamlParser::ToDouble(values["envProtonMaxDca"], mEnvProtonMaxDca);
   if (values.find("envProtonMinPt") != values.end()) mEnvProtonMinPt = YamlParser::ToDouble(values["envProtonMinPt"], mEnvProtonMinPt);
   if (values.find("envMinNHitsDedxNuclear") != values.end()) mEnvMinNHitsDedxNuclear = YamlParser::ToInt(values["envMinNHitsDedxNuclear"], mEnvMinNHitsDedxNuclear);
+  if (values.find("envKaonRequireDaughterPidReach") != values.end()) mEnvKaonRequireDaughterPidReach = YamlParser::ToBool(values["envKaonRequireDaughterPidReach"], mEnvKaonRequireDaughterPidReach);
+  if (values.find("envKaonMass2Lo") != values.end()) mEnvKaonMass2Lo = YamlParser::ToDouble(values["envKaonMass2Lo"], mEnvKaonMass2Lo);
+  if (values.find("envKaonMass2Hi") != values.end()) mEnvKaonMass2Hi = YamlParser::ToDouble(values["envKaonMass2Hi"], mEnvKaonMass2Hi);
 
   TString skipEnv = EnvOrEmpty("STAR_ANA_NSKIP");
   if (skipEnv.Length() > 0) mSkipRemaining = std::atoll(skipEnv.Data());
@@ -967,14 +973,29 @@ Int_t StFemtoPhiTreeMaker::Make() {
     BuildTrackState(ts, trk, event, pVtx, itrk);
     FillTofInfo(ts, trk, pMom, trk->bTofPidTraitsIndex());
     if (PassNominalTrackCuts(trk, pVtx)) ts.selFlags |= femto_phi_tree::kSelTrackQualityNom;
+    if (trk->chi2() <= ConfigManager::GetInstance().GetTrackCuts().maxChi2) {
+      ts.selFlags |= femto_phi_tree::kSelTrackChi2Nom;
+    }
     if (ts.tofMatch) ts.selFlags |= femto_phi_tree::kSelTofMatch;
 
     // Storage rule for kaons. With envKaonRequireTofOrLowP the store is restricted to what
     // the production daughter PID can ever use: K+ is TPC-only up to pMomKaonPID and needs
     // TOF above it, K- always needs TOF. Signal, ROT, MIX and the K-p kaon species all run
     // through PassPhiDaughterTofPid, so nothing downstream sees a kaon outside this set.
-    const Bool_t kaonStoreOk =
+    // envKaonRequireDaughterPidReach narrows it further to the rows PassPhiDaughterTofPid can
+    // ever accept: TOF-matched inside a widened m2 window, or TPC-only below pMomKaonPID. The
+    // TPC-only branch deliberately keeps BOTH charges, so the K- TPC-only variation
+    // (phiDaughterKaonMinusRequireTof: false) stays reproducible. Rows outside the reach only
+    // ever fed phi-daughter PID QA histograms, never an observable.
+    // The m2 window is a storage envelope and must stay wider than any planned m2 systematic:
+    // tightening it forecloses that systematic and needs a full re-production.
+    Bool_t kaonStoreOk =
         !mEnvKaonRequireTofOrLowP || ts.tofMatch || (pMom.Mag() < mEnvKaonLowPMax);
+    if (kaonStoreOk && mEnvKaonRequireDaughterPidReach) {
+      kaonStoreOk = ts.tofMatch
+                        ? (ts.mass2 >= mEnvKaonMass2Lo && ts.mass2 <= mEnvKaonMass2Hi)
+                        : (pMom.Mag() <= mEnvKaonLowPMax);
+    }
     if (mStoreKaons && kaonStoreOk && TMath::Abs(ts.nSigmaKaon) <= mEnvMaxAbsNSigmaKaon &&
         ts.DCA <= mEnvMaxDcaKaon) {
       if (PassNominalKaonCuts(trk, pVtx)) ts.selFlags |= femto_phi_tree::kSelKaonCutsNom;

@@ -89,12 +89,23 @@ envMaxPt: 10.0
 envMinEta: -2.0
 envMaxEta: 0.2                 # inert in this frame: FXT primaries all have eta < 0
 envMaxChi2: 5.0                # variations: 3.0 / 5.0
-envMaxAbsNSigmaKaon: 3.0       # loosest planned variation; 5.0 kept nothing any cut uses
+envMaxAbsNSigmaKaon: 5.0       # variations: 3.0 (nominal) / 5.0
 # Restrict the kaon store to what the production daughter PID can use. Measured to be
 # lossless: signal phi, ROT, MIX and the K-p kaon species all apply PassPhiDaughterTofPid,
 # and tofFallbackMode only gates the loose collection, which reaches QA histograms alone.
 envKaonRequireTofOrLowP: true
 envKaonLowPMax: 0.5            # must equal pid.pMomKaonPID
+# Narrow the kaon store to rows PassPhiDaughterTofPid could ever accept. Step 5 measurement on
+# the 5-file pilot: this drops the kaon store from 602,074 rows to 24,201 and pays for raising
+# envMaxAbsNSigmaKaon from 3.0 to 5.0 several times over -- 833.88 -> 767.59 B/event,
+# 1.899 -> 1.748 TB, while recovering the |nSigmaK| <= 5 systematic (+13.5% phi daughters) that
+# the 3.0 envelope had foreclosed. The TPC-only branch keeps both charges so that the
+# K- TPC-only variation stays reproducible.
+envKaonRequireDaughterPidReach: true
+# Storage envelope, NOT the PID cut. Must stay wider than any planned m2 systematic; the widest
+# planned one is 0.10-0.40, so this leaves real headroom. Costs 0.003 TB over a 0.10-0.40 gate.
+envKaonMass2Lo: 0.05
+envKaonMass2Hi: 0.50
 envMaxAbsNSigmaDeuteron: 5.0   # variations: 2.0 / 3.0 / 5.0
 envMaxAbsNSigmaProton: 3.0     # loosest planned variation
 envMaxDcaKaon: 3.0

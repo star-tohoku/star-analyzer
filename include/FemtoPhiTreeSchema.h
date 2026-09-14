@@ -29,7 +29,16 @@ enum SelFlag {
   kSelNominalPid = 1u << 2,
   kSelNominalFemto = 1u << 3,
   kSelTofMatch = 1u << 4,
-  kSelKaonCutsNom = 1u << 5
+  kSelKaonCutsNom = 1u << 5,
+  // chi2 is the only nominal track cut whose input is not stored in the row, so the AND-ed
+  // kSelTrackQualityNom bit cannot be decomposed: a row that fails it might have failed on
+  // nHitsFit, on chi2, or on both, and no track-cut variation can be reproduced without knowing
+  // which. This bit records the chi2 decision on its own. Every other nominal track cut
+  // (nHitsFit, hit ratio, nHitsDedx, pT, eta, global DCA) is re-evaluable from stored fields,
+  // and requirePrimaryTrack is already guaranteed by the storage envelope, so one bit is enough
+  // to make the whole track-cut family reproducible -- at no cost, since selFlags is a UShort
+  // with ten bits still free.
+  kSelTrackChi2Nom = 1u << 6
 };
 
 enum EventFlag {

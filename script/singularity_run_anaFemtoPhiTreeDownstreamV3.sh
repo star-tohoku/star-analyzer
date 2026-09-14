@@ -14,13 +14,11 @@ TREE_FILE="${2:?}"
 OUT_FILE="${3:?}"
 BUFFER="${4:--1}"
 MODE="${5:-bufferAll}"
-NSIGD="${6:--1}"
-DCAD="${7:--1}"
-SIGMIN="${8:--1}"
-SIGMAX="${9:--1}"
-NDEDX="${10:--1}"
-RECOPID="${11:-0}"
-RECOMIX="${12:-0}"
+VARIATION="${6:-}"
+SIGMIN="${7:--1}"
+SIGMAX="${8:--1}"
+RECOPID="${9:-0}"
+RECOMIX="${10:-0}"
 
 mkdir -p "$(dirname "$OUT_FILE")"
 LIBRARY_TAG=$(cd "$PROJECT_ROOT_REAL" && "$PYTHON" script/analysis_info_helper.py --library-tag --mainconf "$MAINCONF" | xargs)
@@ -35,7 +33,7 @@ export STAR_BIN=\${STAR}/.\${STAR_HOST_SYS}/bin
 export PATH=\${STAR_BIN}:\${STAR}/mgr:\$PATH
 export LD_LIBRARY_PATH=\${STAR_LIB}:\$LD_LIBRARY_PATH
 cd "$PROJECT_ROOT_REAL"
-root4star -b -q 'tools/run_anaFemtoPhiTreeDownstreamV3.C("$TREE_FILE","$OUT_FILE","$MAINCONF",$BUFFER,"$MODE",$NSIGD,$DCAD,$SIGMIN,$SIGMAX,$NDEDX,$RECOPID,$RECOMIX)'
+root4star -b -q 'tools/run_anaFemtoPhiTreeDownstreamV3.C("$TREE_FILE","$OUT_FILE","$MAINCONF",$BUFFER,"$MODE","$VARIATION",$SIGMIN,$SIGMAX,$RECOPID,$RECOMIX)'
 EOF
 )
 
