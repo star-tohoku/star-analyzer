@@ -125,7 +125,7 @@ protonMaxAbsNSigma: 2.0
 protonMinNHitsFit: 15
 protonMinNHitsRatio: 0.52
 # |p| < threshold: TPC nσ only (no TOF match, no m2 veto). |p| >= threshold: TOF + m2 in [protonMinMass2,protonMaxMass2].
-protonTofMomentumThreshold: 2.0
+protonTofMomentumThreshold: 0.0
 protonMinMass2: 0.6
 protonMaxMass2: 1.2
 protonMinRapidityCm: -1.0
@@ -143,7 +143,7 @@ deuteronMaxAbsEta: 2.0
 deuteronMaxAbsNSigma: 2.0
 deuteronMinNHitsFit: 15
 deuteronMinNHitsRatio: 0.52
-deuteronTofMomentumThreshold: 99.0
+deuteronTofMomentumThreshold: 0.0
 deuteronMinMass2: 2.5
 deuteronMaxMass2: 4.5
 deuteronMinRapidityCm: -1.0

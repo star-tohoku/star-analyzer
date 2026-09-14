@@ -12,6 +12,7 @@
 #include "CentralityHelper.h"
 #include "StNuclearIdHelper.h"
 #include "StPhiKKReconstruction.h"
+#include "FemtoFlagConfigSnapshot.h"
 #include "StPicoDstMaker/StPicoDstMaker.h"
 #include "StPicoEvent/StPicoDst.h"
 #include "StPicoEvent/StPicoTrack.h"
@@ -358,6 +359,29 @@ void StFemtoPhiTreeMaker::BookEventTreeV3() {
 // Companion tree: one row per stored kaon, carrying the helix origin the KK decay DCA needs.
 // Kept out of the track row because only kaons need it and they are 0.66% of stored rows --
 // on every row the same three components would cost +32% of the tree instead of +0.2%.
+// Record every config value the stored selFlags depend on, so a downstream configured
+// differently fails loudly instead of silently returning the producer's selection. One row per
+// key per job: after hadd the rows repeat, and a key that then carries two different values means
+// trees from two different configurations were merged -- which the reader also catches.
+void StFemtoPhiTreeMaker::WriteFlagConfigSnapshot() {
+  if (!mOutFile) return;
+  mOutFile->cd();
+  TTree* t = new TTree("FemtoFlagConfig", "config values the selFlags bits depend on");
+  TString key, value;
+  TString* pk = &key;
+  TString* pv = &value;
+  t->Branch("key", &pk);
+  t->Branch("value", &pv);
+  std::vector<femto_flag_config::Entry> e = femto_flag_config::Collect();
+  for (size_t i = 0; i < e.size(); ++i) {
+    key = e[i].first;
+    value = e[i].second;
+    t->Fill();
+  }
+  t->Write();
+  LOG_INFO << "[StFemtoPhiTreeMaker] flag-config snapshot: " << e.size() << " keys" << endm;
+}
+
 void StFemtoPhiTreeMaker::BookKaonOriginTree() {
   if (!mWriteKaonOrigin || !mStoreKaons) return;
   mKaonOriginTree = new TTree("FemtoKaonOriginTree", "phi-daughter kaon helix origin");
@@ -1333,6 +1357,7 @@ Int_t StFemtoPhiTreeMaker::Finish() {
     // Without this the companion loses everything after its last autoflush -- 7,877 of 37,877
     // rows in the first run, which the reader saw only as a suspiciously round 30,000.
     if (mKaonOriginTree) mKaonOriginTree->Write();
+    WriteFlagConfigSnapshot();
     WriteMetadata();
     mOutFile->Close();
     delete mOutFile;

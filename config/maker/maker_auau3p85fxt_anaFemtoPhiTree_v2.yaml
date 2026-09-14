@@ -35,7 +35,7 @@ protonMaxAbsEta: 2.0
 protonMaxAbsNSigma: 2.0
 protonMinNHitsFit: 15
 protonMinNHitsRatio: 0.52
-protonTofMomentumThreshold: 2.0
+protonTofMomentumThreshold: 0.0   # production value; was 2.0, inherited from the dE/dx-only study
 protonMinMass2: 0.6
 protonMaxMass2: 1.2
 protonMinRapidityCm: -1.0
@@ -52,7 +52,7 @@ deuteronMaxAbsEta: 2.0
 deuteronMaxAbsNSigma: 2.0
 deuteronMinNHitsFit: 15
 deuteronMinNHitsRatio: 0.52
-deuteronTofMomentumThreshold: 99.0
+deuteronTofMomentumThreshold: 0.0  # production value; was 99.0 (TOF effectively not required)
 deuteronMinMass2: 2.5
 deuteronMaxMass2: 4.5
 deuteronMinRapidityCm: -1.0

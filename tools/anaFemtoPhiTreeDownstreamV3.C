@@ -38,6 +38,7 @@
 #include "cuts/NuclearIdCutConfig.h"
 #include "cuts/TrackCutConfig.h"
 #include "FemtoPhiTreeSchema.h"
+#include "FemtoFlagConfigSnapshot.h"
 #include "StPhiKKReconstruction.h"
 
 #include <deque>
@@ -447,6 +448,73 @@ PhiKkTrackState MakeKkState(const femto_phi_tree::TrackRowV2& t,
   return s;
 }
 
+// Compare this job's configuration against the one the tree was produced with.
+//
+// Every selFlags bit is a decision the maker already made, so it carries the maker's config with
+// it. A downstream configured differently reads the flag and gets the producer's answer silently
+// -- measured: a tree built with deuteronTofMomentumThreshold 99.0, read with the production
+// value 0.0, returned 554,931 deuterons instead of ~240,912. Refusing is the only safe default.
+//
+// Returns the number of mismatches; 0 means the tree and this job agree.
+Int_t CheckFlagConfig(TFile* fin) {
+  TTree* t = (TTree*)fin->Get("FemtoFlagConfig");
+  if (!t) {
+    std::cerr << "ERROR: this tree carries no FemtoFlagConfig snapshot, so the configuration it "
+              << "was produced with cannot be checked against this job's. Every selFlags bit "
+              << "depends on that configuration. Re-produce with a maker that writes the "
+              << "snapshot." << std::endl;
+    return -1;
+  }
+  TString* key = 0;
+  TString* val = 0;
+  t->SetBranchAddress("key", &key);
+  t->SetBranchAddress("value", &val);
+
+  // After hadd the rows repeat once per subjob. Collapse them, and treat a key that carries two
+  // different values as its own failure: that means trees from two configurations were merged.
+  std::map<TString, TString> stored;
+  std::vector<TString> inconsistent;
+  for (Long64_t i = 0; i < t->GetEntries(); ++i) {
+    t->GetEntry(i);
+    std::map<TString, TString>::iterator it = stored.find(*key);
+    if (it == stored.end()) {
+      stored[*key] = *val;
+    } else if (it->second != *val) {
+      inconsistent.push_back(TString::Format("%s: merged trees disagree (%s vs %s)", key->Data(),
+                                             it->second.Data(), val->Data()));
+    }
+  }
+
+  std::vector<femto_flag_config::Entry> mine = femto_flag_config::Collect();
+  std::vector<TString> diff;
+  for (size_t i = 0; i < mine.size(); ++i) {
+    std::map<TString, TString>::const_iterator it = stored.find(mine[i].first);
+    if (it == stored.end()) {
+      diff.push_back(TString::Format("%-40s tree: (absent)      this job: %s",
+                                     mine[i].first.Data(), mine[i].second.Data()));
+    } else if (it->second != mine[i].second) {
+      diff.push_back(TString::Format("%-40s tree: %-14s this job: %s", mine[i].first.Data(),
+                                     it->second.Data(), mine[i].second.Data()));
+    }
+  }
+
+  if (inconsistent.empty() && diff.empty()) {
+    std::cout << "[downstreamV3] flag-config snapshot: " << stored.size() << " keys, all match"
+              << std::endl;
+    return 0;
+  }
+  std::cerr << "\nERROR: this job's configuration does not match the one the tree was produced "
+            << "with.\n       The stored selFlags encode the producer's cuts, so running anyway "
+            << "would\n       silently give you the producer's selection, not yours.\n"
+            << std::endl;
+  for (size_t i = 0; i < inconsistent.size(); ++i)
+    std::cerr << "  MERGE  " << inconsistent[i] << std::endl;
+  for (size_t i = 0; i < diff.size(); ++i) std::cerr << "  DIFF   " << diff[i] << std::endl;
+  std::cerr << "\n       Use the config the tree was produced with, or re-produce the tree."
+            << std::endl;
+  return (Int_t)(inconsistent.size() + diff.size());
+}
+
 Bool_t SharedTrack(const Cand& phi, const Cand& d) {
   return d.trackIndex >= 0 && (d.trackIndex == phi.dau1 || d.trackIndex == phi.dau2);
 }
@@ -516,6 +584,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   tr->SetBranchAddress("nHitsMax", &t.nHitsMax);
   tr->SetBranchAddress("nHitsDedx", &t.nHitsDedx);
   tr->SetBranchAddress("selFlags", &t.selFlags);
+
+  if (CheckFlagConfig(fin) != 0) return;
 
   // Companion tree with the phi-daughter kaon helix origin. Absent in trees written before
   // 2026-09-14; without it the KK DCA cannot be formed and an active maxDCAKK must be refused.

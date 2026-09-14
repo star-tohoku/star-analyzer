@@ -137,6 +137,7 @@ class StFemtoPhiTreeMaker : public StMaker {
   void BookTreesV1();
   void BookTreesV2();
   void BookEventTreeV3();
+  void WriteFlagConfigSnapshot();
   void BookKaonOriginTree();
   void FillKaonOriginRow(const TrackState& trk, ULong64_t eventUID, const TVector3& pVtx);
   void FillEventRowV3();
