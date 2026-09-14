@@ -50,6 +50,16 @@ void FemtoConfig::SetDefaults() {
   channels.clear();
 
   protonChargeMode = "positive";
+  closePairEnabled = kFALSE;
+  closePairShape = "box";
+  closePairRadiusMin = 0.6;
+  closePairRadiusMax = 2.0;
+  closePairRadiusStep = 0.05;
+  closePairDEtaDeuteron = 0.0;
+  closePairDPhiStarDeuteron = 0.0;
+  closePairDEtaProton = 0.0;
+  closePairDPhiStarProton = 0.0;
+  closePairVetoSameTrack = kTRUE;
   protonMaxDca = 1.0;
   protonMinPtPre = 0.2;
   protonMinPtPair = 0.4;
@@ -262,6 +272,16 @@ void FemtoConfig::SetDefaults() {
 
 void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& values) {
   if (values.find("protonChargeMode") != values.end()) protonChargeMode = values.at("protonChargeMode");
+  if (values.find("closePairEnabled") != values.end()) closePairEnabled = YamlParser::ToBool(values.at("closePairEnabled"), closePairEnabled);
+  if (values.find("closePairShape") != values.end()) closePairShape = values.at("closePairShape");
+  if (values.find("closePairRadiusMin") != values.end()) closePairRadiusMin = YamlParser::ToDouble(values.at("closePairRadiusMin"), closePairRadiusMin);
+  if (values.find("closePairRadiusMax") != values.end()) closePairRadiusMax = YamlParser::ToDouble(values.at("closePairRadiusMax"), closePairRadiusMax);
+  if (values.find("closePairRadiusStep") != values.end()) closePairRadiusStep = YamlParser::ToDouble(values.at("closePairRadiusStep"), closePairRadiusStep);
+  if (values.find("closePairDEtaDeuteron") != values.end()) closePairDEtaDeuteron = YamlParser::ToDouble(values.at("closePairDEtaDeuteron"), closePairDEtaDeuteron);
+  if (values.find("closePairDPhiStarDeuteron") != values.end()) closePairDPhiStarDeuteron = YamlParser::ToDouble(values.at("closePairDPhiStarDeuteron"), closePairDPhiStarDeuteron);
+  if (values.find("closePairDEtaProton") != values.end()) closePairDEtaProton = YamlParser::ToDouble(values.at("closePairDEtaProton"), closePairDEtaProton);
+  if (values.find("closePairDPhiStarProton") != values.end()) closePairDPhiStarProton = YamlParser::ToDouble(values.at("closePairDPhiStarProton"), closePairDPhiStarProton);
+  if (values.find("closePairVetoSameTrack") != values.end()) closePairVetoSameTrack = YamlParser::ToBool(values.at("closePairVetoSameTrack"), closePairVetoSameTrack);
   if (values.find("protonMaxDca") != values.end()) protonMaxDca = YamlParser::ToDouble(values.at("protonMaxDca"), protonMaxDca);
   if (values.find("protonMinPtPre") != values.end()) protonMinPtPre = YamlParser::ToDouble(values.at("protonMinPtPre"), protonMinPtPre);
   if (values.find("protonMinPtPair") != values.end()) protonMinPtPair = YamlParser::ToDouble(values.at("protonMinPtPair"), protonMinPtPair);

@@ -115,3 +115,22 @@ envDeuteronMaxPMom: 4.0
 envProtonMaxDca: 1.5           # loosest planned variation
 envProtonMinPt: 0.15
 envMinNHitsDedxNuclear: 10
+
+# --- TPC two-track (close-pair) cut, Step 4b ---
+# Applied between each phi daughter and the bachelor, in same-event and mixed-event alike.
+# Windows measured on this dataset (results/closepair-step4b-20260914.md); they differ per
+# bachelor species, so phi-d's value is NOT reused for phi-p. Both are indicative at five files
+# and must be re-measured at production statistics before they are quoted as final.
+closePairEnabled: false          # off until the windows are re-measured at full statistics
+closePairShape: box              # box | ellipse
+closePairRadiusMin: 0.6          # m, TPC inner field cage
+closePairRadiusMax: 2.0          # m, TPC outer radius
+closePairRadiusStep: 0.05        # m
+closePairDEtaDeuteron: 0.040
+closePairDPhiStarDeuteron: 0.040
+closePairDEtaProton: 0.015
+closePairDPhiStarProton: 0.015
+# One physical track can satisfy two species storage rules: 4.10% of selected phi-daughter kaons
+# are also selected as bachelor protons. Without this veto such a pair is a track paired with
+# itself, and it lands at exactly zero separation.
+closePairVetoSameTrack: true

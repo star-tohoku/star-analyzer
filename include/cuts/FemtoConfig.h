@@ -37,6 +37,25 @@ class FemtoConfig {
 
   // Zhangwei-like proton bachelor cuts for femto pairing (see 4ReadTree/analysis.cxx).
   std::string protonChargeMode;
+  // --- TPC two-track (close-pair) cut, Step 4b ---
+  // Applied between each phi daughter and the bachelor track, in same-event and mixed-event
+  // alike: applying it to one and not the other biases the correlation function directly.
+  // Delta phi* is the azimuthal separation of the two helices extrapolated to a TPC radius,
+  // minimised over a radius scan. The windows are per bachelor species because they were
+  // measured to differ (see results/closepair-step4b-20260914.md).
+  Bool_t closePairEnabled;
+  std::string closePairShape;       // "box" or "ellipse"
+  Double_t closePairRadiusMin;      // m
+  Double_t closePairRadiusMax;      // m
+  Double_t closePairRadiusStep;     // m
+  Double_t closePairDEtaDeuteron;
+  Double_t closePairDPhiStarDeuteron;
+  Double_t closePairDEtaProton;
+  Double_t closePairDPhiStarProton;
+  // Veto a bachelor that is the same physical track as a phi daughter. One track can satisfy
+  // two species storage rules: 4.10% of selected daughter kaons are also selected protons.
+  Bool_t closePairVetoSameTrack;
+
   Double_t protonMaxDca;
   Double_t protonMinPtPre;
   Double_t protonMinPtPair;

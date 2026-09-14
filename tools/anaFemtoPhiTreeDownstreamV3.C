@@ -61,10 +61,18 @@ struct Cand {
   Float_t mKK;
   Int_t dau1;
   Int_t dau2;
+  // daughter kinematics, kept so the close-pair cut can work on the tracks that actually
+  // interfere in the TPC rather than on the reconstructed phi
+  Double_t dEta[2], dPhi[2], dPt[2];
+  Short_t dCharge[2];
+  // single-track kinematics, for a bachelor
+  Double_t tEta, tPhi, tPt;
+  Short_t tCharge;
 };
 
 struct MixEvent {
   ULong64_t eventUID;
+  Double_t bField;
   std::vector<Cand> phis;
   std::vector<Cand> part[kNPart];
 };
@@ -352,6 +360,65 @@ Bool_t PassProtonVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
 // PassFemtoProtonCuts. The tree maker records exactly that split across the three flags below, so
 // the nominal proton is the same triple as the nominal deuteron. There is no nuclear-ID dE/dx hit
 // requirement on this path.
+// ---------------------------------------------------------------------------
+// TPC two-track (close-pair) cut, Step 4b.
+//
+// phi* is the azimuth of a helix extrapolated to transverse radius r; two tracks that stay close
+// in (eta, phi*) over the TPC volume are candidates for merging or splitting. The cut acts on
+// (daughter kaon, bachelor) track pairs -- the phi itself is not a track and cannot merge with
+// anything. It must be applied identically in same-event and mixed-event, or it sculpts the
+// correlation function.
+// ---------------------------------------------------------------------------
+Double_t PhiStar(Double_t phi, Double_t pt, Short_t q, Double_t bT, Double_t r) {
+  Double_t arg = -0.3 * q * bT * r / (2.0 * pt);
+  if (arg > 1.0) arg = 1.0;
+  if (arg < -1.0) arg = -1.0;
+  return phi + TMath::ASin(arg);
+}
+
+Double_t DPhiStarMin(Double_t phiA, Double_t ptA, Short_t qA, Double_t phiB, Double_t ptB,
+                     Short_t qB, Double_t bT, const FemtoConfig& fc) {
+  Double_t best = 1e9;
+  for (Double_t r = fc.closePairRadiusMin; r <= fc.closePairRadiusMax + 1e-9;
+       r += fc.closePairRadiusStep) {
+    Double_t d = PhiStar(phiA, ptA, qA, bT, r) - PhiStar(phiB, ptB, qB, bT, r);
+    while (d > TMath::Pi()) d -= TMath::TwoPi();
+    while (d < -TMath::Pi()) d += TMath::TwoPi();
+    if (TMath::Abs(d) < TMath::Abs(best)) best = d;
+  }
+  return best;
+}
+
+// kTRUE means the pair is rejected
+Bool_t ClosePairReject(const Cand& phi, const Cand& bach, Double_t bachEta, Double_t bachPhi,
+                       Double_t bachPt, Short_t bachCharge, Double_t bT, Int_t species,
+                       const FemtoConfig& fc) {
+  if (!fc.closePairEnabled) return kFALSE;
+  const Double_t wEta =
+      (species == 0) ? fc.closePairDEtaDeuteron : fc.closePairDEtaProton;
+  const Double_t wPhi =
+      (species == 0) ? fc.closePairDPhiStarDeuteron : fc.closePairDPhiStarProton;
+  if (wEta <= 0 && wPhi <= 0) return kFALSE;
+  const Bool_t ellipse = (fc.closePairShape == "ellipse");
+  for (Int_t i = 0; i < 2; ++i) {
+    if (phi.dPt[i] <= 0) continue;
+    const Double_t dEta = phi.dEta[i] - bachEta;
+    const Double_t dPhiS = DPhiStarMin(phi.dPhi[i], phi.dPt[i], phi.dCharge[i], bachPhi, bachPt,
+                                       bachCharge, bT, fc);
+    if (ellipse) {
+      Double_t a = (wEta > 0) ? dEta / wEta : 0.0;
+      Double_t b = (wPhi > 0) ? dPhiS / wPhi : 0.0;
+      if (a * a + b * b < 1.0) return kTRUE;
+    } else {
+      const Bool_t inEta = (wEta <= 0) || (TMath::Abs(dEta) < wEta);
+      const Bool_t inPhi = (wPhi <= 0) || (TMath::Abs(dPhiS) < wPhi);
+      if (inEta && inPhi) return kTRUE;
+    }
+  }
+  (void)bach;
+  return kFALSE;
+}
+
 Bool_t SharedTrack(const Cand& phi, const Cand& d) {
   return d.trackIndex >= 0 && (d.trackIndex == phi.dau1 || d.trackIndex == phi.dau2);
 }
@@ -412,6 +479,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   ev->SetBranchAddress("vz", &e.vz);
   ev->SetBranchAddress("psi2", &e.psi2);
   ev->SetBranchAddress("mixBin", &e.mixBin);
+  ev->SetBranchAddress("bField", &e.bField);
 
   tr->SetBranchAddress("eventUID", &t.eventUID);
   tr->SetBranchAddress("trackIndex", &t.trackIndex);
@@ -458,6 +526,19 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
                           TString::Format("nominal %s / event", kPartName[sp]), 21, -0.5, 20.5);
   }
   TH1D* hNPhi = new TH1D("hNPhi", "nominal #phi / event", 21, -0.5, 20.5);
+  // Removal rate of the close-pair cut, binned in k*: the quantity that says whether the cut
+  // sculpts the correlation function or merely trims it.
+  TH1D* hCloseSE[kNPart];
+  TH1D* hCloseME[kNPart];
+  for (Int_t sp = 0; sp < kNPart; ++sp) {
+    hCloseSE[sp] = new TH1D(TString::Format("hClosePairRejectSE_phi_%s", kPartName[sp]),
+                            "SE pairs removed by the close-pair cut;k* (GeV/c);pairs", 50, 0.0,
+                            1.0);
+    hCloseME[sp] = new TH1D(TString::Format("hClosePairRejectME_phi_%s", kPartName[sp]),
+                            "ME pairs removed by the close-pair cut;k* (GeV/c);pairs", 50, 0.0,
+                            1.0);
+  }
+  Long64_t nCloseSE[kNPart] = {0, 0}, nCloseME[kNPart] = {0, 0};
   TH1D* hRejectShared = new TH1D("hRejectShared", "shared-track rejects", 2, -0.5, 1.5);
   TH1D* hSameEventME = new TH1D("hSameEventME", "ME pairs from same eventUID (must be 0)", 2, -0.5, 1.5);
 
@@ -494,6 +575,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         c.dau1 = c.dau2 = -1;
         TVector3 p = Momentum(t);
         c.p4 = TLorentzVector(p, TMath::Sqrt(kDeuteronMass * kDeuteronMass + p.Mag2()));
+        c.tEta = t.Eta(); c.tPhi = t.Phi(); c.tPt = t.Pt(); c.tCharge = (Short_t)t.Charge();
         part[kPartDeuteron].push_back(c);
       } else if (t.speciesCode == kSpeciesProton) {
         if (!PassProtonVariation(t, var)) continue;
@@ -503,6 +585,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         c.dau1 = c.dau2 = -1;
         TVector3 p = Momentum(t);
         c.p4 = TLorentzVector(p, TMath::Sqrt(kProtonMass * kProtonMass + p.Mag2()));
+        c.tEta = t.Eta(); c.tPhi = t.Phi(); c.tPt = t.Pt(); c.tCharge = (Short_t)t.Charge();
         part[kPartProton].push_back(c);
       }
     }
@@ -538,6 +621,10 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         phi.dau2 = b.trackIndex;
         phi.mKK = (Float_t)invMass;
         phi.p4 = TLorentzVector(phiMom, etot);
+        phi.dEta[0] = a.Eta(); phi.dPhi[0] = a.Phi(); phi.dPt[0] = a.Pt();
+        phi.dCharge[0] = (Short_t)a.Charge();
+        phi.dEta[1] = b.Eta(); phi.dPhi[1] = b.Phi(); phi.dPt[1] = b.Pt();
+        phi.dCharge[1] = (Short_t)b.Charge();
         phis.push_back(phi);
         nPhiTot++;
       }
@@ -552,8 +639,20 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       for (size_t i = 0; i < phis.size(); ++i) {
         if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
         for (size_t j = 0; j < part[sp].size(); ++j) {
-          if (SharedTrack(phis[i], part[sp][j])) { nShared++; hRejectShared->Fill(1); continue; }
-          hKstarSE[sp]->Fill(KStar(phis[i].p4, part[sp][j].p4));
+          if (femtoCfg.closePairVetoSameTrack && SharedTrack(phis[i], part[sp][j])) {
+            nShared++;
+            hRejectShared->Fill(1);
+            continue;
+          }
+          const Double_t ks = KStar(phis[i].p4, part[sp][j].p4);
+          if (ClosePairReject(phis[i], part[sp][j], part[sp][j].tEta, part[sp][j].tPhi,
+                              part[sp][j].tPt, part[sp][j].tCharge, e.bField / 10.0, sp,
+                              femtoCfg)) {
+            nCloseSE[sp]++;
+            hCloseSE[sp]->Fill(ks);
+            continue;
+          }
+          hKstarSE[sp]->Fill(ks);
           nSE[sp]++;
         }
       }
@@ -605,7 +704,16 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         if (buf.eventUID == e.eventUID) { nSameEventME++; hSameEventME->Fill(1); continue; }
         const Cand& A = r.reverse ? buf.phis[r.i] : phis[r.i];
         const Cand& B = r.reverse ? part[sp][r.j] : buf.part[sp][r.j];
-        hKstarME[sp]->Fill(KStar(A.p4, B.p4));
+        const Double_t ks = KStar(A.p4, B.p4);
+        // Mixed pairs get the identical cut. The B field is taken from the event the phi came
+        // from; within a run it is constant, and the mixing bins do not span runs in practice.
+        const Double_t bT = (r.reverse ? buf.bField : e.bField) / 10.0;
+        if (ClosePairReject(A, B, B.tEta, B.tPhi, B.tPt, B.tCharge, bT, sp, femtoCfg)) {
+          nCloseME[sp]++;
+          hCloseME[sp]->Fill(ks);
+          continue;
+        }
+        hKstarME[sp]->Fill(ks);
         nME[sp]++;
       }
     }
@@ -619,6 +727,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
     {
       MixEvent me;
       me.eventUID = e.eventUID;
+      me.bField = e.bField;
       me.phis = phis;
       for (Int_t sp = 0; sp < kNPart; ++sp) me.part[sp] = part[sp];
       binPool.push_back(me);
@@ -631,8 +740,18 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
     std::cout << "[downstreamV3]   phi-" << kPartName[sp] << ": n=" << nPartTot[sp]
               << " SE=" << nSE[sp] << " ME=" << nME[sp] << std::endl;
   }
-  std::cout << "[downstreamV3] shared=" << nShared << " sameEventME=" << nSameEventME
-            << std::endl;
+  std::cout << "[downstreamV3] shared=" << nShared << " sameEventME=" << nSameEventME << std::endl;
+  if (femtoCfg.closePairEnabled) {
+    for (Int_t sp = 0; sp < kNPart; ++sp) {
+      const Double_t fse = (nSE[sp] + nCloseSE[sp]) > 0
+                               ? 100.0 * nCloseSE[sp] / (nSE[sp] + nCloseSE[sp]) : 0.0;
+      const Double_t fme = (nME[sp] + nCloseME[sp]) > 0
+                               ? 100.0 * nCloseME[sp] / (nME[sp] + nCloseME[sp]) : 0.0;
+      std::cout << "[downstreamV3]   close-pair phi-" << kPartName[sp] << ": SE removed "
+                << nCloseSE[sp] << " (" << fse << "%)  ME removed " << nCloseME[sp] << " ("
+                << fme << "%)" << std::endl;
+    }
+  }
 
   fout->cd();
   TNamed("treeFile", treeFile).Write();
@@ -650,6 +769,16 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
          (recomputeDaughterPid || var.anyPid) ? "recomputed" : "kSelNominalPid")
       .Write();
   TNamed("mixBinSource", recomputeMixBin ? "recomputed" : "stored").Write();
+  TNamed("closePair",
+         femtoCfg.closePairEnabled
+             ? TString::Format("%s dEtaD=%.3f dPhiD=%.3f dEtaP=%.3f dPhiP=%.3f r=%.2f-%.2f/%.2f",
+                               femtoCfg.closePairShape.c_str(), femtoCfg.closePairDEtaDeuteron,
+                               femtoCfg.closePairDPhiStarDeuteron, femtoCfg.closePairDEtaProton,
+                               femtoCfg.closePairDPhiStarProton, femtoCfg.closePairRadiusMin,
+                               femtoCfg.closePairRadiusMax, femtoCfg.closePairRadiusStep)
+                   .Data()
+             : "disabled")
+      .Write();
   TNamed("minNHitsDedxNuclear",
          TString::Format("%d", (var.dNHitsDedx > 0)
                                    ? var.dNHitsDedx
@@ -665,6 +794,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
     hKstarSE[sp]->Write();
     hKstarME[sp]->Write();
     hNPart[sp]->Write();
+    hCloseSE[sp]->Write();
+    hCloseME[sp]->Write();
   }
   hRejectShared->Write(); hSameEventME->Write();
   fout->Close();
