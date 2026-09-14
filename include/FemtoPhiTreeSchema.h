@@ -454,15 +454,20 @@ struct EventRowV2 {
 //   cent9, cent16      Char_t       -    -1 .. 15                exact
 //   qx, qy             Short_t    1e2    +-327.67                0.01
 //   psi2               Short_t    1e4    +-3.2767 rad            1e-4
+//   mixBin             UShort_t     -    0 .. 65535              exact
 //   eventFlags         UChar_t      -    8 bits                  exact
 //   nKp..nProton       UShort_t     -    0 .. 65535              exact
 //
 // Dropped relative to schema 2, with the reason:
 //   runId, eventId   -> both recoverable from eventUID
-//   mixVzBin, mixCentBin, mixEpBin, mixBin
-//                    -> derived from vz / cent9 / psi2 and the mixing YAML. Storing them
-//                       would freeze the binning, and varying it is one of the reasons the
-//                       tree exists at all.
+//   mixVzBin, mixCentBin, mixEpBin
+//                    -> derived from vz / cent9 / psi2 and the mixing YAML, and each is a
+//                       factor of the composite mixBin that is stored.
+// mixBin itself is kept (2 B/event, 0.24% of the row) after the Step 4 closure showed that
+// recomputing it from the packed vz reassigns 1.4% of events to a neighbouring bin: the vz
+// packing step is 0.01 cm and the bins are 0.4 cm wide. Keeping it does not freeze the
+// binning -- the downstream still recomputes on request for a mixing-binning systematic --
+// it only makes the nominal reproduce the maker exactly.
 // ---------------------------------------------------------------------------
 
 namespace escale {
@@ -493,6 +498,13 @@ struct EventRowV3 {
   UShort_t refMultCorr, centWeight, centralityPercent;
   Char_t cent9, cent16;
   Short_t qx, qy, psi2;
+  // The mixing-bin index the maker assigned, stored rather than recomputed. vz is packed at
+  // 0.01 cm while the mixing bins are 0.4 cm wide, so recomputing moves 1.4% of events to a
+  // neighbouring bin (measured on the 5-file pilot) and the mixed-event pair set stops matching
+  // the maker-direct chain exactly. Recomputation from vz/cent9/psi2 stays available and is the
+  // right thing to do for a mixing-binning systematic, where a 0.01 cm boundary reshuffle is
+  // far below the size of the variation itself.
+  UShort_t mixBin;
   UChar_t eventFlags;
   UShort_t nKp, nKm, nDeuteron, nProton;
 
@@ -515,6 +527,7 @@ struct EventRowV3 {
     cent9 = cent16 = -1;
     qx = qy = 0;
     psi2 = 0;
+    mixBin = 0;
     eventFlags = 0;
     nKp = nKm = nDeuteron = nProton = 0;
   }

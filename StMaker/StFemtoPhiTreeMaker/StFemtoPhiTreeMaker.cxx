@@ -337,6 +337,7 @@ void StFemtoPhiTreeMaker::BookEventTreeV3() {
   mEventTree->Branch("qx", &mEvt3.qx, "qx/S");
   mEventTree->Branch("qy", &mEvt3.qy, "qy/S");
   mEventTree->Branch("psi2", &mEvt3.psi2, "psi2/S");
+  mEventTree->Branch("mixBin", &mEvt3.mixBin, "mixBin/s");
   mEventTree->Branch("eventFlags", &mEvt3.eventFlags, "eventFlags/b");
   mEventTree->Branch("nKp", &mEvt3.nKp, "nKp/s");
   mEventTree->Branch("nKm", &mEvt3.nKm, "nKm/s");
@@ -374,6 +375,7 @@ void StFemtoPhiTreeMaker::FillEventRowV3() {
   mEvt3.qx = PackI16(mEvt2.qx, escale::kQ, mPackStats.evQ);
   mEvt3.qy = PackI16(mEvt2.qy, escale::kQ, mPackStats.evQ);
   mEvt3.psi2 = PackI16(mEvt2.psi2, escale::kPsi2, mPackStats.evQ);
+  mEvt3.mixBin = (mEvt2.mixBin >= 0 && mEvt2.mixBin <= 65535) ? (UShort_t)mEvt2.mixBin : 0;
   mEvt3.eventFlags = (UChar_t)(mEvt2.eventFlags & 0xFFu);
   mEvt3.nKp = PackU16(mEvt2.nKp, 1.0, mPackStats.evMult);
   mEvt3.nKm = PackU16(mEvt2.nKm, 1.0, mPackStats.evMult);

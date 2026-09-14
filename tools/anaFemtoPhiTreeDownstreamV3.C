@@ -8,8 +8,9 @@
 //   tofMatch          -> kSelTofMatch bit
 //   mass2             -> p^2 (1/beta^2 - 1)
 //   deltaOneOverBeta  -> 1/beta - sqrt(m^2 + p^2)/p
-//   mixBin            -> recomputed here with the same formula the maker used, so that the
-//                        binning can be varied without re-reading PicoDst
+//   mixBin            -> read from the tree for the nominal (the maker's own assignment) and
+//                        recomputed with the same formula on request, so the binning can still
+//                        be varied without re-reading PicoDst
 //   originX/Y/Z, bField(track) -> NOT stored. The KK decay DCA therefore cannot be computed,
 //                        so this reader refuses to run if maxDCAKK is set to an active value
 //                        instead of silently feeding the cut a garbage number.
@@ -29,6 +30,8 @@
 #include "cuts/MixingConfig.h"
 #include "cuts/FemtoConfig.h"
 #include "cuts/EventCutConfig.h"
+#include "cuts/PIDCutConfig.h"
+#include "cuts/NuclearIdCutConfig.h"
 #include "FemtoPhiTreeSchema.h"
 
 #include <deque>
@@ -101,7 +104,16 @@ Int_t MixBinOf(Double_t vz, Int_t cent9, Double_t psi2) {
 
 // Production phi-daughter PID, evaluated on a packed row with mass2 / deltaOneOverBeta
 // recomputed rather than read.
-Bool_t PassDaughterPid(const femto_phi_tree::TrackRowV2& t) {
+//
+// Use this only for a PID *variation*. For the nominal, read kSelNominalPid instead: the maker
+// evaluated PassPhiDaughterTofPid on the unpacked track and stored the answer, so the flag is
+// exact, while recomputing runs the packed momentum into hard cut edges. Measured on the 5-file
+// pilot: two TPC-only K+ sit at p = 0.4999, and packing pT to 1/6000 GeV/c rounds them just past
+// the p <= pMomKaonPID = 0.5 edge, which cost one phi candidate out of 249. The shift itself is
+// harmless (1.7e-4 GeV/c); what is not harmless is letting it decide a boolean the maker already
+// decided. A variation moves the edge by far more than the quantization, so recomputing is fine
+// there.
+Bool_t RecomputeDaughterPid(const femto_phi_tree::TrackRowV2& t) {
   const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
   const Double_t p = t.P();
   const Bool_t tof = t.HasTof();
@@ -122,19 +134,46 @@ Bool_t PassDaughterPid(const femto_phi_tree::TrackRowV2& t) {
   return pass;
 }
 
+Bool_t PassDaughterPid(const femto_phi_tree::TrackRowV2& t, Bool_t recompute) {
+  if (!recompute) return (t.selFlags & femto_phi_tree::kSelNominalPid) != 0;
+  return RecomputeDaughterPid(t);
+}
+
 Bool_t PassKaonForPhi(const femto_phi_tree::TrackRowV2& t) {
   const UInt_t need = femto_phi_tree::kSelKaonCutsNom | femto_phi_tree::kSelLoosePid;
   return (t.selFlags & need) == need;
 }
 
+// StFemtoMaker.cxx:494 gates the nuclear-ID deuteron collection on
+//   nHitsDedx >= nuclearId.minNHitsDedxNuclear
+// before any PID or femtoscopy cut. That is an analysis cut, not a storage envelope: the
+// tree maker's envMinNHitsDedxNuclear only decides which rows are written, and is set
+// looser (10) than the analysis value (15) so the cut can be varied here. It therefore has
+// to be re-applied downstream, or the tree yields deuterons the maker-direct chain rejects.
+Bool_t PassNuclearDedxHits(const femto_phi_tree::TrackRowV2& t, Int_t minNHitsDedxOverride) {
+  const Int_t need = (minNHitsDedxOverride > 0)
+                         ? minNHitsDedxOverride
+                         : (Int_t)ConfigManager::GetInstance().GetNuclearIdCuts().minNHitsDedxNuclear;
+  return (Int_t)t.nHitsDedx >= need;
+}
+
+// StFemtoMaker.cxx:323 gates the whole track loop on PassTrackCuts (the `track` YAML block:
+// nHitsFit, nHits ratio, nHitsDedx, pT, eta, global DCA, chi2) before any species branch runs.
+// The tree maker records that same predicate as kSelTrackQualityNom instead of applying it, so
+// the nominal deuteron selection has to require it here; without it the tree yields deuterons
+// with chi2 or nHitsFit outside the nominal track cuts that the maker-direct chain never sees.
+// Keeping it a flag rather than an envelope is what makes the track-cut systematics
+// (nHitsFit 15/17/20, chi2 3/5, DCA 1/2/3, pT 0.15/0.2) reproducible from the tree.
 Bool_t PassDeuteronNominal(const femto_phi_tree::TrackRowV2& t) {
-  const UInt_t need = femto_phi_tree::kSelNominalPid | femto_phi_tree::kSelNominalFemto;
+  const UInt_t need = femto_phi_tree::kSelTrackQualityNom | femto_phi_tree::kSelNominalPid |
+                      femto_phi_tree::kSelNominalFemto;
   return (t.selFlags & need) == need;
 }
 
 Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, Double_t nSigmaMax,
-                             Double_t dcaMax) {
+                             Double_t dcaMax, Int_t minNHitsDedx) {
   if (t.speciesCode != femto_phi_tree::kSpeciesDeuteron) return kFALSE;
+  if (!PassNuclearDedxHits(t, minNHitsDedx)) return kFALSE;
   if (!(t.selFlags & femto_phi_tree::kSelNominalPid)) return kFALSE;
   if (nSigmaMax < 0 && dcaMax < 0) return PassDeuteronNominal(t);
   const Bool_t tightenOnly = (nSigmaMax < 0 || nSigmaMax <= 2.0) && (dcaMax < 0 || dcaMax <= 1.0);
@@ -158,7 +197,10 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
                                  const Char_t* mainconf, Int_t bufferSizeOverride = -1,
                                  const Char_t* mixingModeOverride = "bufferAll",
                                  Double_t nSigmaDeuteronMax = -1.0, Double_t dcaDeuteronMax = -1.0,
-                                 Double_t signalMin = -1.0, Double_t signalMax = -1.0) {
+                                 Double_t signalMin = -1.0, Double_t signalMax = -1.0,
+                                 Int_t minNHitsDedxNuclear = -1,
+                                 Bool_t recomputeDaughterPid = kFALSE,
+                                 Bool_t recomputeMixBin = kFALSE) {
   using namespace femto_phi_tree;
   if (!ConfigManager::GetInstance().LoadConfig(mainconf)) {
     std::cerr << "ERROR: failed to load " << mainconf << std::endl;
@@ -201,6 +243,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   ev->SetBranchAddress("cent9", &e.cent9);
   ev->SetBranchAddress("vz", &e.vz);
   ev->SetBranchAddress("psi2", &e.psi2);
+  ev->SetBranchAddress("mixBin", &e.mixBin);
 
   tr->SetBranchAddress("eventUID", &t.eventUID);
   tr->SetBranchAddress("trackIndex", &t.trackIndex);
@@ -212,6 +255,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   tr->SetBranchAddress("tofBeta", &t.tofBeta);
   tr->SetBranchAddress("dca", &t.dca);
   tr->SetBranchAddress("nHitsFit", &t.nHitsFit);
+  tr->SetBranchAddress("nHitsMax", &t.nHitsMax);
+  tr->SetBranchAddress("nHitsDedx", &t.nHitsDedx);
   tr->SetBranchAddress("selFlags", &t.selFlags);
 
   ev->GetEntry(0);
@@ -262,7 +307,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         c.p4 = TLorentzVector(p, TMath::Sqrt(kKaonMass * kKaonMass + p.Mag2()));
         if (t.speciesCode == kSpeciesKp) kp.push_back(c); else km.push_back(c);
       } else if (t.speciesCode == kSpeciesDeuteron) {
-        if (!PassDeuteronVariation(t, nSigmaDeuteronMax, dcaDeuteronMax)) continue;
+        if (!PassDeuteronVariation(t, nSigmaDeuteronMax, dcaDeuteronMax, minNHitsDedxNuclear)) continue;
         Cand c;
         c.trackIndex = t.trackIndex;
         c.mKK = 0;
@@ -277,7 +322,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       for (size_t j = 0; j < km.size(); ++j) {
         const TrackRowV2& a = kmap[kp[i].trackIndex];
         const TrackRowV2& b = kmap[km[j].trackIndex];
-        if (!PassDaughterPid(a) || !PassDaughterPid(b)) continue;
+        if (!PassDaughterPid(a, recomputeDaughterPid) || !PassDaughterPid(b, recomputeDaughterPid))
+          continue;
         TVector3 pa = Momentum(a), pb = Momentum(b);
         Double_t ea = TMath::Sqrt(kKaonMass * kKaonMass + pa.Mag2());
         Double_t eb = TMath::Sqrt(kKaonMass * kKaonMass + pb.Mag2());
@@ -319,7 +365,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       }
     }
 
-    const Int_t mixBin = MixBinOf(e.Vz(), (Int_t)e.cent9, e.Psi2());
+    const Int_t mixBin =
+        recomputeMixBin ? MixBinOf(e.Vz(), (Int_t)e.cent9, e.Psi2()) : (Int_t)e.mixBin;
     std::deque<MixEvent>& binPool = pool[mixBin];
     std::vector<MixRef> refs;
     for (size_t ib = 0; ib < binPool.size(); ++ib) {
@@ -381,12 +428,22 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   fout->cd();
   TNamed("treeFile", treeFile).Write();
   TNamed("mixingMode", mode.Data()).Write();
-  TNamed("schemaVersion", TString::Format("%u", e.schemaVersion)).Write();
-  TNamed("nSE", TString::Format("%lld", nSE)).Write();
-  TNamed("nME", TString::Format("%lld", nME)).Write();
-  TNamed("nPhi", TString::Format("%lld", nPhiTot)).Write();
-  TNamed("nD", TString::Format("%lld", nDTot)).Write();
-  TNamed("nSameEventME", TString::Format("%lld", nSameEventME)).Write();
+  TNamed("schemaVersion", TString::Format("%u", e.schemaVersion).Data()).Write();
+  TNamed("nSE", TString::Format("%lld", nSE).Data()).Write();
+  TNamed("nME", TString::Format("%lld", nME).Data()).Write();
+  TNamed("nPhi", TString::Format("%lld", nPhiTot).Data()).Write();
+  TNamed("nD", TString::Format("%lld", nDTot).Data()).Write();
+  TNamed("daughterPid", recomputeDaughterPid ? "recomputed" : "kSelNominalPid").Write();
+  TNamed("mixBinSource", recomputeMixBin ? "recomputed" : "stored").Write();
+  TNamed("minNHitsDedxNuclear",
+         TString::Format("%d", (minNHitsDedxNuclear > 0)
+                                   ? minNHitsDedxNuclear
+                                   : (Int_t)ConfigManager::GetInstance()
+                                         .GetNuclearIdCuts()
+                                         .minNHitsDedxNuclear)
+             .Data())
+      .Write();
+  TNamed("nSameEventME", TString::Format("%lld", nSameEventME).Data()).Write();
   hMkk->Write(); hKstarSE->Write(); hKstarME->Write(); hNPhi->Write(); hND->Write();
   hRejectShared->Write(); hSameEventME->Write();
   fout->Close();
