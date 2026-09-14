@@ -1,0 +1,12 @@
+# Schema 2 production-candidate tree. implementation-plan-20260913.md.
+# New maker/analysis YAML only; existing anaFemtoPhi and *_dedxOnly configs untouched.
+
+event:         cuts/event/event_auau3p85fxt_anaPhi.yaml
+track:         cuts/track/track_auau3p85fxt_anaPhi.yaml
+pid:           cuts/pid/pid_auau3p85fxt_anaPhi.yaml
+mixing:        cuts/mixing/mixing_auau3p85fxt_anaFemtoPhiTree_g5match.yaml
+centrality:    cuts/centrality/centrality_auau3p85fxt_anaPhi.yaml
+nuclearid:     cuts/nuclearid/nuclearid_auau3p85fxt_anaFemtoPhi.yaml
+
+maker:         maker/maker_auau3p85fxt_anaFemtoPhiTree_v2.yaml
+analysis:      analysis/analysis_info_auau3p85fxt_anaFemtoPhiTree_v2.yaml

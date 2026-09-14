@@ -1,0 +1,101 @@
+# Schema 2 production-candidate tree.
+# implementation-plan-20260913.md Step 0/Step 1.
+#
+# Design points this file encodes:
+#   - packed (scaled-integer) track row, schema 2
+#   - all protons stored; storage is NOT conditioned on the presence of a K- (plan sec 2.1)
+#   - loose envelope chosen so that every planned systematic variation stays reproducible
+#     from the tree alone (pilot test T3)
+#   - phi pairs and mixed pairs are not stored; they are rebuilt downstream (plan sec 2.3)
+
+rapidityFrame: lab
+sqrtSNNGeV: 3.85
+
+# ---- pair / event-plane settings reused by the phi reconstruction helpers ----
+nSigmaKaon: 3.0
+maxDCAKaon: 2.0
+maxDCAKK: 200
+useInvMassCut: false
+minOpeningAngle: 0.0
+maxOpeningAngle: 3.4
+minPairRapidity: -1.5
+maxPairRapidity:  0.0
+
+minPtEp: 0.15
+maxPtEp: 2.0
+maxEtaEp: 1.0
+maxNTr: 0
+
+protonChargeMode: positive
+protonMaxDca: 1.0
+protonMinPtPre: 0.2
+protonMinPtPair: 0.4
+protonMaxPtPair: 2.0
+protonMaxAbsEta: 2.0
+protonMaxAbsNSigma: 2.0
+protonMinNHitsFit: 15
+protonMinNHitsRatio: 0.52
+protonTofMomentumThreshold: 2.0
+protonMinMass2: 0.6
+protonMaxMass2: 1.2
+protonMinRapidityCm: -1.0
+protonMaxRapidityCm: 0.0
+
+deuteronMaxDca: 1.0
+deuteronMinPMom: 0.2
+deuteronMaxPMom: 3.0
+deuteronMinPtPre: 0.2
+deuteronMaxPtPre: 3.0
+deuteronMinPtPair: 0.4
+deuteronMaxPtPair: 3.0
+deuteronMaxAbsEta: 2.0
+deuteronMaxAbsNSigma: 2.0
+deuteronMinNHitsFit: 15
+deuteronMinNHitsRatio: 0.52
+deuteronTofMomentumThreshold: 99.0
+deuteronMinMass2: 2.5
+deuteronMaxMass2: 4.5
+deuteronMinRapidityCm: -1.0
+deuteronMaxRapidityCm: 0.0
+
+# ---- tree I/O ----
+treeSchemaVersion: 2
+treeWriteEvent: true
+treeWriteTrack: true
+treeWritePhiPair: false        # schema 2 does not support it; pairs are rebuilt downstream
+treeStoreKaons: true
+treeStoreDeuterons: true
+treeStoreProtons: true         # plan sec 3.3: unconditional, no K- gate
+treeCompressionLevel: 1        # T6: LZMA costs 3.4-4x read time for 13% size
+treeAutoFlush: 10000
+
+# ---- provenance ----
+# Recorded per event; no selection is applied on them here, so a trigger variation
+# stays possible downstream. Run21 3.85 GeV FXT bbce_tofmult triggers.
+triggerIds: [820010, 820020, 820030]
+# No dE/dx nSigma recalibration is applied anywhere in this chain yet. If one is added,
+# change this string so that trees produced before and after are distinguishable.
+pidCorrectionState: "none"
+
+# ---- loose storage envelope ----
+# Values are the loosest of every planned variation (T3). Tightening any of these
+# forecloses the corresponding systematic and requires a full re-production.
+envMinNHitsFit: 15             # variations: 15 / 17 / 20
+envMinNHitsRatio: 0.50
+envMinNHitsDedx: 10
+envMaxDca: 3.0                 # variations: 1.0 / 2.0 / 3.0
+envMinPt: 0.15                 # variations: 0.15 / 0.2
+envMaxPt: 10.0
+envMinEta: -2.0
+envMaxEta: 0.2                 # inert in this frame: FXT primaries all have eta < 0
+envMaxChi2: 5.0                # variations: 3.0 / 5.0
+envMaxAbsNSigmaKaon: 5.0       # variations: 2.0 / 2.5 / 3.0, plus pi-contamination study
+envMaxAbsNSigmaDeuteron: 5.0   # variations: 2.0 / 3.0 / 5.0
+envMaxAbsNSigmaProton: 4.0     # variations: 2.0 / 2.5 / 3.0
+envMaxDcaKaon: 3.0
+envDeuteronMaxDca: 2.0         # variations: 1.0 / 2.0
+envDeuteronMinPMom: 0.15
+envDeuteronMaxPMom: 4.0
+envProtonMaxDca: 2.0           # variations: 1.0 / 1.5 / 2.0
+envProtonMinPt: 0.15
+envMinNHitsDedxNuclear: 10

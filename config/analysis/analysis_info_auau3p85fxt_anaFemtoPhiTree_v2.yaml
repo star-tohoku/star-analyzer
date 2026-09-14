@@ -1,0 +1,43 @@
+# Analysis info for reduced ROOT tree study (independent of anaFemtoPhi_dedxOnly).
+
+starTag:
+  triggerSets: "production_3p85GeV_fixedTarget_2021"
+  stream: "st_physics"
+  collision: ""
+  year: ""
+  productionTag: "P24iy"
+  libraryTag: "SL24y"
+  filetype: "daq_reco_picoDst"
+  filenameFilter: "st_physics"
+  storageExclude: "HPSS"
+
+dataset:
+  collisionSystem: "Au+Au"
+  allPicoDstList: "picoDstList/auau3p85GeVfxt.list"
+  runRange:
+    min: 15000000
+    max: 26000000
+  goodRunList: ""
+  dataQuality: "production"
+  dataFormat: "picoDst"
+
+analysis:
+  anaName: &anaName "auau3p85fxt_anaFemtoPhiTree_v2"
+  name: *anaName
+  type: "femtoscopy-tree"
+  targetParticle: "phi"
+  decayChannel: "phi-d + phi-p + K-p tree (schema 2)"
+  workDir: "/star/u/oura/gpfs/star-analyzer"
+  logDir: "/star/u/oura/gpfs/star-analyzer/log"
+  errDir: "/star/u/oura/gpfs/star-analyzer/err"
+  baseRunMacro: "run_anaFemtoPhiTree"
+  baseAnaMacro: "anaFemtoPhiTree"
+  jobName: *anaName
+  scratchSubdir: *anaName
+  outputFileStem: *anaName
+  nFiles: 10
+
+analyst:
+  name: "Fumiya Oura"
+  institute: "JAEA"
+  email: "fumiya.oura@gmail.com"
