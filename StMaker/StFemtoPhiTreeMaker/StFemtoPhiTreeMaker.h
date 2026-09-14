@@ -71,6 +71,8 @@ class StFemtoPhiTreeMaker : public StMaker {
   femto_phi_tree::EventRowV2 mEvt2;
   femto_phi_tree::EventRowV3 mEvt3;
   femto_phi_tree::TrackRowV2 mTrk2;
+  femto_phi_tree::KaonOriginRow mKaonOrigin;
+  TTree* mKaonOriginTree;
   femto_phi_tree::PackStats mPackStats;
 
   Bool_t mWriteEvent;
@@ -79,6 +81,7 @@ class StFemtoPhiTreeMaker : public StMaker {
   Bool_t mStoreProtons;
   Bool_t mStoreDeuterons;
   Bool_t mStoreKaons;
+  Bool_t mWriteKaonOrigin;
   Int_t mCompressLevel;
   Int_t mAutoFlush;
   UInt_t mSchemaVersion;
@@ -134,6 +137,8 @@ class StFemtoPhiTreeMaker : public StMaker {
   void BookTreesV1();
   void BookTreesV2();
   void BookEventTreeV3();
+  void BookKaonOriginTree();
+  void FillKaonOriginRow(const TrackState& trk, ULong64_t eventUID, const TVector3& pVtx);
   void FillEventRowV3();
   UShort_t SourceFileIndex(const TString& path);
   void FillTriggerInfo(StPicoEvent* event);

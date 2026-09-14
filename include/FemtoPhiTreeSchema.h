@@ -260,17 +260,20 @@ struct PackStats {
   Long64_t nSigmaSentinel;  // deliberate sentinel encodings, not a failure
   // The event row gets its own counters. Sharing a track counter hides which field clipped.
   Long64_t evVertex, evQ, evMult, evCent;
+  Long64_t kaonOrigin;
   PackStats() { Reset(); }
   void Reset() {
     pT = eta = phi = dEdx = tofBeta = dca = trackIndex = nHits = 0;
     nSigmaKaon = nSigmaPion = nSigmaProton = nSigmaDeuteron = 0;
     nSigmaSentinel = 0;
     evVertex = evQ = evMult = evCent = 0;
+    kaonOrigin = 0;
   }
   // Sentinel encodings are excluded: they are intended, not truncation.
   Long64_t Total() const {
     return pT + eta + phi + dEdx + tofBeta + dca + trackIndex + nHits + nSigmaKaon +
-           nSigmaPion + nSigmaProton + nSigmaDeuteron + evVertex + evQ + evMult + evCent;
+           nSigmaPion + nSigmaProton + nSigmaDeuteron + evVertex + evQ + evMult + evCent +
+           kaonOrigin;
   }
 };
 
@@ -489,7 +492,40 @@ const Double_t kCentWeight = 10000.0;
 const Double_t kCentPercent = 100.0;
 const Double_t kQ = 100.0;
 const Double_t kPsi2 = 10000.0;
+// Helix origin of a phi-daughter kaon, stored as (origin - primary vertex). Measured worst
+// component on real data is 1.996 cm, so Short x 1e4 (+-3.2767 cm, 1e-4 cm steps) is ample.
+const Double_t kOrigin = 10000.0;
 }  // namespace escale
+
+// ---------------------------------------------------------------------------
+// Companion row: the helix origin of a phi-daughter kaon.
+//
+// The KK decay DCA needs each daughter's helix -- origin, momentum, charge, B field. Momentum and
+// charge come from the packed track row and the B field from the event row, so the origin is the
+// only missing piece, and it is only ever needed for kaons. Carrying it on every row would cost
+// +32% of the tree; carrying it for kaons alone costs +0.2%, because kaons are 0.66% of the
+// stored rows once the daughter-PID reach gate is applied.
+//
+// The origin is stored RELATIVE TO THE PRIMARY VERTEX. That is not only a packing trick: two
+// helices translated by the same vector have the same distance of closest approach, so a reader
+// can build both helices in the vertex frame and never add the vertex back. The 0.01 cm
+// quantisation of the stored vz therefore cannot reach the KK DCA at all.
+// ---------------------------------------------------------------------------
+struct KaonOriginRow {
+  ULong64_t eventUID;
+  UShort_t trackIndex;
+  Short_t originDx, originDy, originDz;
+
+  KaonOriginRow() { Reset(); }
+  void Reset() {
+    eventUID = 0;
+    trackIndex = 0;
+    originDx = originDy = originDz = 0;
+  }
+  Double_t Dx() const { return originDx / escale::kOrigin; }
+  Double_t Dy() const { return originDy / escale::kOrigin; }
+  Double_t Dz() const { return originDz / escale::kOrigin; }
+};
 
 struct EventRowV3 {
   UInt_t schemaVersion;

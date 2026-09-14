@@ -105,6 +105,8 @@ StFemtoPhiTreeMaker::StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoM
       mEnvProtonMinPt(0.15),
       mEnvMinNHitsDedxNuclear(10),
       mEnvKaonRequireDaughterPidReach(kFALSE),
+      mWriteKaonOrigin(kTRUE),
+      mKaonOriginTree(0),
       mEnvKaonMass2Lo(0.05),
       mEnvKaonMass2Hi(0.50),
       mNInput(0),
@@ -212,6 +214,7 @@ Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
   if (values.find("envProtonMaxDca") != values.end()) mEnvProtonMaxDca = YamlParser::ToDouble(values["envProtonMaxDca"], mEnvProtonMaxDca);
   if (values.find("envProtonMinPt") != values.end()) mEnvProtonMinPt = YamlParser::ToDouble(values["envProtonMinPt"], mEnvProtonMinPt);
   if (values.find("envMinNHitsDedxNuclear") != values.end()) mEnvMinNHitsDedxNuclear = YamlParser::ToInt(values["envMinNHitsDedxNuclear"], mEnvMinNHitsDedxNuclear);
+  if (values.find("treeWriteKaonOrigin") != values.end()) mWriteKaonOrigin = YamlParser::ToBool(values["treeWriteKaonOrigin"], mWriteKaonOrigin);
   if (values.find("envKaonRequireDaughterPidReach") != values.end()) mEnvKaonRequireDaughterPidReach = YamlParser::ToBool(values["envKaonRequireDaughterPidReach"], mEnvKaonRequireDaughterPidReach);
   if (values.find("envKaonMass2Lo") != values.end()) mEnvKaonMass2Lo = YamlParser::ToDouble(values["envKaonMass2Lo"], mEnvKaonMass2Lo);
   if (values.find("envKaonMass2Hi") != values.end()) mEnvKaonMass2Hi = YamlParser::ToDouble(values["envKaonMass2Hi"], mEnvKaonMass2Hi);
@@ -349,6 +352,37 @@ void StFemtoPhiTreeMaker::BookEventTreeV3() {
   mEventTree->Branch("nKm", &mEvt3.nKm, "nKm/s");
   mEventTree->Branch("nDeuteron", &mEvt3.nDeuteron, "nDeuteron/s");
   mEventTree->Branch("nProton", &mEvt3.nProton, "nProton/s");
+  BookKaonOriginTree();
+}
+
+// Companion tree: one row per stored kaon, carrying the helix origin the KK decay DCA needs.
+// Kept out of the track row because only kaons need it and they are 0.66% of stored rows --
+// on every row the same three components would cost +32% of the tree instead of +0.2%.
+void StFemtoPhiTreeMaker::BookKaonOriginTree() {
+  if (!mWriteKaonOrigin || !mStoreKaons) return;
+  mKaonOriginTree = new TTree("FemtoKaonOriginTree", "phi-daughter kaon helix origin");
+  mKaonOriginTree->SetAutoFlush(mAutoFlush);
+  mKaonOriginTree->Branch("eventUID", &mKaonOrigin.eventUID, "eventUID/l");
+  mKaonOriginTree->Branch("trackIndex", &mKaonOrigin.trackIndex, "trackIndex/s");
+  mKaonOriginTree->Branch("originDx", &mKaonOrigin.originDx, "originDx/S");
+  mKaonOriginTree->Branch("originDy", &mKaonOrigin.originDy, "originDy/S");
+  mKaonOriginTree->Branch("originDz", &mKaonOrigin.originDz, "originDz/S");
+}
+
+// Origin is stored relative to the primary vertex: two helices translated by the same vector have
+// the same distance of closest approach, so a reader works in the vertex frame and the 0.01 cm
+// quantisation of the stored vz never reaches the KK DCA.
+void StFemtoPhiTreeMaker::FillKaonOriginRow(const TrackState& trk, ULong64_t eventUID,
+                                            const TVector3& pVtx) {
+  if (!mKaonOriginTree) return;
+  using namespace femto_phi_tree;
+  mKaonOrigin.Reset();
+  mKaonOrigin.eventUID = eventUID;
+  mKaonOrigin.trackIndex = (UShort_t)trk.trackIndex;
+  mKaonOrigin.originDx = PackI16(trk.originX - pVtx.X(), escale::kOrigin, mPackStats.kaonOrigin);
+  mKaonOrigin.originDy = PackI16(trk.originY - pVtx.Y(), escale::kOrigin, mPackStats.kaonOrigin);
+  mKaonOrigin.originDz = PackI16(trk.originZ - pVtx.Z(), escale::kOrigin, mPackStats.kaonOrigin);
+  mKaonOriginTree->Fill();
 }
 
 // Pack the schema 2 event row (already filled from the event) into schema 3.
@@ -1004,11 +1038,13 @@ Int_t StFemtoPhiTreeMaker::Make() {
       if (ts.charge > 0) {
         kaonsPlus.push_back(ts);
         FillTrackTree(ts, femto_phi_tree::kSpeciesKp, eventUID);
+        FillKaonOriginRow(ts, eventUID, pVtx);
         nKp++;
         mNKp++;
       } else if (ts.charge < 0) {
         kaonsMinus.push_back(ts);
         FillTrackTree(ts, femto_phi_tree::kSpeciesKm, eventUID);
+        FillKaonOriginRow(ts, eventUID, pVtx);
         nKm++;
         mNKm++;
       }
@@ -1282,7 +1318,7 @@ Int_t StFemtoPhiTreeMaker::Finish() {
               << " nSigmaP=" << mPackStats.nSigmaProton
               << " nSigmaD=" << mPackStats.nSigmaDeuteron
               << " evVertex=" << mPackStats.evVertex << " evQ=" << mPackStats.evQ
-              << " evMult=" << mPackStats.evMult << " evCent=" << mPackStats.evCent << ")"
+              << " evMult=" << mPackStats.evMult << " evCent=" << mPackStats.evCent << " kaonOrigin=" << mPackStats.kaonOrigin << ")"
               << "  nSigmaSentinel=" << mPackStats.nSigmaSentinel << " (intended)" << std::endl;
     if (mPackStats.Total() > 0)
       std::cerr << "[StFemtoPhiTreeMaker] WARNING: packed values were saturated; a stored "
@@ -1294,6 +1330,9 @@ Int_t StFemtoPhiTreeMaker::Finish() {
     if (mEventTree) mEventTree->Write();
     if (mTrackTree) mTrackTree->Write();
     if (mPairTree) mPairTree->Write();
+    // Without this the companion loses everything after its last autoflush -- 7,877 of 37,877
+    // rows in the first run, which the reader saw only as a suspiciously round 30,000.
+    if (mKaonOriginTree) mKaonOriginTree->Write();
     WriteMetadata();
     mOutFile->Close();
     delete mOutFile;

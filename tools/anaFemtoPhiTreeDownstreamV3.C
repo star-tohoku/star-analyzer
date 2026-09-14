@@ -11,9 +11,11 @@
 //   mixBin            -> read from the tree for the nominal (the maker's own assignment) and
 //                        recomputed with the same formula on request, so the binning can still
 //                        be varied without re-reading PicoDst
-//   originX/Y/Z, bField(track) -> NOT stored. The KK decay DCA therefore cannot be computed,
-//                        so this reader refuses to run if maxDCAKK is set to an active value
-//                        instead of silently feeding the cut a garbage number.
+//   originX/Y/Z        -> carried for KAONS ONLY, in the FemtoKaonOriginTree companion, relative
+//                        to the primary vertex. That is all the KK decay DCA needs beyond the
+//                        track row, so maxDCAKK stays available. A tree written without the
+//                        companion still makes this reader refuse an active maxDCAKK rather than
+//                        feed the cut a garbage number.
 //
 // C++98 / ROOT 5 ACLiC.
 #include "TFile.h"
@@ -36,6 +38,7 @@
 #include "cuts/NuclearIdCutConfig.h"
 #include "cuts/TrackCutConfig.h"
 #include "FemtoPhiTreeSchema.h"
+#include "StPhiKKReconstruction.h"
 
 #include <deque>
 #include <iostream>
@@ -419,6 +422,31 @@ Bool_t ClosePairReject(const Cand& phi, const Cand& bach, Double_t bachEta, Doub
   return kFALSE;
 }
 
+// Build the state StPhiKKReconstruction needs from a packed row plus the companion origin. The
+// origin is stored relative to the primary vertex and is used as-is: translating both helices by
+// the same vector leaves their distance of closest approach unchanged, so the vertex is never
+// added back and its 0.01 cm quantisation cannot reach the KK DCA.
+PhiKkTrackState MakeKkState(const femto_phi_tree::TrackRowV2& t,
+                                                   const femto_phi_tree::KaonOriginRow& o,
+                                                   Float_t bField) {
+  PhiKkTrackState s;
+  s.pT = (Float_t)t.Pt();
+  s.eta = (Float_t)t.Eta();
+  s.phi = (Float_t)t.Phi();
+  s.charge = (Short_t)t.Charge();
+  s.originX = (Float_t)o.Dx();
+  s.originY = (Float_t)o.Dy();
+  s.originZ = (Float_t)o.Dz();
+  s.momentumX = (Float_t)t.Px();
+  s.momentumY = (Float_t)t.Py();
+  s.momentumZ = (Float_t)t.Pz();
+  s.BField = bField;
+  s.tofMatch = t.HasTof();
+  s.mass2 = (Float_t)t.Mass2();
+  s.deltaOneOverBeta = (Float_t)t.DeltaOneOverBeta(kKaonMass);
+  return s;
+}
+
 Bool_t SharedTrack(const Cand& phi, const Cand& d) {
   return d.trackIndex >= 0 && (d.trackIndex == phi.dau1 || d.trackIndex == phi.dau2);
 }
@@ -444,14 +472,6 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
   if (!phiCfg.FinalizeRapidityFrame(ConfigManager::GetInstance().GetCentralityCuts())) {
     std::cerr << "ERROR: FinalizeRapidityFrame failed" << std::endl;
-    return;
-  }
-  // Schema 3 does not carry the track helix origin, so the KK decay DCA cannot be formed.
-  if (phiCfg.maxDCAKK < kDcaKKDisabledAbove) {
-    std::cerr << "ERROR: maxDCAKK = " << phiCfg.maxDCAKK << " is an active cut, but schema 3 "
-              << "does not store originX/Y/Z or the track B field, so the KK DCA cannot be "
-              << "computed. Either leave the cut disabled or produce the tree with the origin "
-              << "companion fields (implementation-plan-20260913.md sec 10.5)." << std::endl;
     return;
   }
 
@@ -497,6 +517,33 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   tr->SetBranchAddress("nHitsDedx", &t.nHitsDedx);
   tr->SetBranchAddress("selFlags", &t.selFlags);
 
+  // Companion tree with the phi-daughter kaon helix origin. Absent in trees written before
+  // 2026-09-14; without it the KK DCA cannot be formed and an active maxDCAKK must be refused.
+  TTree* ko = (TTree*)fin->Get("FemtoKaonOriginTree");
+  std::map<ULong64_t, KaonOriginRow> originOf;
+  if (ko) {
+    KaonOriginRow o;
+    ko->SetBranchAddress("eventUID", &o.eventUID);
+    ko->SetBranchAddress("trackIndex", &o.trackIndex);
+    ko->SetBranchAddress("originDx", &o.originDx);
+    ko->SetBranchAddress("originDy", &o.originDy);
+    ko->SetBranchAddress("originDz", &o.originDz);
+    for (Long64_t i = 0; i < ko->GetEntries(); ++i) {
+      ko->GetEntry(i);
+      originOf[o.eventUID * 100000ull + (ULong64_t)o.trackIndex] = o;
+    }
+  }
+  const Bool_t dcaKKActive = (phiCfg.maxDCAKK < kDcaKKDisabledAbove);
+  if (dcaKKActive && !ko) {
+    std::cerr << "ERROR: maxDCAKK = " << phiCfg.maxDCAKK << " is an active cut, but this tree has "
+              << "no FemtoKaonOriginTree, so the KK DCA cannot be computed. Re-produce with "
+              << "treeWriteKaonOrigin: true, or leave the cut disabled." << std::endl;
+    return;
+  }
+  std::cout << "[downstreamV3] kaon origin rows=" << (ko ? ko->GetEntries() : 0)
+            << "  maxDCAKK=" << phiCfg.maxDCAKK << (dcaKKActive ? " (ACTIVE)" : " (off)")
+            << std::endl;
+
   ev->GetEntry(0);
   if (e.schemaVersion != kSchemaVersionV3) {
     std::cerr << "ERROR: tree is schema " << e.schemaVersion << ", this reader needs "
@@ -526,6 +573,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
                           TString::Format("nominal %s / event", kPartName[sp]), 21, -0.5, 20.5);
   }
   TH1D* hNPhi = new TH1D("hNPhi", "nominal #phi / event", 21, -0.5, 20.5);
+  TH1D* hDcaKK = new TH1D("hDcaKK", "KK decay DCA of accepted daughter pairs;DCA_{KK} (cm);pairs",
+                          200, 0.0, 20.0);
   // Removal rate of the close-pair cut, binned in k*: the quantity that says whether the cut
   // sculpts the correlation function or merely trims it.
   TH1D* hCloseSE[kNPart];
@@ -544,7 +593,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
 
   std::map<Int_t, std::deque<MixEvent> > pool;
   Long64_t nSE[kNPart] = {0, 0}, nME[kNPart] = {0, 0}, nPartTot[kNPart] = {0, 0};
-  Long64_t nShared = 0, nPhiTot = 0, nSameEventME = 0;
+  Long64_t nShared = 0, nPhiTot = 0, nSameEventME = 0, nDcaKKReject = 0, nNoOrigin = 0;
   const Long64_t nEv = ev->GetEntries();
   const Int_t maxMixed = mix.maxMixedPairsPerEvent;
   TRandom3 rng(1);
@@ -597,6 +646,19 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         if (!PassDaughterPid(a, var, recomputeDaughterPid) ||
             !PassDaughterPid(b, var, recomputeDaughterPid))
           continue;
+        if (dcaKKActive) {
+          std::map<ULong64_t, KaonOriginRow>::const_iterator ia =
+              originOf.find(e.eventUID * 100000ull + (ULong64_t)a.trackIndex);
+          std::map<ULong64_t, KaonOriginRow>::const_iterator ib =
+              originOf.find(e.eventUID * 100000ull + (ULong64_t)b.trackIndex);
+          if (ia == originOf.end() || ib == originOf.end()) { ++nNoOrigin; continue; }
+          TVector3 dcaPosA, dcaPosB;
+          const Double_t dcaKK = StPhiKKReconstruction::CalculateDCA(
+              MakeKkState(a, ia->second, e.bField), MakeKkState(b, ib->second, e.bField), dcaPosA,
+              dcaPosB);
+          hDcaKK->Fill(dcaKK);
+          if (dcaKK > phiCfg.maxDCAKK) { ++nDcaKKReject; continue; }
+        }
         TVector3 pa = Momentum(a), pb = Momentum(b);
         Double_t ea = TMath::Sqrt(kKaonMass * kKaonMass + pa.Mag2());
         Double_t eb = TMath::Sqrt(kKaonMass * kKaonMass + pb.Mag2());
@@ -740,7 +802,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
     std::cout << "[downstreamV3]   phi-" << kPartName[sp] << ": n=" << nPartTot[sp]
               << " SE=" << nSE[sp] << " ME=" << nME[sp] << std::endl;
   }
-  std::cout << "[downstreamV3] shared=" << nShared << " sameEventME=" << nSameEventME << std::endl;
+  std::cout << "[downstreamV3] shared=" << nShared << " sameEventME=" << nSameEventME
+            << " dcaKKReject=" << nDcaKKReject << " noOrigin=" << nNoOrigin << std::endl;
   if (femtoCfg.closePairEnabled) {
     for (Int_t sp = 0; sp < kNPart; ++sp) {
       const Double_t fse = (nSE[sp] + nCloseSE[sp]) > 0
@@ -769,6 +832,10 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
          (recomputeDaughterPid || var.anyPid) ? "recomputed" : "kSelNominalPid")
       .Write();
   TNamed("mixBinSource", recomputeMixBin ? "recomputed" : "stored").Write();
+  TNamed("maxDCAKK", TString::Format("%.3f%s", phiCfg.maxDCAKK,
+                                     dcaKKActive ? " (active)" : " (off)")
+                         .Data())
+      .Write();
   TNamed("closePair",
          femtoCfg.closePairEnabled
              ? TString::Format("%s dEtaD=%.3f dPhiD=%.3f dEtaP=%.3f dPhiP=%.3f r=%.2f-%.2f/%.2f",
@@ -789,6 +856,7 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       .Write();
   TNamed("nSameEventME", TString::Format("%lld", nSameEventME).Data()).Write();
   hMkk->Write();
+  hDcaKK->Write();
   hNPhi->Write();
   for (Int_t sp = 0; sp < kNPart; ++sp) {
     hKstarSE[sp]->Write();

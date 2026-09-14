@@ -68,6 +68,11 @@ treeStoreDeuterons: true
 treeStoreProtons: true         # plan sec 3.3: unconditional, no K- gate
 treeCompressionLevel: 1        # T6: LZMA costs 3.4-4x read time for 13% size
 treeAutoFlush: 10000
+# Companion tree with the phi-daughter kaon helix origin, so the maxDCAKK systematic stays
+# available. Measured cost +0.211% of the tree (1.8984 -> 1.9021 TB): the KK DCA is a phi-daughter
+# quantity, and kaons are 0.66% of stored rows once the daughter-PID reach gate is applied. On
+# every row the same three components would cost +32%. Decision log, 2026-09-14.
+treeWriteKaonOrigin: true
 
 # ---- provenance ----
 # Recorded per event; no selection is applied on them here, so a trigger variation
