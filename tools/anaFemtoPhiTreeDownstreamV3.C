@@ -42,6 +42,12 @@
 namespace {
 const Double_t kKaonMass = 0.493677;
 const Double_t kDeuteronMass = 1.875612;
+const Double_t kProtonMass = 0.938272;
+
+// Bachelor species paired against the phi. Index order is fixed and used for the histogram
+// and counter arrays below.
+enum { kPartDeuteron = 0, kPartProton = 1, kNPart = 2 };
+const Char_t* const kPartName[kNPart] = {"deuteron", "proton"};
 // A physical KK decay DCA is a fraction of a cm; anything at or above this means the cut was
 // deliberately parked in the "off" position.
 const Double_t kDcaKKDisabledAbove = 50.0;
@@ -57,7 +63,7 @@ struct Cand {
 struct MixEvent {
   ULong64_t eventUID;
   std::vector<Cand> phis;
-  std::vector<Cand> deuterons;
+  std::vector<Cand> part[kNPart];
 };
 
 struct MixRef { size_t ib; Int_t reverse; size_t i; size_t j; };
@@ -188,6 +194,18 @@ Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, Double_t nSigm
   return (t.selFlags & femto_phi_tree::kSelTrackQualityNom) ? kTRUE : kFALSE;
 }
 
+// StFemtoMaker reaches the proton collection through PassProtonCuts, which begins with the same
+// PassTrackCuts gate the deuteron branch inherits, then |nSigmaProton| <= pid.nSigmaProton and
+// IsProton (= PassTofProtonPid); the charge mode and the pT / rapidity windows live inside
+// PassFemtoProtonCuts. The tree maker records exactly that split across the three flags below, so
+// the nominal proton is the same triple as the nominal deuteron. There is no nuclear-ID dE/dx hit
+// requirement on this path.
+Bool_t PassProtonNominal(const femto_phi_tree::TrackRowV2& t) {
+  const UInt_t need = femto_phi_tree::kSelTrackQualityNom | femto_phi_tree::kSelNominalPid |
+                      femto_phi_tree::kSelNominalFemto;
+  return (t.selFlags & need) == need;
+}
+
 Bool_t SharedTrack(const Cand& phi, const Cand& d) {
   return d.trackIndex >= 0 && (d.trackIndex == phi.dau1 || d.trackIndex == phi.dau2);
 }
@@ -276,22 +294,32 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
 
   TFile* fout = new TFile(outFile, "RECREATE");
   TH1D* hMkk = new TH1D("hMkk", "M_{KK};M_{KK} (GeV/c^{2});counts", 80, 0.98, 1.06);
-  TH1D* hKstarSE = new TH1D("hKstarSE_phi_deuteron_signal", "SE k*;k* (GeV/c);counts", 50, 0.0, 1.0);
-  TH1D* hKstarME = new TH1D("hKstarME_phi_deuteron_signal", "ME k*;k* (GeV/c);counts", 50, 0.0, 1.0);
+  TH1D* hKstarSE[kNPart];
+  TH1D* hKstarME[kNPart];
+  TH1D* hNPart[kNPart];
+  for (Int_t sp = 0; sp < kNPart; ++sp) {
+    hKstarSE[sp] = new TH1D(TString::Format("hKstarSE_phi_%s_signal", kPartName[sp]),
+                            "SE k*;k* (GeV/c);counts", 50, 0.0, 1.0);
+    hKstarME[sp] = new TH1D(TString::Format("hKstarME_phi_%s_signal", kPartName[sp]),
+                            "ME k*;k* (GeV/c);counts", 50, 0.0, 1.0);
+    hNPart[sp] = new TH1D(TString::Format("hN%s", kPartName[sp]),
+                          TString::Format("nominal %s / event", kPartName[sp]), 21, -0.5, 20.5);
+  }
   TH1D* hNPhi = new TH1D("hNPhi", "nominal #phi / event", 21, -0.5, 20.5);
-  TH1D* hND = new TH1D("hND", "nominal d / event", 21, -0.5, 20.5);
   TH1D* hRejectShared = new TH1D("hRejectShared", "shared-track rejects", 2, -0.5, 1.5);
   TH1D* hSameEventME = new TH1D("hSameEventME", "ME pairs from same eventUID (must be 0)", 2, -0.5, 1.5);
 
   std::map<Int_t, std::deque<MixEvent> > pool;
-  Long64_t nSE = 0, nME = 0, nShared = 0, nPhiTot = 0, nDTot = 0, nSameEventME = 0;
+  Long64_t nSE[kNPart] = {0, 0}, nME[kNPart] = {0, 0}, nPartTot[kNPart] = {0, 0};
+  Long64_t nShared = 0, nPhiTot = 0, nSameEventME = 0;
   const Long64_t nEv = ev->GetEntries();
   const Int_t maxMixed = mix.maxMixedPairsPerEvent;
   TRandom3 rng(1);
 
   for (Long64_t ie = 0; ie < nEv; ++ie) {
     ev->GetEntry(ie);
-    std::vector<Cand> kp, km, deuterons, phis;
+    std::vector<Cand> kp, km, phis;
+    std::vector<Cand> part[kNPart];
     std::map<Int_t, TrackRowV2> kmap;
     const std::vector<Long64_t>& idxs = tracksByEvent[e.eventUID];
     for (size_t k = 0; k < idxs.size(); ++k) {
@@ -314,7 +342,16 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         c.dau1 = c.dau2 = -1;
         TVector3 p = Momentum(t);
         c.p4 = TLorentzVector(p, TMath::Sqrt(kDeuteronMass * kDeuteronMass + p.Mag2()));
-        deuterons.push_back(c);
+        part[kPartDeuteron].push_back(c);
+      } else if (t.speciesCode == kSpeciesProton) {
+        if (!PassProtonNominal(t)) continue;
+        Cand c;
+        c.trackIndex = t.trackIndex;
+        c.mKK = 0;
+        c.dau1 = c.dau2 = -1;
+        TVector3 p = Momentum(t);
+        c.p4 = TLorentzVector(p, TMath::Sqrt(kProtonMass * kProtonMass + p.Mag2()));
+        part[kPartProton].push_back(c);
       }
     }
 
@@ -352,87 +389,109 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         nPhiTot++;
       }
     }
-    nDTot += deuterons.size();
     hNPhi->Fill(phis.size());
-    hND->Fill(deuterons.size());
+    for (Int_t sp = 0; sp < kNPart; ++sp) {
+      nPartTot[sp] += part[sp].size();
+      hNPart[sp]->Fill(part[sp].size());
+    }
 
-    for (size_t i = 0; i < phis.size(); ++i) {
-      if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
-      for (size_t j = 0; j < deuterons.size(); ++j) {
-        if (SharedTrack(phis[i], deuterons[j])) { nShared++; hRejectShared->Fill(1); continue; }
-        hKstarSE->Fill(KStar(phis[i].p4, deuterons[j].p4));
-        nSE++;
+    for (Int_t sp = 0; sp < kNPart; ++sp) {
+      for (size_t i = 0; i < phis.size(); ++i) {
+        if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
+        for (size_t j = 0; j < part[sp].size(); ++j) {
+          if (SharedTrack(phis[i], part[sp][j])) { nShared++; hRejectShared->Fill(1); continue; }
+          hKstarSE[sp]->Fill(KStar(phis[i].p4, part[sp][j].p4));
+          nSE[sp]++;
+        }
       }
     }
 
     const Int_t mixBin =
         recomputeMixBin ? MixBinOf(e.Vz(), (Int_t)e.cent9, e.Psi2()) : (Int_t)e.mixBin;
     std::deque<MixEvent>& binPool = pool[mixBin];
-    std::vector<MixRef> refs;
-    for (size_t ib = 0; ib < binPool.size(); ++ib) {
-      const MixEvent& buf = binPool[ib];
-      for (size_t i = 0; i < phis.size(); ++i) {
-        if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
-        for (size_t j = 0; j < buf.deuterons.size(); ++j) {
-          MixRef r; r.ib = ib; r.reverse = 0; r.i = i; r.j = j; refs.push_back(r);
+    // The bachelor species share the event pool but never share a pair, so the sampling is done
+    // per species: with maxMixedPairsPerEvent set, each species gets its own cap, exactly as the
+    // maker draws separately per channel.
+    for (Int_t sp = 0; sp < kNPart; ++sp) {
+      std::vector<MixRef> refs;
+      for (size_t ib = 0; ib < binPool.size(); ++ib) {
+        const MixEvent& buf = binPool[ib];
+        for (size_t i = 0; i < phis.size(); ++i) {
+          if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
+          for (size_t j = 0; j < buf.part[sp].size(); ++j) {
+            MixRef r; r.ib = ib; r.reverse = 0; r.i = i; r.j = j; refs.push_back(r);
+          }
         }
-      }
-      if (mix.mixBothDirections) {
-        for (size_t i = 0; i < buf.phis.size(); ++i) {
-          if (buf.phis[i].mKK < sigMin || buf.phis[i].mKK > sigMax) continue;
-          for (size_t j = 0; j < deuterons.size(); ++j) {
-            MixRef r; r.ib = ib; r.reverse = 1; r.i = i; r.j = j; refs.push_back(r);
+        if (mix.mixBothDirections) {
+          for (size_t i = 0; i < buf.phis.size(); ++i) {
+            if (buf.phis[i].mKK < sigMin || buf.phis[i].mKK > sigMax) continue;
+            for (size_t j = 0; j < part[sp].size(); ++j) {
+              MixRef r; r.ib = ib; r.reverse = 1; r.i = i; r.j = j; refs.push_back(r);
+            }
           }
         }
       }
-    }
 
-    std::vector<size_t> pick;
-    const Bool_t isRandom = (mode == "randomSample");
-    if (!isRandom || maxMixed <= 0 || (Int_t)refs.size() <= maxMixed) {
-      for (size_t ir = 0; ir < refs.size(); ++ir) pick.push_back(ir);
-    } else {
-      std::vector<size_t> all;
-      for (size_t ir = 0; ir < refs.size(); ++ir) all.push_back(ir);
-      for (Int_t n = 0; n < maxMixed && !all.empty(); ++n) {
-        size_t k = (size_t)(rng.Rndm() * all.size());
-        if (k >= all.size()) k = all.size() - 1;
-        pick.push_back(all[k]);
-        all.erase(all.begin() + k);
+      std::vector<size_t> pick;
+      const Bool_t isRandom = (mode == "randomSample");
+      if (!isRandom || maxMixed <= 0 || (Int_t)refs.size() <= maxMixed) {
+        for (size_t ir = 0; ir < refs.size(); ++ir) pick.push_back(ir);
+      } else {
+        std::vector<size_t> all;
+        for (size_t ir = 0; ir < refs.size(); ++ir) all.push_back(ir);
+        for (Int_t n = 0; n < maxMixed && !all.empty(); ++n) {
+          size_t k = (size_t)(rng.Rndm() * all.size());
+          if (k >= all.size()) k = all.size() - 1;
+          pick.push_back(all[k]);
+          all.erase(all.begin() + k);
+        }
+      }
+      for (size_t ip = 0; ip < pick.size(); ++ip) {
+        const MixRef& r = refs[pick[ip]];
+        const MixEvent& buf = binPool[r.ib];
+        if (buf.eventUID == e.eventUID) { nSameEventME++; hSameEventME->Fill(1); continue; }
+        const Cand& A = r.reverse ? buf.phis[r.i] : phis[r.i];
+        const Cand& B = r.reverse ? part[sp][r.j] : buf.part[sp][r.j];
+        hKstarME[sp]->Fill(KStar(A.p4, B.p4));
+        nME[sp]++;
       }
     }
-    for (size_t ip = 0; ip < pick.size(); ++ip) {
-      const MixRef& r = refs[pick[ip]];
-      const MixEvent& buf = binPool[r.ib];
-      if (buf.eventUID == e.eventUID) { nSameEventME++; hSameEventME->Fill(1); continue; }
-      const Cand& A = r.reverse ? buf.phis[r.i] : phis[r.i];
-      const Cand& B = r.reverse ? deuterons[r.j] : buf.deuterons[r.j];
-      hKstarME->Fill(KStar(A.p4, B.p4));
-      nME++;
-    }
 
-    if (!phis.empty() || !deuterons.empty()) {
+    // Every accepted event enters the pool, including ones with no phi and no bachelor.
+    // StFemtoMaker::StoreEventForMixing guards only on m_eventCandidates.empty(), and
+    // m_eventCandidates[speciesKey] inserts a key for every enabled species on every event, so
+    // that guard never fires. An empty event contributes no pairs but still occupies a buffer
+    // slot and evicts an older one, and 18.7% of events here have no nominal deuteron, so
+    // skipping them would give the downstream a different buffer than the maker.
+    {
       MixEvent me;
       me.eventUID = e.eventUID;
       me.phis = phis;
-      me.deuterons = deuterons;
+      for (Int_t sp = 0; sp < kNPart; ++sp) me.part[sp] = part[sp];
       binPool.push_back(me);
       if ((Int_t)binPool.size() > bufferSize) binPool.pop_front();
     }
   }
 
-  std::cout << "[downstreamV3] events=" << nEv << " phi=" << nPhiTot << " d=" << nDTot
-            << " SE=" << nSE << " ME=" << nME << " shared=" << nShared
-            << " sameEventME=" << nSameEventME << std::endl;
+  std::cout << "[downstreamV3] events=" << nEv << " phi=" << nPhiTot << std::endl;
+  for (Int_t sp = 0; sp < kNPart; ++sp) {
+    std::cout << "[downstreamV3]   phi-" << kPartName[sp] << ": n=" << nPartTot[sp]
+              << " SE=" << nSE[sp] << " ME=" << nME[sp] << std::endl;
+  }
+  std::cout << "[downstreamV3] shared=" << nShared << " sameEventME=" << nSameEventME
+            << std::endl;
 
   fout->cd();
   TNamed("treeFile", treeFile).Write();
   TNamed("mixingMode", mode.Data()).Write();
   TNamed("schemaVersion", TString::Format("%u", e.schemaVersion).Data()).Write();
-  TNamed("nSE", TString::Format("%lld", nSE).Data()).Write();
-  TNamed("nME", TString::Format("%lld", nME).Data()).Write();
+  TNamed("nSE", TString::Format("%lld", nSE[kPartDeuteron]).Data()).Write();
+  TNamed("nME", TString::Format("%lld", nME[kPartDeuteron]).Data()).Write();
+  TNamed("nSEProton", TString::Format("%lld", nSE[kPartProton]).Data()).Write();
+  TNamed("nMEProton", TString::Format("%lld", nME[kPartProton]).Data()).Write();
+  TNamed("nP", TString::Format("%lld", nPartTot[kPartProton]).Data()).Write();
   TNamed("nPhi", TString::Format("%lld", nPhiTot).Data()).Write();
-  TNamed("nD", TString::Format("%lld", nDTot).Data()).Write();
+  TNamed("nD", TString::Format("%lld", nPartTot[kPartDeuteron]).Data()).Write();
   TNamed("daughterPid", recomputeDaughterPid ? "recomputed" : "kSelNominalPid").Write();
   TNamed("mixBinSource", recomputeMixBin ? "recomputed" : "stored").Write();
   TNamed("minNHitsDedxNuclear",
@@ -444,7 +503,13 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
              .Data())
       .Write();
   TNamed("nSameEventME", TString::Format("%lld", nSameEventME).Data()).Write();
-  hMkk->Write(); hKstarSE->Write(); hKstarME->Write(); hNPhi->Write(); hND->Write();
+  hMkk->Write();
+  hNPhi->Write();
+  for (Int_t sp = 0; sp < kNPart; ++sp) {
+    hKstarSE[sp]->Write();
+    hKstarME[sp]->Write();
+    hNPart[sp]->Write();
+  }
   hRejectShared->Write(); hSameEventME->Write();
   fout->Close();
   fin->Close();

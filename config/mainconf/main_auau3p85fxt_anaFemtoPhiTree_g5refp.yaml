@@ -1,0 +1,13 @@
+# Proton / K-p closure reference: StFemtoMaker with proton + phi-daughter-kaon species on.
+# New anaName / maker copy / mixing copy only. Does not change *_dedxOnly.
+
+event:         cuts/event/event_auau3p85fxt_anaPhi.yaml
+track:         cuts/track/track_auau3p85fxt_anaPhi.yaml
+pid:           cuts/pid/pid_auau3p85fxt_anaPhi.yaml
+mixing:        cuts/mixing/mixing_auau3p85fxt_anaFemtoPhiTree_g5match.yaml
+centrality:    cuts/centrality/centrality_auau3p85fxt_anaPhi.yaml
+nuclearid:     cuts/nuclearid/nuclearid_auau3p85fxt_anaFemtoPhi.yaml
+
+maker:         maker/maker_auau3p85fxt_anaFemtoPhiTree_g5refp.yaml
+hist:          hist/hist_anaFemtoPhi.yaml
+analysis:      analysis/analysis_info_auau3p85fxt_anaFemtoPhiTree_g5ref.yaml
