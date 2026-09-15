@@ -21,6 +21,8 @@
 #include "TFile.h"
 #include "TTree.h"
 #include "TH1D.h"
+#include "TH2D.h"
+#include "TH3F.h"
 #include "TLorentzVector.h"
 #include "TVector3.h"
 #include "TMath.h"
@@ -39,6 +41,8 @@
 #include "cuts/TrackCutConfig.h"
 #include "FemtoPhiTreeSchema.h"
 #include "FemtoFlagConfigSnapshot.h"
+#include "FemtoMixingSampler.h"
+#include "FemtoPhiMixSampler.h"
 #include "StPhiKKReconstruction.h"
 #include "StNuclearIdHelper.h"
 
@@ -81,6 +85,24 @@ Int_t PartOfSpeciesCode(UChar_t code) {
     default:                               return -1;
   }
 }
+// Species that can sit on the A side of a channel: the phi and its two backgrounds, and the two
+// phi-daughter kaon species that carry the h-K correlations. The maker builds each of these into
+// m_eventCandidates under exactly these keys, and a channel names one of them as partA.
+enum { kAPhi = 0, kAPhiRot = 1, kAPhiMix = 2, kAKPlus = 3, kAKMinus = 4, kNA = 5 };
+const Char_t* const kAName[kNA] = {"phi", "phi_rot", "phi_mix", "phikaon_plus", "phikaon_minus"};
+
+Int_t AOfKey(const std::string& key) {
+  for (Int_t i = 0; i < kNA; ++i)
+    if (key == kAName[i]) return i;
+  return -1;
+}
+
+Int_t BOfKey(const std::string& key) {
+  for (Int_t i = 0; i < kNPart; ++i)
+    if (key == kPartName[i]) return i;
+  return -1;
+}
+
 // A physical KK decay DCA is a fraction of a cm; anything at or above this means the cut was
 // deliberately parked in the "off" position.
 const Double_t kDcaKKDisabledAbove = 50.0;
@@ -89,8 +111,12 @@ struct Cand {
   Int_t trackIndex;
   TLorentzVector p4;
   Float_t mKK;
-  Int_t dau1;
-  Int_t dau2;
+  // Constituent tracks, as (event, index) pairs: one for a single track, two for a KK pair. The
+  // event has to travel with the index because a fully-mixed phi takes its daughters from two
+  // different events, and there an index alone is not an identity (FemtoCandidatesShareTrack).
+  Int_t nCon;
+  ULong64_t conEv[2];
+  Int_t conIdx[2];
   // daughter kinematics, kept so the close-pair cut can work on the tracks that actually
   // interfere in the TPC rather than on the reconstructed phi
   Double_t dEta[2], dPhi[2], dPt[2];
@@ -98,12 +124,48 @@ struct Cand {
   // single-track kinematics, for a bachelor
   Double_t tEta, tPhi, tPt;
   Short_t tCharge;
+
+  void Reset() {
+    trackIndex = -1;
+    mKK = 0;
+    nCon = 0;
+    for (Int_t i = 0; i < 2; ++i) {
+      conEv[i] = 0; conIdx[i] = -1;
+      dEta[i] = 0; dPhi[i] = 0; dPt[i] = -1; dCharge[i] = 0;
+    }
+    tEta = 0; tPhi = 0; tPt = -1; tCharge = 0;
+  }
+  void AddCon(ULong64_t ev, Int_t idx) {
+    if (nCon < 2) { conEv[nCon] = ev; conIdx[nCon] = idx; ++nCon; }
+  }
+};
+
+// One channel of the maker's channel list, with the histograms it owns. Driving the downstream
+// from femtoCfg.channels rather than from a second hard-coded list is what keeps the histogram
+// names, the mass windows and the A x B combinations identical to the maker's by construction.
+struct ChanHists {
+  TString name;
+  Int_t ia, ib;
+  Bool_t resonance;
+  Double_t mLo, mHi;
+  TH1D* se;
+  TH1D* me;
+  TH2D* seCent;
+  TH2D* meCent;
+  TH3F* mkkSE;
+  TH3F* mkkME;
+  TH3F* mkkSEWide;
+  TH3F* mkkMEWide;
+  TH1D* closeSE;
+  TH1D* closeME;
+  Long64_t nSE, nME, nCloseSE, nCloseME, nShared;
 };
 
 struct MixEvent {
   ULong64_t eventUID;
   Double_t bField;
-  std::vector<Cand> phis;
+  Int_t cent9;
+  std::vector<Cand> a[kNA];
   std::vector<Cand> part[kNPart];
 };
 
@@ -632,9 +694,90 @@ Int_t CheckFlagConfig(TFile* fin) {
   return (Int_t)(inconsistent.size() + diff.size());
 }
 
-Bool_t SharedTrack(const Cand& phi, const Cand& d) {
-  return d.trackIndex >= 0 && (d.trackIndex == phi.dau1 || d.trackIndex == phi.dau2);
+// The maker's FemtoCandidatesShareTrack: two candidates overlap when they have a constituent
+// track in common, compared as (event, index).
+Bool_t SharedTrack(const Cand& a, const Cand& b) {
+  for (Int_t i = 0; i < a.nCon; ++i)
+    for (Int_t j = 0; j < b.nCon; ++j)
+      if (a.conIdx[i] >= 0 && a.conIdx[i] == b.conIdx[j] && a.conEv[i] == b.conEv[j]) return kTRUE;
+  return kFALSE;
 }
+
+// phi_rot / phi_mix / phikaon_* all reach the close-pair cut through the same daughter slots, so
+// the window choice keys on the bachelor, not on the A species.
+const std::string WideMkkSuffix(const std::string& channelName) {
+  const std::string sig = "_signal";
+  if (channelName.size() > sig.size() &&
+      channelName.compare(channelName.size() - sig.size(), sig.size(), sig) == 0)
+    return channelName.substr(0, channelName.size() - sig.size()) + "_wide";
+  if (channelName.compare(0, 8, "phi_rot_") == 0 || channelName.compare(0, 8, "phi_mix_") == 0)
+    return channelName + "_wide";
+  return "";
+}
+// Evaluator for the fully-mixed KK background, handed to the maker's own
+// femto_phi_mix::SampleEligiblePairs so that the cap, the without-replacement draw and the flat
+// index numbering are the maker's and not a second implementation. A functor rather than a
+// lambda, to keep the file compilable as C++98.
+struct MixKKEval {
+  const std::vector<Cand>* curKp;
+  const std::vector<Cand>* curKm;
+  const std::vector<Cand>* bufKp;   // indexed by pool event
+  const std::vector<Cand>* bufKm;
+  const ULong64_t* bufUID;
+  size_t nPool;
+  ULong64_t curUID;
+  PhiCutConfig* phiCfg;
+  std::vector<Cand>* out;
+
+  femto_phi_mix::EvalStatus operator()(femto_phi_mix::PairCount,
+                                       const femto_mixing::PairReference& ref) const {
+    if (ref.poolEventIndex >= nPool) return femto_phi_mix::kEvalResolveFail;
+    const Cand* kpC = 0;
+    const Cand* kmC = 0;
+    ULong64_t evP = 0, evM = 0;
+    if (!ref.reverse) {
+      if (ref.firstIndex >= curKp->size() || ref.secondIndex >= bufKm[ref.poolEventIndex].size())
+        return femto_phi_mix::kEvalResolveFail;
+      kpC = &(*curKp)[ref.firstIndex];
+      kmC = &bufKm[ref.poolEventIndex][ref.secondIndex];
+      evP = curUID;
+      evM = bufUID[ref.poolEventIndex];
+    } else {
+      if (ref.firstIndex >= bufKp[ref.poolEventIndex].size() || ref.secondIndex >= curKm->size())
+        return femto_phi_mix::kEvalResolveFail;
+      kpC = &bufKp[ref.poolEventIndex][ref.firstIndex];
+      kmC = &(*curKm)[ref.secondIndex];
+      evP = bufUID[ref.poolEventIndex];
+      evM = curUID;
+    }
+    const TLorentzVector pKK = kpC->p4 + kmC->p4;
+    const Double_t invMass = pKK.M();
+    if (invMass <= 0.0) return femto_phi_mix::kEvalReject;
+    const TVector3 pPlus = kpC->p4.Vect();
+    const TVector3 pMinus = kmC->p4.Vect();
+    const Double_t opening = pPlus.Angle(pMinus);
+    const TVector3 phiMom = pKK.Vect();
+    const Double_t etot = kpC->p4.E() + kmC->p4.E();
+    const Double_t pz = phiMom.Z();
+    const Double_t yLab = 0.5 * TMath::Log((etot + pz) / (etot - pz));
+    const Double_t yPair = phiCfg->ApplyAnalysisRapidity(yLab);
+    if (opening < phiCfg->minOpeningAngle || opening > phiCfg->maxOpeningAngle)
+      return femto_phi_mix::kEvalReject;
+    if (yPair < phiCfg->minPairRapidity || yPair > phiCfg->maxPairRapidity)
+      return femto_phi_mix::kEvalReject;
+    Cand c;
+    c.Reset();
+    c.AddCon(evP, kpC->trackIndex);
+    c.AddCon(evM, kmC->trackIndex);
+    c.mKK = (Float_t)invMass;
+    c.p4 = TLorentzVector(phiMom, TMath::Sqrt(invMass * invMass + phiMom.Mag2()));
+    c.dEta[0] = kpC->tEta; c.dPhi[0] = kpC->tPhi; c.dPt[0] = kpC->tPt; c.dCharge[0] = kpC->tCharge;
+    c.dEta[1] = kmC->tEta; c.dPhi[1] = kmC->tPhi; c.dPt[1] = kmC->tPt; c.dCharge[1] = kmC->tCharge;
+    out->push_back(c);
+    return femto_phi_mix::kEvalAccept;
+  }
+};
+
 }  // namespace
 
 void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
@@ -664,11 +807,8 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
   const Int_t bufferSize = (bufferSizeOverride > 0) ? bufferSizeOverride : mix.bufferSize;
   TString mode = mixingModeOverride ? mixingModeOverride : mix.mixingMode.c_str();
-  Double_t sigMin = 1.012, sigMax = 1.026;
-  const FemtoConfig::ChannelDef* ch = femtoCfg.FindChannel("phi_deuteron_signal");
-  if (ch) { sigMin = ch->signalMin; sigMax = ch->signalMax; }
-  if (signalMin > 0) sigMin = signalMin;
-  if (signalMax > 0) sigMax = signalMax;
+  // The mass window now comes from each channel's own definition; signalMin / signalMax on the
+  // command line override it for the phi channels only (see the channel table below).
 
   TFile* fin = TFile::Open(treeFile, "READ");
   if (!fin || fin->IsZombie()) { std::cerr << "ERROR: cannot open " << treeFile << std::endl; return; }
@@ -748,49 +888,139 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
 
   TFile* fout = new TFile(outFile, "RECREATE");
   TH1D* hMkk = new TH1D("hMkk", "M_{KK};M_{KK} (GeV/c^{2});counts", 80, 0.98, 1.06);
-  TH1D* hKstarSE[kNPart];
-  TH1D* hKstarME[kNPart];
+  // Same name and binning as the maker's own rotated-background QA, so the two M(KK) shapes can
+  // be compared directly. The rotated background cannot be reproduced pair for pair -- the maker
+  // draws its angles from gRandom and a reader cannot replay that stream -- so this distribution
+  // and the candidate count are what the closure has to rest on.
+  TH1D* hPhiRotMkk = new TH1D("hPhiRot_MKK", "rotated #phi M_{KK};M_{KK} (GeV/c^{2});counts",
+                              200, 0.98, 1.18);
   TH1D* hNPart[kNPart];
   for (Int_t sp = 0; sp < kNPart; ++sp) {
-    hKstarSE[sp] = new TH1D(TString::Format("hKstarSE_phi_%s_signal", kPartName[sp]),
-                            "SE k*;k* (GeV/c);counts", 50, 0.0, 1.0);
-    hKstarME[sp] = new TH1D(TString::Format("hKstarME_phi_%s_signal", kPartName[sp]),
-                            "ME k*;k* (GeV/c);counts", 50, 0.0, 1.0);
     // 0-100, not 0-20: the proton multiplicity runs past 20 per event and a saturated axis
     // makes the histogram unusable as a candidate-count cross-check.
-    hNPart[sp] = new TH1D(TString::Format("hN%s", kPartName[sp]),
-                          TString::Format("nominal %s / event", kPartName[sp]), 101, -0.5, 100.5);
+    hNPart[sp] = new TH1D(TString::Format("hN%s", kPartName[sp]).Data(),
+                          TString::Format("nominal %s / event", kPartName[sp]).Data(), 101, -0.5,
+                          100.5);
+  }
+  TH1D* hNA[kNA];
+  for (Int_t ia = 0; ia < kNA; ++ia) {
+    hNA[ia] = new TH1D(TString::Format("hNA_%s", kAName[ia]).Data(),
+                       TString::Format("%s candidates / event", kAName[ia]).Data(), 201, -0.5,
+                       200.5);
   }
   TH1D* hNPhi = new TH1D("hNPhi", "nominal #phi / event", 21, -0.5, 20.5);
   TH1D* hDcaKK = new TH1D("hDcaKK", "KK decay DCA of accepted daughter pairs;DCA_{KK} (cm);pairs",
                           200, 0.0, 20.0);
-  // Removal rate of the close-pair cut, binned in k*: the quantity that says whether the cut
-  // sculpts the correlation function or merely trims it.
-  TH1D* hCloseSE[kNPart];
-  TH1D* hCloseME[kNPart];
-  for (Int_t sp = 0; sp < kNPart; ++sp) {
-    hCloseSE[sp] = new TH1D(TString::Format("hClosePairRejectSE_phi_%s", kPartName[sp]),
-                            "SE pairs removed by the close-pair cut;k* (GeV/c);pairs", 50, 0.0,
-                            1.0);
-    hCloseME[sp] = new TH1D(TString::Format("hClosePairRejectME_phi_%s", kPartName[sp]),
-                            "ME pairs removed by the close-pair cut;k* (GeV/c);pairs", 50, 0.0,
-                            1.0);
-  }
-  Long64_t nCloseSE[kNPart] = {0}, nCloseME[kNPart] = {0};
   TH1D* hRejectShared = new TH1D("hRejectShared", "shared-track rejects", 2, -0.5, 1.5);
   TH1D* hSameEventME = new TH1D("hSameEventME", "ME pairs from same eventUID (must be 0)", 2, -0.5, 1.5);
 
+  // ------------------------------------------------------------------------------------------
+  // Channel table, built from the same YAML the maker reads. Names, mass windows and the A x B
+  // combinations therefore cannot drift from the maker's, and a histogram of a given name can be
+  // compared with the maker's bin for bin. The binning is the one in
+  // config/hist/hist_anaFemtoPhi.yaml, so no rebinning is needed on either side.
+  // ------------------------------------------------------------------------------------------
+  const Int_t kNKstar = 300;
+  const Double_t kKstarHi = 3.0;
+  const Int_t kNMkk = 200;
+  const Double_t kMkkLo = 0.98, kMkkHi = 1.18;
+  const Int_t kNCent = 9;
+  const Double_t kCentLo = -0.5, kCentHi = 8.5;
+
+  std::vector<ChanHists> chans;
+  for (size_t ic = 0; ic < femtoCfg.channels.size(); ++ic) {
+    const FemtoConfig::ChannelDef& cd = femtoCfg.channels[ic];
+    if (!cd.enabled) continue;
+    ChanHists c;
+    c.ia = AOfKey(cd.partA);
+    c.ib = BOfKey(cd.partB);
+    if (c.ia < 0 || c.ib < 0) {
+      std::cout << "[downstreamV3] channel " << cd.name << " (" << cd.partA << " x " << cd.partB
+                << ") skipped: species not built by this reader" << std::endl;
+      continue;
+    }
+    c.name = cd.name.c_str();
+    c.resonance = (c.ia == kAPhi || c.ia == kAPhiRot || c.ia == kAPhiMix);
+    c.mLo = cd.signalMin;
+    c.mHi = cd.signalMax;
+    // The command-line window overrides the phi channels only; the rotated and fully-mixed
+    // backgrounds keep the window their channel declares, exactly as the maker applies it.
+    if (c.ia == kAPhi) {
+      if (signalMin > 0) c.mLo = signalMin;
+      if (signalMax > 0) c.mHi = signalMax;
+    }
+    c.se = new TH1D(TString::Format("hKstarSE_%s", c.name.Data()).Data(),
+                    TString::Format("SE k* (%s);k* (GeV/c);pairs", c.name.Data()).Data(),
+                    kNKstar, 0.0, kKstarHi);
+    c.me = new TH1D(TString::Format("hKstarME_%s", c.name.Data()).Data(),
+                    TString::Format("ME k* (%s);k* (GeV/c);pairs", c.name.Data()).Data(),
+                    kNKstar, 0.0, kKstarHi);
+    c.seCent = new TH2D(TString::Format("hKstarSEVsCent_%s", c.name.Data()).Data(),
+                        TString::Format("SE k* vs cent9 (%s);k* (GeV/c);cent9", c.name.Data()).Data(),
+                        kNKstar, 0.0, kKstarHi, kNCent, kCentLo, kCentHi);
+    c.meCent = new TH2D(TString::Format("hKstarMEVsCent_%s", c.name.Data()).Data(),
+                        TString::Format("ME k* vs cent9 (%s);k* (GeV/c);cent9", c.name.Data()).Data(),
+                        kNKstar, 0.0, kKstarHi, kNCent, kCentLo, kCentHi);
+    c.mkkSE = c.mkkME = c.mkkSEWide = c.mkkMEWide = 0;
+    if (c.resonance) {
+      c.mkkSE = new TH3F(TString::Format("hPhiMKK_vs_KstarSE_%s", c.name.Data()).Data(),
+                         TString::Format("M_{KK} vs k* SE vs cent9 (%s);M_{KK} (GeV/c^{2});k* (GeV/c);cent9",
+                                         c.name.Data()).Data(),
+                         kNMkk, kMkkLo, kMkkHi, kNKstar, 0.0, kKstarHi, kNCent, kCentLo, kCentHi);
+      c.mkkME = new TH3F(TString::Format("hPhiMKK_vs_KstarME_%s", c.name.Data()).Data(),
+                         TString::Format("M_{KK} vs k* ME vs cent9 (%s);M_{KK} (GeV/c^{2});k* (GeV/c);cent9",
+                                         c.name.Data()).Data(),
+                         kNMkk, kMkkLo, kMkkHi, kNKstar, 0.0, kKstarHi, kNCent, kCentLo, kCentHi);
+      // The "wide" TH3 is filled before the mass window, which is what the kstarMassFitCF
+      // background template needs: the full M(KK) shape at each k*.
+      const std::string wide = WideMkkSuffix(cd.name);
+      if (!wide.empty()) {
+        c.mkkSEWide = new TH3F(TString::Format("hPhiMKK_vs_KstarSE_%s", wide.c_str()).Data(),
+                               TString::Format("M_{KK} vs k* SE vs cent9 (%s);M_{KK} (GeV/c^{2});k* (GeV/c);cent9",
+                                               wide.c_str()).Data(),
+                               kNMkk, kMkkLo, kMkkHi, kNKstar, 0.0, kKstarHi, kNCent, kCentLo, kCentHi);
+        c.mkkMEWide = new TH3F(TString::Format("hPhiMKK_vs_KstarME_%s", wide.c_str()).Data(),
+                               TString::Format("M_{KK} vs k* ME vs cent9 (%s);M_{KK} (GeV/c^{2});k* (GeV/c);cent9",
+                                               wide.c_str()).Data(),
+                               kNMkk, kMkkLo, kMkkHi, kNKstar, 0.0, kKstarHi, kNCent, kCentLo, kCentHi);
+      }
+    }
+    c.closeSE = new TH1D(TString::Format("hClosePairRejectSE_%s", c.name.Data()).Data(),
+                         "SE pairs removed by the close-pair cut;k* (GeV/c);pairs", kNKstar, 0.0,
+                         kKstarHi);
+    c.closeME = new TH1D(TString::Format("hClosePairRejectME_%s", c.name.Data()).Data(),
+                         "ME pairs removed by the close-pair cut;k* (GeV/c);pairs", kNKstar, 0.0,
+                         kKstarHi);
+    c.nSE = c.nME = c.nCloseSE = c.nCloseME = c.nShared = 0;
+    chans.push_back(c);
+  }
+  std::cout << "[downstreamV3] channels: " << chans.size() << " of " << femtoCfg.channels.size()
+            << " enabled in the config" << std::endl;
+
   std::map<Int_t, std::deque<MixEvent> > pool;
-  Long64_t nSE[kNPart] = {0}, nME[kNPart] = {0}, nPartTot[kNPart] = {0};
+  Long64_t nPartTot[kNPart] = {0};
+  Long64_t nATot[kNA] = {0};
   Long64_t nShared = 0, nPhiTot = 0, nSameEventME = 0, nDcaKKReject = 0, nNoOrigin = 0;
   const Long64_t nEv = ev->GetEntries();
   const Int_t maxMixed = mix.maxMixedPairsPerEvent;
   TRandom3 rng(1);
+  // The rotated background is a random construct: the maker draws its angles from gRandom and a
+  // reader cannot replay that stream, so this is an independent draw. The candidate COUNT is
+  // deterministic (accepted pairs x rotationN) and must match exactly; the M(KK) shape can only
+  // agree statistically.
+  TRandom3 rotRng(femtoCfg.rotationSeed != 0 ? (UInt_t)femtoCfg.rotationSeed : 20260915u);
+  // The fully-mixed sampler's RNG is seeded once and consumed across the whole run, exactly as
+  // StFemtoMaker seeds m_phiMixRng in Init(). Reproducing phi_mix pair for pair therefore needs
+  // the events visited in the same order and the sampler called on every event, including the
+  // ones that yield nothing.
+  femto_phi_mix::SplitMix64 mixKKRng(
+      femtoCfg.fullyMixedSamplingSeed > 0 ? (UInt_t)femtoCfg.fullyMixedSamplingSeed : 314159u);
 
   for (Long64_t ie = 0; ie < nEv; ++ie) {
     ev->GetEntry(ie);
-    std::vector<Cand> kp, km, phis;
-    std::vector<Cand> part[kNPart];
+    std::vector<Cand> kp, km;
+    std::vector<Cand> A[kNA];
+    std::vector<Cand> B[kNPart];
     std::map<Int_t, TrackRowV2> kmap;
     const std::vector<Long64_t>& idxs = tracksByEvent[e.eventUID];
     for (size_t k = 0; k < idxs.size(); ++k) {
@@ -799,11 +1029,14 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         if (!PassKaonForPhi(t, var)) continue;
         kmap[t.trackIndex] = t;
         Cand c;
+        c.Reset();
         c.trackIndex = t.trackIndex;
-        c.mKK = 0;
-        c.dau1 = c.dau2 = -1;
+        c.AddCon(e.eventUID, t.trackIndex);
         TVector3 p = Momentum(t);
         c.p4 = TLorentzVector(p, TMath::Sqrt(kKaonMass * kKaonMass + p.Mag2()));
+        c.tEta = t.Eta(); c.tPhi = t.Phi(); c.tPt = t.Pt(); c.tCharge = (Short_t)t.Charge();
+        c.dEta[0] = t.Eta(); c.dPhi[0] = t.Phi(); c.dPt[0] = t.Pt();
+        c.dCharge[0] = (Short_t)t.Charge();
         if (t.speciesCode == kSpeciesKp) kp.push_back(c); else km.push_back(c);
       } else {
         // One branch for every bachelor species. A row that fails its own selection must not
@@ -814,14 +1047,23 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         if (sp < 0) continue;
         if (!PassBachelor(t, var, sp)) continue;
         Cand c;
+        c.Reset();
         c.trackIndex = t.trackIndex;
-        c.mKK = 0;
-        c.dau1 = c.dau2 = -1;
+        c.AddCon(e.eventUID, t.trackIndex);
         c.p4 = BachelorP4(t, sp);
         c.tEta = t.Eta(); c.tPhi = t.Phi(); c.tPt = t.Pt(); c.tCharge = (Short_t)t.Charge();
-        part[sp].push_back(c);
+        B[sp].push_back(c);
       }
     }
+
+    // h-K species: the phi-daughter kaons under the production PID, which is what
+    // StFemtoMaker::MakePhiDaughterKaonCandidate is given. Not the loose collection.
+    for (size_t i = 0; i < kp.size(); ++i)
+      if (PassDaughterPid(kmap[kp[i].trackIndex], var, recomputeDaughterPid))
+        A[kAKPlus].push_back(kp[i]);
+    for (size_t i = 0; i < km.size(); ++i)
+      if (PassDaughterPid(kmap[km[i].trackIndex], var, recomputeDaughterPid))
+        A[kAKMinus].push_back(km[i]);
 
     for (size_t i = 0; i < kp.size(); ++i) {
       for (size_t j = 0; j < km.size(); ++j) {
@@ -862,71 +1104,158 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         if (yPair < phiCfg.minPairRapidity || yPair > phiCfg.maxPairRapidity) continue;
         hMkk->Fill(invMass);
         Cand phi;
-        phi.trackIndex = -1;
-        phi.dau1 = a.trackIndex;
-        phi.dau2 = b.trackIndex;
+        phi.Reset();
+        phi.AddCon(e.eventUID, a.trackIndex);
+        phi.AddCon(e.eventUID, b.trackIndex);
         phi.mKK = (Float_t)invMass;
         phi.p4 = TLorentzVector(phiMom, etot);
         phi.dEta[0] = a.Eta(); phi.dPhi[0] = a.Phi(); phi.dPt[0] = a.Pt();
         phi.dCharge[0] = (Short_t)a.Charge();
         phi.dEta[1] = b.Eta(); phi.dPhi[1] = b.Phi(); phi.dPt[1] = b.Pt();
         phi.dCharge[1] = (Short_t)b.Charge();
-        phis.push_back(phi);
+        A[kAPhi].push_back(phi);
         nPhiTot++;
+
+        // Rotated background. StFemtoMaker::BuildRotatedPhiCandidates accepts the pair on the
+        // UNROTATED kinematics -- opening angle and pair rapidity are evaluated before the
+        // rotation and not re-applied after it -- then turns the K+ azimuth by a uniform angle
+        // and recomputes only the mass and the momentum. Reproduced here in that order.
+        if (femtoCfg.rotationEnabled) {
+          for (Int_t irot = 0; irot < femtoCfg.rotationN; ++irot) {
+            const Double_t dPhiRot =
+                rotRng.Uniform(femtoCfg.rotationMinAngle, femtoCfg.rotationMaxAngle);
+            Double_t phiRot = a.Phi() + dPhiRot;
+            while (phiRot > TMath::Pi()) phiRot -= TMath::TwoPi();
+            while (phiRot < -TMath::Pi()) phiRot += TMath::TwoPi();
+            TVector3 paRot;
+            paRot.SetPtEtaPhi(a.Pt(), a.Eta(), phiRot);
+            const Double_t eaRot = TMath::Sqrt(kKaonMass * kKaonMass + paRot.Mag2());
+            TVector3 phiMomRot = paRot + pb;
+            const Double_t m2Rot = (eaRot + eb) * (eaRot + eb) - phiMomRot.Mag2();
+            if (m2Rot <= 0) continue;
+            Cand rot;
+            rot.Reset();
+            rot.AddCon(e.eventUID, a.trackIndex);
+            rot.AddCon(e.eventUID, b.trackIndex);
+            rot.mKK = (Float_t)TMath::Sqrt(m2Rot);
+            rot.p4 = TLorentzVector(phiMomRot, eaRot + eb);
+            rot.dEta[0] = a.Eta(); rot.dPhi[0] = phiRot; rot.dPt[0] = a.Pt();
+            rot.dCharge[0] = (Short_t)a.Charge();
+            rot.dEta[1] = b.Eta(); rot.dPhi[1] = b.Phi(); rot.dPt[1] = b.Pt();
+            rot.dCharge[1] = (Short_t)b.Charge();
+            hPhiRotMkk->Fill(rot.mKK);
+            A[kAPhiRot].push_back(rot);
+          }
+        }
       }
     }
-    hNPhi->Fill(phis.size());
-    for (Int_t sp = 0; sp < kNPart; ++sp) {
-      nPartTot[sp] += part[sp].size();
-      hNPart[sp]->Fill(part[sp].size());
+
+    // ---- fully-mixed KK background ----
+    // StFemtoMaker::BuildFullyMixedPhiCandidates reads the pool before StoreEventForMixing, so
+    // the current event is not in it, and draws with the shared sampler under the
+    // fullyMixedMaxCandidates cap. The population is the production-PID kaons on both sides,
+    // which is exactly what A[kAKPlus] / A[kAKMinus] hold.
+    const Int_t mixBinNow =
+        recomputeMixBin ? MixBinOf(e.Vz(), (Int_t)e.cent9, e.Psi2()) : (Int_t)e.mixBin;
+    if (femtoCfg.fullyMixedEnabled && !(A[kAKPlus].empty() && A[kAKMinus].empty())) {
+      std::deque<MixEvent>& poolNow = pool[mixBinNow];
+      if (!poolNow.empty()) {
+        std::vector<std::vector<Cand> > bufKp(poolNow.size()), bufKm(poolNow.size());
+        std::vector<ULong64_t> bufUID(poolNow.size());
+        std::vector<femto_mixing::EventCandidateCounts> counts;
+        counts.reserve(poolNow.size());
+        for (size_t ib = 0; ib < poolNow.size(); ++ib) {
+          bufKp[ib] = poolNow[ib].a[kAKPlus];
+          bufKm[ib] = poolNow[ib].a[kAKMinus];
+          bufUID[ib] = poolNow[ib].eventUID;
+          counts.push_back(femto_mixing::EventCandidateCounts(bufKp[ib].size(), bufKm[ib].size()));
+        }
+        const femto_mixing::SamplingPlan plan = femto_mixing::BuildSamplingPlan(
+            A[kAKPlus].size(), A[kAKMinus].size(), counts, true);
+        const femto_phi_mix::PairCount maxCand =
+            (femtoCfg.fullyMixedMaxCandidates > 0)
+                ? (femto_phi_mix::PairCount)femtoCfg.fullyMixedMaxCandidates
+                : 0;
+        MixKKEval evalKK;
+        evalKK.curKp = &A[kAKPlus];
+        evalKK.curKm = &A[kAKMinus];
+        evalKK.bufKp = bufKp.empty() ? 0 : &bufKp[0];
+        evalKK.bufKm = bufKm.empty() ? 0 : &bufKm[0];
+        evalKK.bufUID = bufUID.empty() ? 0 : &bufUID[0];
+        evalKK.nPool = poolNow.size();
+        evalKK.curUID = e.eventUID;
+        evalKK.phiCfg = &phiCfg;
+        evalKK.out = &A[kAPhiMix];
+        std::vector<femto_phi_mix::PairCount> stored;
+        femto_phi_mix::CapSampleStats stats;
+        femto_phi_mix::SampleEligiblePairs(plan, maxCand, mixKKRng, evalKK, stored, stats);
+        // The sampler may evaluate the cap+1 eligible pair to learn whether the cap was hit;
+        // that pair is not stored, so drop the overflow exactly as the maker does.
+        if (A[kAPhiMix].size() > stored.size()) A[kAPhiMix].resize(stored.size());
+      }
     }
 
+    hNPhi->Fill(A[kAPhi].size());
+    for (Int_t ia = 0; ia < kNA; ++ia) {
+      nATot[ia] += A[ia].size();
+      hNA[ia]->Fill(A[ia].size());
+    }
     for (Int_t sp = 0; sp < kNPart; ++sp) {
-      for (size_t i = 0; i < phis.size(); ++i) {
-        if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
-        for (size_t j = 0; j < part[sp].size(); ++j) {
-          if (femtoCfg.closePairVetoSameTrack && SharedTrack(phis[i], part[sp][j])) {
+      nPartTot[sp] += B[sp].size();
+      hNPart[sp]->Fill(B[sp].size());
+    }
+
+    const Double_t centX = (e.cent9 >= 0) ? (Double_t)e.cent9 : -0.5;
+
+    // ---- same event ----
+    for (size_t icha = 0; icha < chans.size(); ++icha) {
+      ChanHists& c = chans[icha];
+      const std::vector<Cand>& av = A[c.ia];
+      const std::vector<Cand>& bv = B[c.ib];
+      for (size_t i = 0; i < av.size(); ++i) {
+        for (size_t j = 0; j < bv.size(); ++j) {
+          if (femtoCfg.closePairVetoSameTrack && SharedTrack(av[i], bv[j])) {
+            c.nShared++;
             nShared++;
             hRejectShared->Fill(1);
             continue;
           }
-          const Double_t ks = KStar(phis[i].p4, part[sp][j].p4);
-          if (ClosePairReject(phis[i], part[sp][j], part[sp][j].tEta, part[sp][j].tPhi,
-                              part[sp][j].tPt, part[sp][j].tCharge, e.bField / 10.0, sp,
-                              femtoCfg)) {
-            nCloseSE[sp]++;
-            hCloseSE[sp]->Fill(ks);
+          const Double_t ks = KStar(av[i].p4, bv[j].p4);
+          if (c.resonance && c.mkkSEWide) c.mkkSEWide->Fill(av[i].mKK, ks, centX);
+          if (c.resonance && (av[i].mKK < c.mLo || av[i].mKK > c.mHi)) continue;
+          if (ClosePairReject(av[i], bv[j], bv[j].tEta, bv[j].tPhi, bv[j].tPt, bv[j].tCharge,
+                              e.bField / 10.0, c.ib, femtoCfg)) {
+            c.nCloseSE++;
+            c.closeSE->Fill(ks);
             continue;
           }
-          hKstarSE[sp]->Fill(ks);
-          nSE[sp]++;
+          c.se->Fill(ks);
+          c.seCent->Fill(ks, centX);
+          if (c.mkkSE) c.mkkSE->Fill(av[i].mKK, ks, centX);
+          c.nSE++;
         }
       }
     }
 
-    const Int_t mixBin =
-        recomputeMixBin ? MixBinOf(e.Vz(), (Int_t)e.cent9, e.Psi2()) : (Int_t)e.mixBin;
-    std::deque<MixEvent>& binPool = pool[mixBin];
-    // The bachelor species share the event pool but never share a pair, so the sampling is done
-    // per species: with maxMixedPairsPerEvent set, each species gets its own cap, exactly as the
-    // maker draws separately per channel.
-    for (Int_t sp = 0; sp < kNPart; ++sp) {
+    // ---- mixed event ----
+    std::deque<MixEvent>& binPool = pool[mixBinNow];
+    // Channels share the event pool but never share a pair, so the sampling is done per channel:
+    // with maxMixedPairsPerEvent set, each channel gets its own cap, exactly as the maker draws
+    // separately per channel.
+    for (size_t icha = 0; icha < chans.size(); ++icha) {
+      ChanHists& c = chans[icha];
       std::vector<MixRef> refs;
       for (size_t ib = 0; ib < binPool.size(); ++ib) {
         const MixEvent& buf = binPool[ib];
-        for (size_t i = 0; i < phis.size(); ++i) {
-          if (phis[i].mKK < sigMin || phis[i].mKK > sigMax) continue;
-          for (size_t j = 0; j < buf.part[sp].size(); ++j) {
+        for (size_t i = 0; i < A[c.ia].size(); ++i)
+          for (size_t j = 0; j < buf.part[c.ib].size(); ++j) {
             MixRef r; r.ib = ib; r.reverse = 0; r.i = i; r.j = j; refs.push_back(r);
           }
-        }
         if (mix.mixBothDirections) {
-          for (size_t i = 0; i < buf.phis.size(); ++i) {
-            if (buf.phis[i].mKK < sigMin || buf.phis[i].mKK > sigMax) continue;
-            for (size_t j = 0; j < part[sp].size(); ++j) {
+          for (size_t i = 0; i < buf.a[c.ia].size(); ++i)
+            for (size_t j = 0; j < B[c.ib].size(); ++j) {
               MixRef r; r.ib = ib; r.reverse = 1; r.i = i; r.j = j; refs.push_back(r);
             }
-          }
         }
       }
 
@@ -948,19 +1277,31 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         const MixRef& r = refs[pick[ip]];
         const MixEvent& buf = binPool[r.ib];
         if (buf.eventUID == e.eventUID) { nSameEventME++; hSameEventME->Fill(1); continue; }
-        const Cand& A = r.reverse ? buf.phis[r.i] : phis[r.i];
-        const Cand& B = r.reverse ? part[sp][r.j] : buf.part[sp][r.j];
-        const Double_t ks = KStar(A.p4, B.p4);
-        // Mixed pairs get the identical cut. The B field is taken from the event the phi came
-        // from; within a run it is constant, and the mixing bins do not span runs in practice.
-        const Double_t bT = (r.reverse ? buf.bField : e.bField) / 10.0;
-        if (ClosePairReject(A, B, B.tEta, B.tPhi, B.tPt, B.tCharge, bT, sp, femtoCfg)) {
-          nCloseME[sp]++;
-          hCloseME[sp]->Fill(ks);
+        const Cand& AA = r.reverse ? buf.a[c.ia][r.i] : A[c.ia][r.i];
+        const Cand& BB = r.reverse ? B[c.ib][r.j] : buf.part[c.ib][r.j];
+        if (femtoCfg.closePairVetoSameTrack && SharedTrack(AA, BB)) {
+          c.nShared++;
+          nShared++;
+          hRejectShared->Fill(1);
           continue;
         }
-        hKstarME[sp]->Fill(ks);
-        nME[sp]++;
+        const Double_t ks = KStar(AA.p4, BB.p4);
+        // The centrality of a mixed pair is the current event's, as in the maker: cent is a
+        // property of the fill, and the mixing bin already ties the two events to the same class.
+        if (c.resonance && c.mkkMEWide) c.mkkMEWide->Fill(AA.mKK, ks, centX);
+        if (c.resonance && (AA.mKK < c.mLo || AA.mKK > c.mHi)) continue;
+        // Mixed pairs get the identical cut. The B field is taken from the event the A candidate
+        // came from; within a run it is constant, and the mixing bins do not span runs in practice.
+        const Double_t bT = (r.reverse ? buf.bField : e.bField) / 10.0;
+        if (ClosePairReject(AA, BB, BB.tEta, BB.tPhi, BB.tPt, BB.tCharge, bT, c.ib, femtoCfg)) {
+          c.nCloseME++;
+          c.closeME->Fill(ks);
+          continue;
+        }
+        c.me->Fill(ks);
+        c.meCent->Fill(ks, centX);
+        if (c.mkkME) c.mkkME->Fill(AA.mKK, ks, centX);
+        c.nME++;
       }
     }
 
@@ -974,52 +1315,50 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       MixEvent me;
       me.eventUID = e.eventUID;
       me.bField = e.bField;
-      me.phis = phis;
-      for (Int_t sp = 0; sp < kNPart; ++sp) me.part[sp] = part[sp];
+      me.cent9 = (Int_t)e.cent9;
+      for (Int_t ia = 0; ia < kNA; ++ia) me.a[ia] = A[ia];
+      for (Int_t sp = 0; sp < kNPart; ++sp) me.part[sp] = B[sp];
       binPool.push_back(me);
       if ((Int_t)binPool.size() > bufferSize) binPool.pop_front();
     }
   }
 
   std::cout << "[downstreamV3] events=" << nEv << " phi=" << nPhiTot << std::endl;
-  for (Int_t sp = 0; sp < kNPart; ++sp) {
-    std::cout << "[downstreamV3]   phi-" << kPartName[sp] << ": n=" << nPartTot[sp]
-              << " SE=" << nSE[sp] << " ME=" << nME[sp] << std::endl;
+  for (Int_t ia = 0; ia < kNA; ++ia)
+    std::cout << "[downstreamV3]   A " << kAName[ia] << ": n=" << nATot[ia] << std::endl;
+  for (Int_t sp = 0; sp < kNPart; ++sp)
+    std::cout << "[downstreamV3]   B " << kPartName[sp] << ": n=" << nPartTot[sp] << std::endl;
+  for (size_t icha = 0; icha < chans.size(); ++icha) {
+    const ChanHists& c = chans[icha];
+    std::cout << "[downstreamV3]   " << c.name << ": SE=" << c.nSE << " ME=" << c.nME;
+    if (femtoCfg.closePairEnabled)
+      std::cout << " closeSE=" << c.nCloseSE << " closeME=" << c.nCloseME;
+    std::cout << std::endl;
   }
   std::cout << "[downstreamV3] shared=" << nShared << " sameEventME=" << nSameEventME
             << " dcaKKReject=" << nDcaKKReject << " noOrigin=" << nNoOrigin << std::endl;
-  if (femtoCfg.closePairEnabled) {
-    for (Int_t sp = 0; sp < kNPart; ++sp) {
-      const Double_t fse = (nSE[sp] + nCloseSE[sp]) > 0
-                               ? 100.0 * nCloseSE[sp] / (nSE[sp] + nCloseSE[sp]) : 0.0;
-      const Double_t fme = (nME[sp] + nCloseME[sp]) > 0
-                               ? 100.0 * nCloseME[sp] / (nME[sp] + nCloseME[sp]) : 0.0;
-      std::cout << "[downstreamV3]   close-pair phi-" << kPartName[sp] << ": SE removed "
-                << nCloseSE[sp] << " (" << fse << "%)  ME removed " << nCloseME[sp] << " ("
-                << fme << "%)" << std::endl;
-    }
-  }
 
   fout->cd();
   TNamed("treeFile", treeFile).Write();
   TNamed("mixingMode", mode.Data()).Write();
   TNamed("schemaVersion", TString::Format("%u", e.schemaVersion).Data()).Write();
-  TNamed("nSE", TString::Format("%lld", nSE[kPartDeuteron]).Data()).Write();
-  TNamed("nME", TString::Format("%lld", nME[kPartDeuteron]).Data()).Write();
-  TNamed("nSEProton", TString::Format("%lld", nSE[kPartProton]).Data()).Write();
-  TNamed("nMEProton", TString::Format("%lld", nME[kPartProton]).Data()).Write();
   TNamed("nP", TString::Format("%lld", nPartTot[kPartProton]).Data()).Write();
-  // Exact per-species totals. hN<species> saturates -- it has one bin per candidate up to 20 and
-  // the proton exceeds that -- so a reader must take the totals from here, not from the
-  // histogram.
-  for (Int_t sp = 0; sp < kNPart; ++sp) {
+  for (size_t icha = 0; icha < chans.size(); ++icha) {
+    const ChanHists& c = chans[icha];
+    TNamed(TString::Format("nSE_%s", c.name.Data()).Data(),
+           TString::Format("%lld", c.nSE).Data()).Write();
+    TNamed(TString::Format("nME_%s", c.name.Data()).Data(),
+           TString::Format("%lld", c.nME).Data()).Write();
+  }
+  for (Int_t ia = 0; ia < kNA; ++ia)
+    TNamed(TString::Format("nCandA_%s", kAName[ia]).Data(),
+           TString::Format("%lld", nATot[ia]).Data()).Write();
+  // Exact per-species candidate totals. hN<species> saturates -- one bin per candidate -- so a
+  // reader must take the totals from here, not from the histogram. The SE/ME totals are written
+  // per CHANNEL above, since a species can feed several channels.
+  for (Int_t sp = 0; sp < kNPart; ++sp)
     TNamed(TString::Format("nCand_%s", kPartName[sp]).Data(),
            TString::Format("%lld", nPartTot[sp]).Data()).Write();
-    TNamed(TString::Format("nSE_%s", kPartName[sp]).Data(),
-           TString::Format("%lld", nSE[sp]).Data()).Write();
-    TNamed(TString::Format("nME_%s", kPartName[sp]).Data(),
-           TString::Format("%lld", nME[sp]).Data()).Write();
-  }
   TNamed("nPhi", TString::Format("%lld", nPhiTot).Data()).Write();
   TNamed("nD", TString::Format("%lld", nPartTot[kPartDeuteron]).Data()).Write();
   TNamed("variation", var.spec.Data()).Write();
@@ -1051,14 +1390,23 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
       .Write();
   TNamed("nSameEventME", TString::Format("%lld", nSameEventME).Data()).Write();
   hMkk->Write();
+  hPhiRotMkk->Write();
   hDcaKK->Write();
   hNPhi->Write();
-  for (Int_t sp = 0; sp < kNPart; ++sp) {
-    hKstarSE[sp]->Write();
-    hKstarME[sp]->Write();
-    hNPart[sp]->Write();
-    hCloseSE[sp]->Write();
-    hCloseME[sp]->Write();
+  for (Int_t sp = 0; sp < kNPart; ++sp) hNPart[sp]->Write();
+  for (Int_t ia = 0; ia < kNA; ++ia) hNA[ia]->Write();
+  for (size_t icha = 0; icha < chans.size(); ++icha) {
+    ChanHists& c = chans[icha];
+    c.se->Write();
+    c.me->Write();
+    c.seCent->Write();
+    c.meCent->Write();
+    if (c.mkkSE) c.mkkSE->Write();
+    if (c.mkkME) c.mkkME->Write();
+    if (c.mkkSEWide) c.mkkSEWide->Write();
+    if (c.mkkMEWide) c.mkkMEWide->Write();
+    c.closeSE->Write();
+    c.closeME->Write();
   }
   hRejectShared->Write(); hSameEventME->Write();
   fout->Close();
