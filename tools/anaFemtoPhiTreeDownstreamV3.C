@@ -40,6 +40,7 @@
 #include "FemtoPhiTreeSchema.h"
 #include "FemtoFlagConfigSnapshot.h"
 #include "StPhiKKReconstruction.h"
+#include "StNuclearIdHelper.h"
 
 #include <deque>
 #include <iostream>
@@ -48,13 +49,38 @@
 
 namespace {
 const Double_t kKaonMass = 0.493677;
-const Double_t kDeuteronMass = 1.875612;
 const Double_t kProtonMass = 0.938272;
 
 // Bachelor species paired against the phi. Index order is fixed and used for the histogram
 // and counter arrays below.
-enum { kPartDeuteron = 0, kPartProton = 1, kNPart = 2 };
-const Char_t* const kPartName[kNPart] = {"deuteron", "proton"};
+enum { kPartDeuteron = 0, kPartProton = 1, kPartTriton = 2, kPartHe3 = 3, kPartHe4 = 4,
+       kNPart = 5 };
+const Char_t* const kPartName[kNPart] = {"deuteron", "proton", "triton", "he3", "he4"};
+
+// The nuclear-ID species behind each bachelor index, or -1 for the proton, which does not go
+// through StNuclearIdHelper at all. The four-vector and the rapidity are built with the maker's
+// own helper rather than a local mass table: NuclearP4 also applies the Z = 2 rigidity scaling
+// for 3He and 4He, which a mass-only treatment would silently drop.
+Int_t NucSpeciesOf(Int_t part) {
+  switch (part) {
+    case kPartDeuteron: return (Int_t)kNucDeuteron;
+    case kPartTriton:   return (Int_t)kNucTriton;
+    case kPartHe3:      return (Int_t)kNucHe3;
+    case kPartHe4:      return (Int_t)kNucHe4;
+    default:            return -1;
+  }
+}
+
+Int_t PartOfSpeciesCode(UChar_t code) {
+  switch (code) {
+    case femto_phi_tree::kSpeciesDeuteron: return kPartDeuteron;
+    case femto_phi_tree::kSpeciesProton:   return kPartProton;
+    case femto_phi_tree::kSpeciesTriton:   return kPartTriton;
+    case femto_phi_tree::kSpeciesHe3:      return kPartHe3;
+    case femto_phi_tree::kSpeciesHe4:      return kPartHe4;
+    default:                               return -1;
+  }
+}
 // A physical KK decay DCA is a fraction of a cm; anything at or above this means the cut was
 // deliberately parked in the "off" position.
 const Double_t kDcaKKDisabledAbove = 50.0;
@@ -331,7 +357,9 @@ Bool_t PassFemtoSpeciesRebuild(const femto_phi_tree::TrackRowV2& t, Bool_t isPro
                                Double_t nsMax, Double_t dcaMax) {
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
-  const Double_t mass = isProton ? kProtonMass : kDeuteronMass;
+  // The maker takes the deuteron mass from StNuclearIdHelper (1.87561), not from a local
+  // constant, and the rapidity window has to be evaluated against the same number.
+  const Double_t mass = isProton ? kProtonMass : StNuclearIdHelper::SpeciesMass(kNucDeuteron);
   const Double_t maxDca = (dcaMax > 0) ? dcaMax
                                        : (isProton ? fc.protonMaxDca : fc.deuteronMaxDca);
   const Double_t maxNSigma =
@@ -415,6 +443,40 @@ Bool_t PassProtonVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
 // PassFemtoProtonCuts. The tree maker records exactly that split across the three flags below, so
 // the nominal proton is the same triple as the nominal deuteron. There is no nuclear-ID dE/dx hit
 // requirement on this path.
+
+// triton / 3He / 4He: nominal only. No planned systematic varies them and `Var` carries no knobs
+// for them, so the selection is exactly the flag triple the maker stored plus the two cuts the
+// tree deliberately leaves to the reader -- the analysis-level nuclear dE/dx hit count (the
+// storage envelope is looser, so that the cut stays variable) and the nominal track quality.
+// StFemtoPhiTreeMaker::StoreNuclearSpecies sets kSelNominalPid from IsTriton / IsHe3 / IsHe4 and
+// kSelNominalFemto from PassFemtoNuclearCuts, which is field-for-field the maker's
+// PassFemtoTritonCuts / PassFemtoHe3Cuts / PassFemtoHe4Cuts including the pre-cuts the maker
+// applies in its own track loop.
+Bool_t PassNuclearNominal(const femto_phi_tree::TrackRowV2& t, const Var& v, Int_t part) {
+  if (PartOfSpeciesCode(t.speciesCode) != part) return kFALSE;
+  if (!PassNuclearDedxHits(t, v.dNHitsDedx)) return kFALSE;
+  const UInt_t need = femto_phi_tree::kSelNominalPid | femto_phi_tree::kSelNominalFemto;
+  if ((t.selFlags & need) != need) return kFALSE;
+  return PassTrackQuality(t, v);
+}
+
+Bool_t PassBachelor(const femto_phi_tree::TrackRowV2& t, const Var& v, Int_t part) {
+  if (part == kPartDeuteron) return PassDeuteronVariation(t, v);
+  if (part == kPartProton) return PassProtonVariation(t, v);
+  return PassNuclearNominal(t, v, part);
+}
+
+// The nuclear four-vectors come from the maker's own StNuclearIdHelper::NuclearP4, which applies
+// the species mass AND the Z = 2 rigidity scaling for 3He / 4He. The stored pT, eta, phi are the
+// PicoDst pMom, i.e. rigidity: for a Z = 2 nucleus the momentum is twice that, and a mass-only
+// treatment would put 3He and 4He at half their true momentum.
+TLorentzVector BachelorP4(const femto_phi_tree::TrackRowV2& t, Int_t part) {
+  TVector3 p = Momentum(t);
+  const Int_t nuc = NucSpeciesOf(part);
+  if (nuc < 0) return TLorentzVector(p, TMath::Sqrt(kProtonMass * kProtonMass + p.Mag2()));
+  return StNuclearIdHelper::NuclearP4(p, (NuclearSpecies)nuc);
+}
+
 // ---------------------------------------------------------------------------
 // TPC two-track (close-pair) cut, Step 4b.
 //
@@ -449,10 +511,14 @@ Bool_t ClosePairReject(const Cand& phi, const Cand& bach, Double_t bachEta, Doub
                        Double_t bachPt, Short_t bachCharge, Double_t bT, Int_t species,
                        const FemtoConfig& fc) {
   if (!fc.closePairEnabled) return kFALSE;
+  // Measured windows exist for the deuteron and the proton only. The heavier nuclei are closer
+  // to the deuteron in curvature than to the proton, so they take the deuteron window until they
+  // have statistics of their own (closepair-step4b-20260914.md).
+  const Bool_t isProtonBach = (species == kPartProton);
   const Double_t wEta =
-      (species == 0) ? fc.closePairDEtaDeuteron : fc.closePairDEtaProton;
+      isProtonBach ? fc.closePairDEtaProton : fc.closePairDEtaDeuteron;
   const Double_t wPhi =
-      (species == 0) ? fc.closePairDPhiStarDeuteron : fc.closePairDPhiStarProton;
+      isProtonBach ? fc.closePairDPhiStarProton : fc.closePairDPhiStarDeuteron;
   if (wEta <= 0 && wPhi <= 0) return kFALSE;
   const Bool_t ellipse = (fc.closePairShape == "ellipse");
   for (Int_t i = 0; i < 2; ++i) {
@@ -690,8 +756,10 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
                             "SE k*;k* (GeV/c);counts", 50, 0.0, 1.0);
     hKstarME[sp] = new TH1D(TString::Format("hKstarME_phi_%s_signal", kPartName[sp]),
                             "ME k*;k* (GeV/c);counts", 50, 0.0, 1.0);
+    // 0-100, not 0-20: the proton multiplicity runs past 20 per event and a saturated axis
+    // makes the histogram unusable as a candidate-count cross-check.
     hNPart[sp] = new TH1D(TString::Format("hN%s", kPartName[sp]),
-                          TString::Format("nominal %s / event", kPartName[sp]), 21, -0.5, 20.5);
+                          TString::Format("nominal %s / event", kPartName[sp]), 101, -0.5, 100.5);
   }
   TH1D* hNPhi = new TH1D("hNPhi", "nominal #phi / event", 21, -0.5, 20.5);
   TH1D* hDcaKK = new TH1D("hDcaKK", "KK decay DCA of accepted daughter pairs;DCA_{KK} (cm);pairs",
@@ -708,12 +776,12 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
                             "ME pairs removed by the close-pair cut;k* (GeV/c);pairs", 50, 0.0,
                             1.0);
   }
-  Long64_t nCloseSE[kNPart] = {0, 0}, nCloseME[kNPart] = {0, 0};
+  Long64_t nCloseSE[kNPart] = {0}, nCloseME[kNPart] = {0};
   TH1D* hRejectShared = new TH1D("hRejectShared", "shared-track rejects", 2, -0.5, 1.5);
   TH1D* hSameEventME = new TH1D("hSameEventME", "ME pairs from same eventUID (must be 0)", 2, -0.5, 1.5);
 
   std::map<Int_t, std::deque<MixEvent> > pool;
-  Long64_t nSE[kNPart] = {0, 0}, nME[kNPart] = {0, 0}, nPartTot[kNPart] = {0, 0};
+  Long64_t nSE[kNPart] = {0}, nME[kNPart] = {0}, nPartTot[kNPart] = {0};
   Long64_t nShared = 0, nPhiTot = 0, nSameEventME = 0, nDcaKKReject = 0, nNoOrigin = 0;
   const Long64_t nEv = ev->GetEntries();
   const Int_t maxMixed = mix.maxMixedPairsPerEvent;
@@ -737,26 +805,21 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
         TVector3 p = Momentum(t);
         c.p4 = TLorentzVector(p, TMath::Sqrt(kKaonMass * kKaonMass + p.Mag2()));
         if (t.speciesCode == kSpeciesKp) kp.push_back(c); else km.push_back(c);
-      } else if (t.speciesCode == kSpeciesDeuteron) {
-        if (!PassDeuteronVariation(t, var)) continue;
+      } else {
+        // One branch for every bachelor species. A row that fails its own selection must not
+        // stop the others from being read, which is exactly the coupling that had to be removed
+        // from StFemtoMaker (closure-proton-20260914.md); here the species are separate rows, so
+        // the only thing to get right is that `continue` skips a row, not a species.
+        const Int_t sp = PartOfSpeciesCode(t.speciesCode);
+        if (sp < 0) continue;
+        if (!PassBachelor(t, var, sp)) continue;
         Cand c;
         c.trackIndex = t.trackIndex;
         c.mKK = 0;
         c.dau1 = c.dau2 = -1;
-        TVector3 p = Momentum(t);
-        c.p4 = TLorentzVector(p, TMath::Sqrt(kDeuteronMass * kDeuteronMass + p.Mag2()));
+        c.p4 = BachelorP4(t, sp);
         c.tEta = t.Eta(); c.tPhi = t.Phi(); c.tPt = t.Pt(); c.tCharge = (Short_t)t.Charge();
-        part[kPartDeuteron].push_back(c);
-      } else if (t.speciesCode == kSpeciesProton) {
-        if (!PassProtonVariation(t, var)) continue;
-        Cand c;
-        c.trackIndex = t.trackIndex;
-        c.mKK = 0;
-        c.dau1 = c.dau2 = -1;
-        TVector3 p = Momentum(t);
-        c.p4 = TLorentzVector(p, TMath::Sqrt(kProtonMass * kProtonMass + p.Mag2()));
-        c.tEta = t.Eta(); c.tPhi = t.Phi(); c.tPt = t.Pt(); c.tCharge = (Short_t)t.Charge();
-        part[kPartProton].push_back(c);
+        part[sp].push_back(c);
       }
     }
 
@@ -946,6 +1009,17 @@ void anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFile,
   TNamed("nSEProton", TString::Format("%lld", nSE[kPartProton]).Data()).Write();
   TNamed("nMEProton", TString::Format("%lld", nME[kPartProton]).Data()).Write();
   TNamed("nP", TString::Format("%lld", nPartTot[kPartProton]).Data()).Write();
+  // Exact per-species totals. hN<species> saturates -- it has one bin per candidate up to 20 and
+  // the proton exceeds that -- so a reader must take the totals from here, not from the
+  // histogram.
+  for (Int_t sp = 0; sp < kNPart; ++sp) {
+    TNamed(TString::Format("nCand_%s", kPartName[sp]).Data(),
+           TString::Format("%lld", nPartTot[sp]).Data()).Write();
+    TNamed(TString::Format("nSE_%s", kPartName[sp]).Data(),
+           TString::Format("%lld", nSE[sp]).Data()).Write();
+    TNamed(TString::Format("nME_%s", kPartName[sp]).Data(),
+           TString::Format("%lld", nME[sp]).Data()).Write();
+  }
   TNamed("nPhi", TString::Format("%lld", nPhiTot).Data()).Write();
   TNamed("nD", TString::Format("%lld", nPartTot[kPartDeuteron]).Data()).Write();
   TNamed("variation", var.spec.Data()).Write();

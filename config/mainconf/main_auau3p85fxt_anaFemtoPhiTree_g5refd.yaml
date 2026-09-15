@@ -1,0 +1,18 @@
+# Species-isolation control for the g5refn closure: same cuts, deuteron bachelor only.
+# The same mainconf drives all three legs of the closure, because the stored flags carry the
+# producer's configuration and the downstream refuses to run on a mismatch:
+#   StFemtoMaker            script/singularity_run_anaFemtoPhi.sh
+#   StFemtoPhiTreeMaker     script/singularity_run_anaFemtoPhiTree.sh
+#   downstream              script/singularity_run_anaFemtoPhiTreeDownstreamV3.sh
+# New maker YAML only. Does not change *_dedxOnly, *_g5ref, *_g5refp or *_v2.
+
+event:         cuts/event/event_auau3p85fxt_anaPhi.yaml
+track:         cuts/track/track_auau3p85fxt_anaPhi.yaml
+pid:           cuts/pid/pid_auau3p85fxt_anaPhi.yaml
+mixing:        cuts/mixing/mixing_auau3p85fxt_anaFemtoPhiTree_g5match.yaml
+centrality:    cuts/centrality/centrality_auau3p85fxt_anaPhi.yaml
+nuclearid:     cuts/nuclearid/nuclearid_auau3p85fxt_anaFemtoPhi.yaml
+
+maker:         maker/maker_auau3p85fxt_anaFemtoPhiTree_g5refd.yaml
+hist:          hist/hist_anaFemtoPhi.yaml
+analysis:      analysis/analysis_info_auau3p85fxt_anaFemtoPhiTree_g5ref.yaml
