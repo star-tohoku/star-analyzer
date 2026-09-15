@@ -693,10 +693,15 @@ Bool_t StFemtoMaker::IsKaon(const TrackState& trk) { return PassTofKaonPid(trk);
 //
 // These were inline blocks in the Make() track loop until 2026-09-14. Each used `continue` to
 // reject a track, which leaves the *loop*, not the block, so any species suppressed every species
-// declared after it: enabling the proton removed 182 deuterons from phi-d, and enabling
-// kaon_minus (whose first rejection is `charge >= 0`) would have removed every positive track --
-// protons and all nuclei -- from the event. See
+// declared after it: enabling the proton removed 182 deuterons from phi-d (0.033%, and 0.034% at
+// production cut values). See
 // analysisnote/auau3p85fxt_anaFemtoPhi/root-tree-study/results/closure-proton-20260914.md.
+//
+// An earlier version of this comment also claimed that enabling kaon_minus would have removed
+// every positive track. That was wrong: PassKaonMinusBaseCuts already returns false for
+// charge >= 0, so the block's own `if (kTrack.charge >= 0) continue;` was unreachable and no
+// positive track ever entered it. The measured proton-block effect above is the whole of the
+// damage.
 //
 // As separate functions a rejection is a `return` and reaches only its own species. Keep it that
 // way: nothing here may be turned back into a loop-level statement.

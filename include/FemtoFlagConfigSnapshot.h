@@ -140,6 +140,69 @@ inline std::vector<Entry> Collect() {
   v.push_back(Entry("femto.protonMinRapidityCm", Num(fc.protonMinRapidityCm)));
   v.push_back(Entry("femto.protonMaxRapidityCm", Num(fc.protonMaxRapidityCm)));
 
+
+  // kSelNominalFemto (triton) -- StFemtoPhiTreeMaker::PassFemtoNuclearCuts
+  v.push_back(Entry("femto.tritonMaxDca", Num(fc.tritonMaxDca)));
+  v.push_back(Entry("femto.tritonMinPMom", Num(fc.tritonMinPMom)));
+  v.push_back(Entry("femto.tritonMaxPMom", Num(fc.tritonMaxPMom)));
+  v.push_back(Entry("femto.tritonMinPtPre", Num(fc.tritonMinPtPre)));
+  v.push_back(Entry("femto.tritonMaxPtPre", Num(fc.tritonMaxPtPre)));
+  v.push_back(Entry("femto.tritonMinPtPair", Num(fc.tritonMinPtPair)));
+  v.push_back(Entry("femto.tritonMaxPtPair", Num(fc.tritonMaxPtPair)));
+  v.push_back(Entry("femto.tritonMaxAbsEta", Num(fc.tritonMaxAbsEta)));
+  v.push_back(Entry("femto.tritonMaxAbsNSigma", Num(fc.tritonMaxAbsNSigma)));
+  v.push_back(Entry("femto.tritonMinNHitsFit", Num(fc.tritonMinNHitsFit)));
+  v.push_back(Entry("femto.tritonMinNHitsRatio", Num(fc.tritonMinNHitsRatio)));
+  v.push_back(Entry("femto.tritonTofMomentumThreshold", Num(fc.tritonTofMomentumThreshold)));
+  v.push_back(Entry("femto.tritonMinMass2", Num(fc.tritonMinMass2)));
+  v.push_back(Entry("femto.tritonMaxMass2", Num(fc.tritonMaxMass2)));
+  v.push_back(Entry("femto.tritonMinRapidityCm", Num(fc.tritonMinRapidityCm)));
+  v.push_back(Entry("femto.tritonMaxRapidityCm", Num(fc.tritonMaxRapidityCm)));
+
+  // kSelNominalFemto (he3) -- StFemtoPhiTreeMaker::PassFemtoNuclearCuts
+  v.push_back(Entry("femto.he3MaxDca", Num(fc.he3MaxDca)));
+  v.push_back(Entry("femto.he3MinPMom", Num(fc.he3MinPMom)));
+  v.push_back(Entry("femto.he3MaxPMom", Num(fc.he3MaxPMom)));
+  v.push_back(Entry("femto.he3MinPtPre", Num(fc.he3MinPtPre)));
+  v.push_back(Entry("femto.he3MaxPtPre", Num(fc.he3MaxPtPre)));
+  v.push_back(Entry("femto.he3MinPtPair", Num(fc.he3MinPtPair)));
+  v.push_back(Entry("femto.he3MaxPtPair", Num(fc.he3MaxPtPair)));
+  v.push_back(Entry("femto.he3MaxAbsEta", Num(fc.he3MaxAbsEta)));
+  v.push_back(Entry("femto.he3MaxAbsNSigma", Num(fc.he3MaxAbsNSigma)));
+  v.push_back(Entry("femto.he3MinNHitsFit", Num(fc.he3MinNHitsFit)));
+  v.push_back(Entry("femto.he3MinNHitsRatio", Num(fc.he3MinNHitsRatio)));
+  v.push_back(Entry("femto.he3TofMomentumThreshold", Num(fc.he3TofMomentumThreshold)));
+  v.push_back(Entry("femto.he3MinMass2", Num(fc.he3MinMass2)));
+  v.push_back(Entry("femto.he3MaxMass2", Num(fc.he3MaxMass2)));
+  v.push_back(Entry("femto.he3MinRapidityCm", Num(fc.he3MinRapidityCm)));
+  v.push_back(Entry("femto.he3MaxRapidityCm", Num(fc.he3MaxRapidityCm)));
+
+  // kSelNominalFemto (he4) -- StFemtoPhiTreeMaker::PassFemtoNuclearCuts
+  v.push_back(Entry("femto.he4MaxDca", Num(fc.he4MaxDca)));
+  v.push_back(Entry("femto.he4MinPMom", Num(fc.he4MinPMom)));
+  v.push_back(Entry("femto.he4MaxPMom", Num(fc.he4MaxPMom)));
+  v.push_back(Entry("femto.he4MinPtPre", Num(fc.he4MinPtPre)));
+  v.push_back(Entry("femto.he4MaxPtPre", Num(fc.he4MaxPtPre)));
+  v.push_back(Entry("femto.he4MinPtPair", Num(fc.he4MinPtPair)));
+  v.push_back(Entry("femto.he4MaxPtPair", Num(fc.he4MaxPtPair)));
+  v.push_back(Entry("femto.he4MaxAbsEta", Num(fc.he4MaxAbsEta)));
+  v.push_back(Entry("femto.he4MaxAbsNSigma", Num(fc.he4MaxAbsNSigma)));
+  v.push_back(Entry("femto.he4MinNHitsFit", Num(fc.he4MinNHitsFit)));
+  v.push_back(Entry("femto.he4MinNHitsRatio", Num(fc.he4MinNHitsRatio)));
+  v.push_back(Entry("femto.he4TofMomentumThreshold", Num(fc.he4TofMomentumThreshold)));
+  v.push_back(Entry("femto.he4MinMass2", Num(fc.he4MinMass2)));
+  v.push_back(Entry("femto.he4MaxMass2", Num(fc.he4MaxMass2)));
+  v.push_back(Entry("femto.he4MinRapidityCm", Num(fc.he4MinRapidityCm)));
+  v.push_back(Entry("femto.he4MaxRapidityCm", Num(fc.he4MaxRapidityCm)));
+
+  // The rapidity windows above are evaluated in a frame the maker fixes at Init() from
+  // phi.rapidityFrame, phi.sqrtSNNGeV and the centrality config. The window VALUES being equal is
+  // not enough: the same deuteronMinRapidityCm means a different selection in a different frame,
+  // so what is recorded here is the OUTCOME that ApplyAnalysisRapidity actually uses.
+  v.push_back(Entry("phi.rapidityFrameEffective", TString(phi.rapidityFrameEffective.c_str())));
+  v.push_back(Entry("phi.rapidityShiftEffective", Num(phi.rapidityShiftEffective)));
+  v.push_back(Entry("phi.sqrtSNNGeV", Num(phi.sqrtSNNGeV)));
+
   return v;
 }
 

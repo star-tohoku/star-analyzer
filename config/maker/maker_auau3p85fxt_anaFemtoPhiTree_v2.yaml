@@ -73,9 +73,9 @@ treeAutoFlush: 10000
 # quantity, and kaons are 0.66% of stored rows once the daughter-PID reach gate is applied. On
 # every row the same three components would cost +32%. Decision log, 2026-09-14.
 treeWriteKaonOrigin: true
-# Light nuclei beyond the deuteron. OFF pending the capacity decision: they serve 18 of the
-# analysis's 34 channels but the headroom against 2.0 TB is thin. Measured cost in
-# results/nuclei-cost-20260914.md.
+# Light nuclei beyond the deuteron. ON: at |nSigma| <= 3 all four nuclear species cost less than
+# the deuteron alone did at 5.0 (results/nuclei-cost-20260914.md). The comment that used to say
+# "OFF pending the capacity decision" contradicted the flags below it.
 treeStoreTriton: true
 treeStoreHe3: true
 treeStoreHe4: true

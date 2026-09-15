@@ -18,6 +18,7 @@
 #include "StPicoEvent/StPicoTrack.h"
 #include "StPicoEvent/StPicoEvent.h"
 #include "StPicoEvent/StPicoBTofPidTraits.h"
+#include "TChain.h"
 
 #include "TChain.h"
 #include "TFile.h"
@@ -1030,7 +1031,22 @@ TString StFemtoPhiTreeMaker::CurrentPicoPath() const {
 
 Long64_t StFemtoPhiTreeMaker::CurrentEntry() const {
   if (!mPicoDstMaker || !mPicoDstMaker->chain()) return -1;
-  return mPicoDstMaker->chain()->GetReadEntry();
+  // TChain::GetReadEntry() is the entry number within the CHAIN, and a production job reads
+  // nFiles PicoDst per chain, so that number addresses nothing: it has to be the entry within the
+  // file that sourceFileIndex names. Measured on a five-file job before this fix, sourceEntry ran
+  // to 162,340 against roughly 32,468 entries per file, i.e. (sourceFileIndex, sourceEntry) could
+  // not be used to reopen an event -- which is the one thing the plan's section 10.7 says the
+  // tree must never lose, because it is the road back to the PicoDst.
+  TChain* ch = mPicoDstMaker->chain();
+  const Long64_t global = ch->GetReadEntry();
+  const Int_t itree = ch->GetTreeNumber();
+  const Long64_t* offset = ch->GetTreeOffset();
+  // Subtracting the chain's own offset for the current tree is the only formulation that was
+  // measured to work here: GetTree()->GetReadEntry() returned 0 for every event (StPicoDstMaker
+  // drives the chain with TChain::GetEntry, and the member tree's read entry is not what that
+  // leaves behind). The effective provenance test in Step 2 is what caught it.
+  if (global >= 0 && itree >= 0 && offset) return global - offset[itree];
+  return global;
 }
 
 Int_t StFemtoPhiTreeMaker::Make() {
@@ -1126,7 +1142,18 @@ Int_t StFemtoPhiTreeMaker::Make() {
     Float_t pt = pMom.Perp();
     Float_t eta = pMom.PseudoRapidity();
     Float_t phi = pMom.Phi();
-    if (pt >= phiCfg.minPtEp && pt <= phiCfg.maxPtEp && TMath::Abs(eta) < phiCfg.maxEtaEp) {
+    // The event-plane Q vector must be accumulated over the SAME population as StFemtoMaker,
+    // which applies PassTrackCuts (identical to PassNominalTrackCuts here) before reaching its own
+    // Q sum. Two reasons this is not optional:
+    //   - psi2 CANNOT be rebuilt from the tree. Its population is every nominal-quality track,
+    //     and the tree stores only candidate rows, so a wrong psi2 is wrong for ever.
+    //   - the moment a mixing configuration uses nEventPlaneBins > 1, a tree-derived mixBin and a
+    //     maker-derived one stop being the same bin.
+    // Evaluated before the storage envelope on purpose: the envelope is not guaranteed to be
+    // looser than the nominal cut in every dimension, so gating on it first could drop a track
+    // the maker counts.
+    if (PassNominalTrackCuts(trk, pVtx) && pt >= phiCfg.minPtEp && pt <= phiCfg.maxPtEp &&
+        TMath::Abs(eta) < phiCfg.maxEtaEp) {
       Qx += TMath::Cos(2.0 * phi);
       Qy += TMath::Sin(2.0 * phi);
     }
@@ -1221,7 +1248,11 @@ Int_t StFemtoPhiTreeMaker::Make() {
       Bool_t passCharge = kTRUE;
       if (femtoCfg.protonChargeMode == "positive") passCharge = (ts.charge > 0);
       else if (femtoCfg.protonChargeMode == "negative") passCharge = (ts.charge < 0);
-      if (passCharge && TMath::Abs(ts.nSigmaProton) <= pidCfg.nSigmaProton * 2.0) {
+      // The storage envelope is envMaxAbsNSigmaProton alone (checked just above). An extra
+      // pid.nSigmaProton * 2.0 gate used to sit here: a hard-coded factor, tighter or looser than
+      // the envelope depending on a PID value it has no business reading, and inert only because
+      // 2 x 2.0 happened to exceed the envelope's 3.0.
+      if (passCharge) {
         TrackState pTrk = ts;
         if (PassTofProtonPid(pTrk)) pTrk.selFlags |= femto_phi_tree::kSelLoosePid;
         if (PassTofProtonPid(pTrk) && TMath::Abs(pTrk.nSigmaProton) <= pidCfg.nSigmaProton) {
@@ -1350,9 +1381,15 @@ void StFemtoPhiTreeMaker::WriteSourceFileTable() {
   mOutFile->cd();
   UShort_t idx = 0;
   UInt_t hash = 0;
+  // sourceFileIndex is local to THIS output file, so after hadd index 0 means a different PicoDst
+  // in every subjob. The event row carries subjobId; without it here the two cannot be joined and
+  // the only remaining key is the 32-bit hash, which section 10.7 already rejected as a
+  // provenance key on its own (1.15 expected collisions over 99,246 files).
+  UInt_t subjob = mSubjobId;
   TString path;
   TString* pathPtr = &path;
-  TTree* t = new TTree("SourceFileTable", "sourceFileIndex -> PicoDst path");
+  TTree* t = new TTree("SourceFileTable", "(subjobId, sourceFileIndex) -> PicoDst path");
+  t->Branch("subjobId", &subjob, "subjobId/i");
   t->Branch("sourceFileIndex", &idx, "sourceFileIndex/s");
   t->Branch("sourceFileHash", &hash, "sourceFileHash/i");
   t->Branch("path", &pathPtr);
@@ -1429,17 +1466,25 @@ void StFemtoPhiTreeMaker::WriteMetadata() {
 void StFemtoPhiTreeMaker::WriteCounterHistogram() {
   if (!mOutFile) return;
   mOutFile->cd();
-  const char* label[13] = {"nInputEvents", "nAcceptedEvents", "nBadRun",    "nFailEventCuts",
-                           "nPileup",      "nFailCent",       "nFailMaxNTr", "nKp",
-                           "nKm",          "nDeuteron",       "nProton",     "nPhiPair",
-                           "nFiles"};
-  const Long64_t value[13] = {mNInput,      mNAccepted, mNBadRun, mNFailEventCuts,
-                              mNPileup,     mNFailCent, mNFailMaxNTr, mNKp,
-                              mNKm,         mNDeuteron, mNProton, mNPhiPair,
-                              1};
-  TH1D h("hCounters", "summable production counters;;count", 13, 0.5, 13.5);
+  // The only counters that survive hadd. TNamed does not sum (pilot test T4), so anything that
+  // has to be countable after the merge lives here. The nuclear species serve 18 of the
+  // analysis's 34 channels and were missing until 2026-09-15; nFiles used to be the constant 1,
+  // which after hadd counted JOBS, not input files.
+  const Int_t kNCounter = 17;
+  const char* label[kNCounter] = {"nInputEvents", "nAcceptedEvents", "nBadRun",   "nFailEventCuts",
+                                  "nPileup",      "nFailCent",       "nFailMaxNTr", "nKp",
+                                  "nKm",          "nDeuteron",       "nProton",     "nTriton",
+                                  "nHe3",         "nHe4",            "nPhiPair",    "nFiles",
+                                  "nJobs"};
+  const Long64_t value[kNCounter] = {mNInput,   mNAccepted, mNBadRun,  mNFailEventCuts,
+                                     mNPileup,  mNFailCent, mNFailMaxNTr, mNKp,
+                                     mNKm,      mNDeuteron, mNProton,  mNTriton,
+                                     mNHe3,     mNHe4,      mNPhiPair,
+                                     (Long64_t)mSourceFiles.size(),
+                                     1};
+  TH1D h("hCounters", "summable production counters;;count", kNCounter, 0.5, kNCounter + 0.5);
   h.SetDirectory(0);
-  for (Int_t i = 0; i < 13; ++i) {
+  for (Int_t i = 0; i < kNCounter; ++i) {
     h.GetXaxis()->SetBinLabel(i + 1, label[i]);
     h.SetBinContent(i + 1, (Double_t)value[i]);
     h.SetBinError(i + 1, 0.0);

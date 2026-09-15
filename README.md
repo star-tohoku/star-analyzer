@@ -42,6 +42,13 @@ flowchart TD
 
 **In short:** `run_anaXxx.C` loads STAR/project libraries, compiles `anaXxx.C+`, and calls the analysis function; `anaXxx.C` loads mainconf through `ConfigManager`, builds `StChain` (`StPicoDstMaker` + analysis Maker), and runs the event loop. **Why two macros?** See [PHILOSOPHY.md](PHILOSOPHY.md).
 
+**Two-stage variant (phi femtoscopy).** `anaFemtoPhiTree` writes a reduced ROOT tree instead of
+histograms, and `anaFemtoPhiTreeDownstreamV3` builds the correlation-function channels from that
+tree: the PicoDst is read once, and every systematic pass afterwards reads ~1.9 TB instead of
+76.8 TB. The same mainconf must drive both stages — the tree records the configuration its stored
+decisions depend on, and the downstream refuses to run on a mismatch. See
+[docs/REFERENCE.md](docs/REFERENCE.md).
+
 ## Documentation
 
 | Document | Purpose |

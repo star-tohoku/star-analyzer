@@ -1,0 +1,45 @@
+# Analysis info for the PRODUCTION reduced tree (Step 7). Frozen 2026-09-15.
+# anaName is the key that ties config snapshot, joblist, runmeta, output and QA together,
+# so the production tree gets its own rather than inheriting the pilot's _v2 name.
+
+starTag:
+  triggerSets: "production_3p85GeV_fixedTarget_2021"
+  stream: "st_physics"
+  collision: ""
+  year: ""
+  productionTag: "P24iy"
+  libraryTag: "SL24y"
+  filetype: "daq_reco_picoDst"
+  filenameFilter: "st_physics"
+  storageExclude: "HPSS"
+
+dataset:
+  collisionSystem: "Au+Au"
+  allPicoDstList: "picoDstList/auau3p85GeVfxt.list"
+  runRange:
+    min: 15000000
+    max: 26000000
+  goodRunList: ""
+  dataQuality: "production"
+  dataFormat: "picoDst"
+
+analysis:
+  anaName: &anaName "auau3p85fxt_anaFemtoPhiTree_prod"
+  name: *anaName
+  type: "femtoscopy-tree"
+  targetParticle: "phi"
+  decayChannel: "phi-{p,d,t,3He,4He} tree (schema 3), 24 channels"
+  workDir: "/star/u/oura/gpfs/star-analyzer"
+  logDir: "/star/u/oura/gpfs/star-analyzer/log"
+  errDir: "/star/u/oura/gpfs/star-analyzer/err"
+  baseRunMacro: "run_anaFemtoPhiTree"
+  baseAnaMacro: "anaFemtoPhiTree"
+  jobName: *anaName
+  scratchSubdir: *anaName
+  outputFileStem: *anaName
+  nFiles: 10
+
+analyst:
+  name: "Fumiya Oura"
+  institute: "JAEA"
+  email: "fumiya.oura@gmail.com"

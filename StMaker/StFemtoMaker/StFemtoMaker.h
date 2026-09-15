@@ -127,8 +127,8 @@ class StFemtoMaker : public StMaker {
 
   // Per-species collection for one track. Separate functions on purpose: inside the Make() track
   // loop a rejection used to be a `continue`, which leaves the loop and so suppressed every
-  // species declared after it (closure-proton-20260914.md). Here a rejection is a `return` and
-  // reaches only its own species.
+  // species declared after it (closure-proton-20260914.md, measured at 0.034% of deuterons via
+  // the proton block). Here a rejection is a `return` and reaches only its own species.
   void CollectKaonMinusTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
                              const TVector3& pMom, Int_t itrk, Int_t btofIndex,
                              std::vector<TrackState>& kaonMinusTracks);
