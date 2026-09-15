@@ -29,6 +29,20 @@ class StFemtoPhiTreeMaker : public StMaker {
   StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoMaker, const char* outName);
   virtual ~StFemtoPhiTreeMaker();
 
+  // The producing job's identity, hashed into subjobId, which is the only thing that keeps
+  // sourceFileIndex meaningful after hadd. Set it from the analysis macro's own jobid argument:
+  // the environment variable this used to rely on is set by the local wrapper scripts and NOT by
+  // the batch joblist, so every farm subjob silently shared subjobId = 0 (found by the
+  // 2026-09-15 pilot). The environment variable is still read, but only as a fallback.
+  void SetJobId(const char* jobId) { mJobIdArg = jobId ? jobId : ""; }
+
+  // The mainconf this job was told to use. The tree-specific keys (schema version, which species
+  // to store, the storage envelope) are re-parsed from it here, and that path used to come from
+  // STAR_ANA_MAINCONF alone -- set by the local wrapper scripts, absent on the farm, where
+  // LoadTreeConfig() then returned success with every tree key left at its default. The
+  // 2026-09-15 pilot produced schema 2 trees with no nuclei that way.
+  void SetMainconfPath(const char* path) { mMainconfArg = path ? path : ""; }
+
   virtual Int_t Init();
   virtual Int_t Make();
   virtual void Clear(Option_t* opt = "");
@@ -95,6 +109,8 @@ class StFemtoPhiTreeMaker : public StMaker {
   Int_t mAutoFlush;
   UInt_t mSchemaVersion;
   UInt_t mSubjobId;
+  TString mJobIdArg;
+  TString mMainconfArg;
   std::vector<UInt_t> mTriggerIds;          // configured triggers, from YAML
   std::vector<std::string> mSourceFiles;    // sourceFileIndex -> PicoDst path
   std::string mPidCorrectionState;

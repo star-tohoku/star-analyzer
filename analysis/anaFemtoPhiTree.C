@@ -29,30 +29,63 @@ void anaFemtoPhiTree(const Char_t* inputFile = "tmp/pico/bench1.picoDst.root",
 
   Long64_t nEvents = (nEventsMax > 0) ? nEventsMax : 10000000;
 
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // Relative paths resolve against the process's real working directory, not against $PWD.
+  // $PWD is a shell variable, and a SUMS job is a csh script that cd's into its runtime bundle;
+  // csh does not update $PWD on cd, so on the farm it named a directory the job was not in.
+  // See results/pilot-farm-20260915.md.
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
+  // Choosing the configuration. The rule is that a configuration named on the command line is
+  // used or the job fails: it must never be quietly replaced by another one. The 2026-09-15 farm
+  // pilot produced 241 trees with the wrong selection precisely because the fallback chain below
+  // used to run even when a path had been given.
   TString mainConfigPath;
+  TString configSource;
   if (configPath && strlen(configPath) > 0) {
     mainConfigPath = configPath;
-    if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+    if (mainConfigPath(0) != '/') mainConfigPath = cwd + "/" + mainConfigPath;
+    configSource = "argument";
+    if (gSystem->AccessPathName(mainConfigPath.Data())) {
+      std::cerr << "ERROR: the mainconf given on the command line does not exist:\n"
+                << "       " << mainConfigPath.Data() << "\n"
+                << "       (working directory " << cwd.Data() << ")\n"
+                << "       Refusing to fall back to a different configuration." << std::endl;
+      return;
+    }
   } else {
     const char* env_conf = gSystem->Getenv("STAR_ANA_MAINCONF");
     if (env_conf && strlen(env_conf) > 0) {
       mainConfigPath = env_conf;
-      if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+      if (mainConfigPath(0) != '/') mainConfigPath = cwd + "/" + mainConfigPath;
+      configSource = "STAR_ANA_MAINCONF";
     } else {
-      TString fallbackPath = TString(pwd) + "/.current_mainconf";
+      TString fallbackPath = cwd + "/.current_mainconf";
       std::ifstream infile(fallbackPath.Data());
       std::string line;
-      if (infile.is_open() && std::getline(infile, line)) {
+      if (infile.is_open() && std::getline(infile, line) && !line.empty()) {
         mainConfigPath = line.c_str();
-        if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+        if (mainConfigPath(0) != '/') mainConfigPath = cwd + "/" + mainConfigPath;
+        configSource = ".current_mainconf";
       } else {
-        mainConfigPath = TString(pwd) + "/config/mainconf/main_auau3p85fxt_anaFemtoPhiTree_dEdxOnly.yaml";
+        std::cerr << "ERROR: no mainconf. Pass one as the 5th argument, set STAR_ANA_MAINCONF, or "
+                  << "write one into .current_mainconf.\n"
+                  << "       There is no built-in default: a job with no configuration must fail, "
+                  << "not analyse with someone else's." << std::endl;
+        return;
       }
     }
+    if (gSystem->AccessPathName(mainConfigPath.Data())) {
+      std::cerr << "ERROR: mainconf from " << configSource.Data() << " does not exist:\n"
+                << "       " << mainConfigPath.Data() << std::endl;
+      return;
+    }
   }
+  // Printed unconditionally: when a batch job analyses with the wrong configuration, this line is
+  // what makes it visible in the log rather than only in the output months later.
+  std::cout << "[anaFemtoPhiTree] mainconf (" << configSource.Data() << "): "
+            << mainConfigPath.Data() << std::endl;
+
   if (!ConfigManager::GetInstance().LoadConfig(mainConfigPath.Data())) {
     std::cerr << "ERROR: Failed to load config: " << mainConfigPath.Data() << std::endl;
     return;
@@ -60,18 +93,23 @@ void anaFemtoPhiTree(const Char_t* inputFile = "tmp/pico/bench1.picoDst.root",
 
   chain = new StChain();
   StPicoDstMaker* picoMaker = new StPicoDstMaker(StPicoDstMaker::IoRead, inputFile, "picoDst");
+  // Only what StFemtoPhiTreeMaker actually reads. The tree maker uses StPicoEvent, StPicoTrack and
+  // StPicoBTofPidTraits; CentralityHelper and StRefMultCorr take refMult and nBTOFMatch from the
+  // event row, and nothing in this chain touches BbcHit / EpdHit / MtdHit / BTowHit /
+  // ETofPidTraits / BTofHit (checked by grep over StMaker/, include/ and StRoot/StRefMultCorr).
+  // At 2.28e9 events the I/O this saves is the dominant cost of production.
   picoMaker->SetStatus("*", 0);
   picoMaker->SetStatus("Event", 1);
   picoMaker->SetStatus("Track", 1);
-  picoMaker->SetStatus("BTofHit", 1);
   picoMaker->SetStatus("BTofPidTraits", 1);
-  picoMaker->SetStatus("BbcHit", 1);
-  picoMaker->SetStatus("EpdHit", 1);
-  picoMaker->SetStatus("MtdHit", 1);
-  picoMaker->SetStatus("BTowHit", 1);
-  picoMaker->SetStatus("ETofPidTraits", 1);
 
   treeMaker = new StFemtoPhiTreeMaker("femtoPhiTree", picoMaker, outputFile);
+  // Batch jobs reach this macro directly from the joblist, with no wrapper script and therefore
+  // no STAR_ANA_JOBID in the environment; the jobid argument is the only copy that exists there.
+  treeMaker->SetJobId(jobid);
+  // Same reason: the tree-specific keys are re-parsed from the mainconf by the maker itself, and
+  // on the farm there is no STAR_ANA_MAINCONF to find it by.
+  treeMaker->SetMainconfPath(mainConfigPath.Data());
   chain->AddMaker(picoMaker);
   chain->AddMaker(treeMaker);
 

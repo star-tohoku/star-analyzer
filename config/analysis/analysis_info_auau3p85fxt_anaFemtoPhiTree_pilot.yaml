@@ -1,4 +1,10 @@
-# Analysis info for the PRODUCTION reduced tree (Step 7). Frozen 2026-09-15.
+# Pre-production PILOT for the reduced tree: run 22166015 only (241 PicoDst, ~0.24% of the
+# dataset, 25 subjobs at nFiles 10). Its purpose is the part single-job local tests cannot reach --
+# subjobId uniqueness across subjobs, hCounters summation under hadd, duplicate detection, and
+# whether (subjobId, sourceFileIndex, sourceEntry) still reopens a PicoDst AFTER a merge.
+# The maker config is the frozen production one, unchanged, so the tree is production-identical.
+# 22166015 sits near the dense end of the ten runs measured in Step 6 (851 B/event against a
+# weighted 834), so any capacity extrapolation from it is conservative.
 # anaName is the key that ties config snapshot, joblist, runmeta, output and QA together,
 # so the production tree gets its own rather than inheriting the pilot's _v2 name.
 
@@ -12,6 +18,7 @@ starTag:
   filetype: "daq_reco_picoDst"
   filenameFilter: "st_physics"
   storageExclude: "HPSS"
+  extraConditions: "runnumber=22166015"
 
 dataset:
   collisionSystem: "Au+Au"
@@ -24,7 +31,7 @@ dataset:
   dataFormat: "picoDst"
 
 analysis:
-  anaName: &anaName "auau3p85fxt_anaFemtoPhiTree_prod"
+  anaName: &anaName "auau3p85fxt_anaFemtoPhiTree_pilot"
   name: *anaName
   type: "femtoscopy-tree"
   targetParticle: "phi"
@@ -37,9 +44,8 @@ analysis:
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName
-  nFiles: all        # how many catalog files to take, not files per job (maxFilesPerProcess=1).
-                     # Inherited as 10 from the pilot config _v2, where it would have limited a
-                     # production submission to ten files.
+  nFiles: 40         # catalog ROWS, which include storage replicas: about 20 unique files,
+                     # hence about 20 subjobs of one PicoDst each.
 analyst:
   name: "Fumiya Oura"
   institute: "JAEA"

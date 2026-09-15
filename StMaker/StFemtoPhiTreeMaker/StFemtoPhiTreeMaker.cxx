@@ -159,8 +159,18 @@ extern "C" void* createStFemtoPhiTreeMakerC(const char* name, void* picoMaker, c
 }
 
 Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
-  mMainconfPath = EnvOrEmpty("STAR_ANA_MAINCONF").Data();
-  if (mMainconfPath.empty()) return kTRUE;
+  // Explicit argument first, environment second. An empty result is FATAL: the tree keys decide
+  // the schema version, which species are stored and how wide the storage envelope is, so a job
+  // that cannot read them would write a structurally different tree while reporting success --
+  // which is exactly what the 2026-09-15 farm pilot did (schema 2, no nuclei, unrestricted kaon
+  // store) because this used to be `if (empty) return kTRUE;`.
+  mMainconfPath = mMainconfArg.Length() ? mMainconfArg.Data() : EnvOrEmpty("STAR_ANA_MAINCONF").Data();
+  if (mMainconfPath.empty()) {
+    std::cerr << "[StFemtoPhiTreeMaker] no mainconf path: pass it with SetMainconfPath() or set "
+              << "STAR_ANA_MAINCONF. Refusing to write a tree with default schema settings."
+              << std::endl;
+    return kFALSE;
+  }
 
   std::map<std::string, std::string> mainValues;
   if (!YamlParser::ParseFile(mMainconfPath.c_str(), mainValues)) {
@@ -576,7 +586,11 @@ Int_t StFemtoPhiTreeMaker::Init() {
 #endif
   // subjobId identifies the producing job inside a merged tree. STAR jobids are
   // 32-char hex in batch and short integers locally, so hash to a stable UInt.
-  TString jobId = EnvOrEmpty("STAR_ANA_JOBID");
+  // The macro argument comes first: STAR_ANA_JOBID is exported by script/run_anaFemtoPhiTree.sh
+  // and its singularity twin, but the batch joblist calls root4star directly and never sets it,
+  // so relying on the environment gave every farm subjob subjobId = 0 while every local test
+  // passed. Keep the environment as a fallback for callers that do not set the argument.
+  TString jobId = mJobIdArg.Length() ? mJobIdArg : EnvOrEmpty("STAR_ANA_JOBID");
   mSubjobId = jobId.Length() ? femto_phi_tree::HashStringFnv(jobId.Data()) : 0u;
   std::cout << "[StFemtoPhiTreeMaker] jobid='" << jobId << "' subjobId=" << mSubjobId << std::endl;
   BookTrees();
@@ -1388,14 +1402,23 @@ void StFemtoPhiTreeMaker::WriteSourceFileTable() {
   UInt_t subjob = mSubjobId;
   TString path;
   TString* pathPtr = &path;
-  TTree* t = new TTree("SourceFileTable", "(subjobId, sourceFileIndex) -> PicoDst path");
+  // The path is the file the chain actually opened, and with copyInputLocally the batch job opens
+  // a scratch copy: /tmp/<user>/<jobid>/INPUTFILES/st_physics_...picoDst.root, a directory that is
+  // gone by the time anyone reads the tree. The basename survives that and is unique across STAR
+  // production, so it is what a reverse lookup goes through (catalog query on filename). Measured
+  // on the 2026-09-15 pilot: the key resolved, the path did not.
+  TString name;
+  TString* namePtr = &name;
+  TTree* t = new TTree("SourceFileTable", "(subjobId, sourceFileIndex) -> PicoDst");
   t->Branch("subjobId", &subjob, "subjobId/i");
   t->Branch("sourceFileIndex", &idx, "sourceFileIndex/s");
   t->Branch("sourceFileHash", &hash, "sourceFileHash/i");
+  t->Branch("fileName", &namePtr);
   t->Branch("path", &pathPtr);
   for (size_t i = 0; i < mSourceFiles.size(); ++i) {
     idx = (UShort_t)i;
     path = mSourceFiles[i].c_str();
+    name = gSystem->BaseName(mSourceFiles[i].c_str());
     hash = femto_phi_tree::HashStringFnv(mSourceFiles[i].c_str());
     t->Fill();
   }

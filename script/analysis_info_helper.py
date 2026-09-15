@@ -276,6 +276,11 @@ def build_catalog_url(star_tag):
         parts.append("storage!={}".format(star_tag['storageExclude']))
     if star_tag.get('storage'):
         parts.append("storage={}".format(star_tag['storage']))
+    # Verbatim passthrough for conditions this builder has no key for, e.g. restricting a pilot
+    # to one run: extraConditions: "runnumber=22166015". Kept as a single string because the
+    # catalog's condition grammar is its own; nothing here tries to parse it.
+    if star_tag.get('extraConditions'):
+        parts.append(str(star_tag['extraConditions']).strip())
     return base + "?" + ",".join(parts)
 
 

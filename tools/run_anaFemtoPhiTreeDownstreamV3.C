@@ -4,8 +4,12 @@ void run_anaFemtoPhiTreeDownstreamV3(const Char_t* treeFile, const Char_t* outFi
                                    Double_t signalMax = -1.0,
                                    Bool_t recomputeDaughterPid = kFALSE,
                                    Bool_t recomputeMixBin = kFALSE) {
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD: a SUMS job is a csh script that cd's
+  // into its runtime bundle, and csh does not update the PWD environment variable, so the
+  // libraries and macros would be looked for in the wrong place on the farm.
+  // See results/pilot-farm-20260915.md.
+  TString cwdStr = gSystem->WorkingDirectory();
+  const char* pwd = cwdStr.Data();
   gROOT->LoadMacro("$STAR/StRoot/StMuDSTMaker/COMMON/macros/loadSharedLibraries.C");
   loadSharedLibraries();
   if (gSystem->Load(TString(pwd) + "/lib/libStarAnaConfig.so") < 0) return;
