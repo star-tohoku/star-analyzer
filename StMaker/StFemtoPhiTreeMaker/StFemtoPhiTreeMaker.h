@@ -115,6 +115,7 @@ class StFemtoPhiTreeMaker : public StMaker {
   UInt_t mSubjobId;
   TString mJobIdArg;
   TString mMainconfArg;
+  std::string mJobIdString;
   Long64_t mSkipArg;
   std::vector<UInt_t> mTriggerIds;          // configured triggers, from YAML
   std::vector<std::string> mSourceFiles;    // sourceFileIndex -> PicoDst path

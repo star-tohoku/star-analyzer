@@ -627,7 +627,38 @@ Int_t StFemtoPhiTreeMaker::Init() {
   // so relying on the environment gave every farm subjob subjobId = 0 while every local test
   // passed. Keep the environment as a fallback for callers that do not set the argument.
   TString jobId = mJobIdArg.Length() ? mJobIdArg : EnvOrEmpty("STAR_ANA_JOBID");
-  mSubjobId = jobId.Length() ? femto_phi_tree::HashStringFnv(jobId.Data()) : 0u;
+  mJobIdString = jobId.Data();
+  // subjobId exists to keep sourceFileIndex meaningful after hadd, so it has to be unique over the
+  // subjobs that get merged. A 32-bit hash of the jobid string is not: over a full production of
+  // 99,246 subjobs the expected number of colliding pairs is 99,246^2 / 2 / 2^32 = 1.15, and the
+  // probability of at least one is 68% -- the same arithmetic the plan's section 10.7 used to
+  // reject sourceFileHash as a provenance key.
+  //
+  // A SUMS jobid is "<requestId>_<processIndex>", and the process index is unique within a
+  // submission by construction. Use it (offset by one, so that 0 keeps meaning "not set"), and
+  // keep the full jobid string in SourceFileTable so that trees from two submissions can still be
+  // told apart. Fall back to the hash only if the jobid does not have that shape.
+  mSubjobId = 0u;
+  if (jobId.Length()) {
+    const Ssiz_t us = jobId.Last('_');
+    Bool_t parsed = kFALSE;
+    if (us > 0 && us + 1 < jobId.Length()) {
+      TString tail = jobId(us + 1, jobId.Length() - us - 1);
+      if (tail.IsDigit()) {
+        const Long64_t proc = tail.Atoll();
+        if (proc >= 0 && proc < 4294967294LL) {
+          mSubjobId = (UInt_t)(proc + 1);
+          parsed = kTRUE;
+        }
+      }
+    }
+    if (!parsed) {
+      mSubjobId = femto_phi_tree::HashStringFnv(jobId.Data());
+      std::cerr << "[StFemtoPhiTreeMaker] WARNING: jobid '" << jobId << "' is not "
+                << "<requestId>_<processIndex>; falling back to a 32-bit hash for subjobId, which "
+                << "can collide across a large production." << std::endl;
+    }
+  }
   std::cout << "[StFemtoPhiTreeMaker] jobid='" << jobId << "' subjobId=" << mSubjobId << std::endl;
   BookTrees();
   return kStOK;
@@ -1445,8 +1476,13 @@ void StFemtoPhiTreeMaker::WriteSourceFileTable() {
   // on the 2026-09-15 pilot: the key resolved, the path did not.
   TString name;
   TString* namePtr = &name;
+  // The full jobid string, so that two submissions merged together stay distinguishable even
+  // though their process indices both start at 0.
+  TString jobIdStr = mJobIdString.c_str();
+  TString* jobIdPtr = &jobIdStr;
   TTree* t = new TTree("SourceFileTable", "(subjobId, sourceFileIndex) -> PicoDst");
   t->Branch("subjobId", &subjob, "subjobId/i");
+  t->Branch("jobId", &jobIdPtr);
   t->Branch("sourceFileIndex", &idx, "sourceFileIndex/s");
   t->Branch("sourceFileHash", &hash, "sourceFileHash/i");
   t->Branch("fileName", &namePtr);
