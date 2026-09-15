@@ -44,6 +44,7 @@ const Double_t kProtonMass = 0.938272;
 const Double_t kKaonMass = 0.493677;
 const Double_t kPionMass = 0.139570;
 const Double_t kPhiMass = 1.019461;
+const Int_t kMaxTracks = 4000;
 
 Bool_t ComputePhiBetaGamma(Bool_t tofPlus, Float_t betaPlus, Bool_t tofMinus, Float_t betaMinus, Float_t& betaGamma) {
   betaGamma = -1.0f;
@@ -261,7 +262,6 @@ Int_t StFemtoMaker::Make() {
   }
 
   PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
-  const Int_t kMaxTracks = 4000;
   std::vector<TrackState> kaonsPlus;
   std::vector<TrackState> kaonsMinus;
   std::vector<TrackState> kaonMinusTracks;
@@ -427,158 +427,13 @@ Int_t StFemtoMaker::Make() {
       }
     }
 
-    if (needKaonMinus && PassKaonMinusBaseCuts(trk, pVtx)) {
-      TrackState kTrack;
-      BuildTrackState(kTrack, trk, event, pVtx, itrk);
-      if (kTrack.charge >= 0) continue;
-      FillTofInfo(kTrack, trk, pMom, btofIndex);
-      if (!IsKaon(kTrack)) continue;
-      if (kTrack.pT < femtoCfgSpecies.kaonMinusMinPtPre) continue;
-      FillKaonMinusPreFemtoQa(kTrack);
-      if (PassFemtoKaonMinusCuts(kTrack) && (Int_t)kaonMinusTracks.size() < kMaxTracks) {
-        FillKaonMinusFemtoQa(kTrack);
-        kaonMinusTracks.push_back(kTrack);
-      }
-    }
-
-    if (needProton && PassProtonCuts(trk, pVtx)) {
-      TrackState pTrack;
-      BuildTrackState(pTrack, trk, event, pVtx, itrk);
-      FillTofInfo(pTrack, trk, pMom, btofIndex);
-      if (!IsProton(pTrack)) continue;
-      const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-      Bool_t passCharge = kTRUE;
-      if (femtoCfg.protonChargeMode == "positive") {
-        passCharge = (pTrack.charge > 0);
-      } else if (femtoCfg.protonChargeMode == "negative") {
-        passCharge = (pTrack.charge < 0);
-      }
-      if (!passCharge) continue;
-      if (pTrack.pT < femtoCfg.protonMinPtPre) continue;
-      FillProtonPreFemtoQa(pTrack);
-      if (PassFemtoProtonCuts(pTrack) && (Int_t)protons.size() < kMaxTracks) {
-        FillProtonFemtoQa(pTrack);
-        protons.push_back(pTrack);
-      }
-    }
-
-    if (needHe4 && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
-      NuclearTrackState nucState;
-      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
-      if (nucState.dedx > 0 && m_histManager) {
-        m_histManager->Fill("hNSigmaHe4VsP_All", pMom.Mag(),
-                            StNuclearIdHelper::GetNSigma(kNucHe4, nucState.pMag, nucState.dedx));
-      }
-      if (StNuclearIdHelper::IsHe4(nucState)) {
-        TrackState hTrack;
-        BuildTrackState(hTrack, trk, event, pVtx, itrk);
-        FillTofInfo(hTrack, trk, pMom, btofIndex);
-        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-        He4TrackState h4;
-        h4.trk = hTrack;
-        h4.nSigmaHe4 = (Float_t)StNuclearIdHelper::GetNSigma(kNucHe4, nucState.pMag, nucState.dedx);
-        if (m_histManager) {
-          m_histManager->Fill("hNSigmaHe4VsP", pMom.Mag(), h4.nSigmaHe4);
-        }
-        const Double_t he4Pmom = pMom.Mag();
-        if (he4Pmom < femtoCfg.he4MinPMom || he4Pmom > femtoCfg.he4MaxPMom) continue;
-        if (h4.trk.pT < femtoCfg.he4MinPtPre || h4.trk.pT > femtoCfg.he4MaxPtPre) continue;
-        FillHe4PreFemtoQa(h4.trk, h4.nSigmaHe4);
-        if (PassFemtoHe4Cuts(h4) && (Int_t)he4Tracks.size() < kMaxTracks) {
-          FillHe4FemtoQa(h4.trk);
-          he4Tracks.push_back(h4);
-        }
-      }
-    }
-
-    if (needDeuteron && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
-      NuclearTrackState nucState;
-      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
-      if (nucState.dedx > 0 && m_histManager) {
-        m_histManager->Fill("hNSigmaDeuteronVsP_All", pMom.Mag(),
-                            StNuclearIdHelper::GetNSigma(kNucDeuteron, nucState.pMag, nucState.dedx));
-      }
-      if (StNuclearIdHelper::IsDeuteron(nucState)) {
-        TrackState dTrack;
-        BuildTrackState(dTrack, trk, event, pVtx, itrk);
-        FillTofInfo(dTrack, trk, pMom, btofIndex);
-        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-        DeuteronTrackState dState;
-        dState.trk = dTrack;
-        dState.nSigmaDeuteron =
-            (Float_t)StNuclearIdHelper::GetNSigma(kNucDeuteron, nucState.pMag, nucState.dedx);
-        if (m_histManager) {
-          m_histManager->Fill("hNSigmaDeuteronVsP", pMom.Mag(), dState.nSigmaDeuteron);
-        }
-        const Double_t dPmom = pMom.Mag();
-        if (dPmom < femtoCfg.deuteronMinPMom || dPmom > femtoCfg.deuteronMaxPMom) continue;
-        if (dState.trk.pT < femtoCfg.deuteronMinPtPre || dState.trk.pT > femtoCfg.deuteronMaxPtPre) continue;
-        FillDeuteronPreFemtoQa(dState.trk, dState.nSigmaDeuteron);
-        if (PassFemtoDeuteronCuts(dState) && (Int_t)deuteronTracks.size() < kMaxTracks) {
-          FillDeuteronFemtoQa(dState.trk);
-          deuteronTracks.push_back(dState);
-        }
-      }
-    }
-
-    if (needTriton && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
-      NuclearTrackState nucState;
-      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
-      if (nucState.dedx > 0 && m_histManager) {
-        m_histManager->Fill("hNSigmaTritonVsP_All", pMom.Mag(),
-                            StNuclearIdHelper::GetNSigma(kNucTriton, nucState.pMag, nucState.dedx));
-      }
-      if (StNuclearIdHelper::IsTriton(nucState)) {
-        TrackState tTrack;
-        BuildTrackState(tTrack, trk, event, pVtx, itrk);
-        FillTofInfo(tTrack, trk, pMom, btofIndex);
-        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-        TritonTrackState tState;
-        tState.trk = tTrack;
-        tState.nSigmaTriton =
-            (Float_t)StNuclearIdHelper::GetNSigma(kNucTriton, nucState.pMag, nucState.dedx);
-        if (m_histManager) {
-          m_histManager->Fill("hNSigmaTritonVsP", pMom.Mag(), tState.nSigmaTriton);
-        }
-        const Double_t tPmom = pMom.Mag();
-        if (tPmom < femtoCfg.tritonMinPMom || tPmom > femtoCfg.tritonMaxPMom) continue;
-        if (tState.trk.pT < femtoCfg.tritonMinPtPre || tState.trk.pT > femtoCfg.tritonMaxPtPre) continue;
-        FillTritonPreFemtoQa(tState.trk, tState.nSigmaTriton);
-        if (PassFemtoTritonCuts(tState) && (Int_t)tritonTracks.size() < kMaxTracks) {
-          FillTritonFemtoQa(tState.trk);
-          tritonTracks.push_back(tState);
-        }
-      }
-    }
-
-    if (needHe3 && trk->nHitsDedx() >= nucIdCfg.minNHitsDedxNuclear) {
-      NuclearTrackState nucState;
-      StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
-      if (nucState.dedx > 0 && m_histManager) {
-        m_histManager->Fill("hNSigmaHe3VsP_All", pMom.Mag(),
-                            StNuclearIdHelper::GetNSigma(kNucHe3, nucState.pMag, nucState.dedx));
-      }
-      if (StNuclearIdHelper::IsHe3(nucState)) {
-        TrackState h3Track;
-        BuildTrackState(h3Track, trk, event, pVtx, itrk);
-        FillTofInfo(h3Track, trk, pMom, btofIndex);
-        const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
-        He3TrackState h3State;
-        h3State.trk = h3Track;
-        h3State.nSigmaHe3 = (Float_t)StNuclearIdHelper::GetNSigma(kNucHe3, nucState.pMag, nucState.dedx);
-        if (m_histManager) {
-          m_histManager->Fill("hNSigmaHe3VsP", pMom.Mag(), h3State.nSigmaHe3);
-        }
-        const Double_t h3Pmom = pMom.Mag();
-        if (h3Pmom < femtoCfg.he3MinPMom || h3Pmom > femtoCfg.he3MaxPMom) continue;
-        if (h3State.trk.pT < femtoCfg.he3MinPtPre || h3State.trk.pT > femtoCfg.he3MaxPtPre) continue;
-        FillHe3PreFemtoQa(h3State.trk, h3State.nSigmaHe3);
-        if (PassFemtoHe3Cuts(h3State) && (Int_t)he3Tracks.size() < kMaxTracks) {
-          FillHe3FemtoQa(h3State.trk);
-          he3Tracks.push_back(h3State);
-        }
-      }
-    }
+    // Each species is collected independently; a rejection inside one must not reach the others.
+    if (needKaonMinus) CollectKaonMinusTrack(trk, event, pVtx, pMom, itrk, btofIndex, kaonMinusTracks);
+    if (needProton) CollectProtonTrack(trk, event, pVtx, pMom, itrk, btofIndex, protons);
+    if (needHe4) CollectHe4Track(trk, event, pVtx, pMom, itrk, btofIndex, nucIdCfg, he4Tracks);
+    if (needDeuteron) CollectDeuteronTrack(trk, event, pVtx, pMom, itrk, btofIndex, nucIdCfg, deuteronTracks);
+    if (needTriton) CollectTritonTrack(trk, event, pVtx, pMom, itrk, btofIndex, nucIdCfg, tritonTracks);
+    if (needHe3) CollectHe3Track(trk, event, pVtx, pMom, itrk, btofIndex, nucIdCfg, he3Tracks);
   }
 
   if (m_histManager) {
@@ -832,6 +687,197 @@ Bool_t StFemtoMaker::PassTofProtonPid(const TrackState& trk) const {
 }
 
 Bool_t StFemtoMaker::IsKaon(const TrackState& trk) { return PassTofKaonPid(trk); }
+
+// ---------------------------------------------------------------------------------------------
+// Per-species collection for one track.
+//
+// These were inline blocks in the Make() track loop until 2026-09-14. Each used `continue` to
+// reject a track, which leaves the *loop*, not the block, so any species suppressed every species
+// declared after it: enabling the proton removed 182 deuterons from phi-d, and enabling
+// kaon_minus (whose first rejection is `charge >= 0`) would have removed every positive track --
+// protons and all nuclei -- from the event. See
+// analysisnote/auau3p85fxt_anaFemtoPhi/root-tree-study/results/closure-proton-20260914.md.
+//
+// As separate functions a rejection is a `return` and reaches only its own species. Keep it that
+// way: nothing here may be turned back into a loop-level statement.
+// ---------------------------------------------------------------------------------------------
+
+void StFemtoMaker::CollectKaonMinusTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                                         const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                                         std::vector<TrackState>& kaonMinusTracks) {
+  if (!PassKaonMinusBaseCuts(trk, pVtx)) return;
+  const FemtoConfig& femtoCfgSpecies = ConfigManager::GetInstance().GetFemtoConfig();
+  TrackState kTrack;
+  BuildTrackState(kTrack, trk, event, pVtx, itrk);
+  if (kTrack.charge >= 0) return;
+  FillTofInfo(kTrack, trk, pMom, btofIndex);
+  if (!IsKaon(kTrack)) return;
+  if (kTrack.pT < femtoCfgSpecies.kaonMinusMinPtPre) return;
+  FillKaonMinusPreFemtoQa(kTrack);
+  if (PassFemtoKaonMinusCuts(kTrack) && (Int_t)kaonMinusTracks.size() < kMaxTracks) {
+    FillKaonMinusFemtoQa(kTrack);
+    kaonMinusTracks.push_back(kTrack);
+  }
+}
+
+void StFemtoMaker::CollectProtonTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                                      const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                                      std::vector<TrackState>& protons) {
+  if (!PassProtonCuts(trk, pVtx)) return;
+  TrackState pTrack;
+  BuildTrackState(pTrack, trk, event, pVtx, itrk);
+  FillTofInfo(pTrack, trk, pMom, btofIndex);
+  if (!IsProton(pTrack)) return;
+  const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  Bool_t passCharge = kTRUE;
+  if (femtoCfg.protonChargeMode == "positive") {
+    passCharge = (pTrack.charge > 0);
+  } else if (femtoCfg.protonChargeMode == "negative") {
+    passCharge = (pTrack.charge < 0);
+  }
+  if (!passCharge) return;
+  if (pTrack.pT < femtoCfg.protonMinPtPre) return;
+  FillProtonPreFemtoQa(pTrack);
+  if (PassFemtoProtonCuts(pTrack) && (Int_t)protons.size() < kMaxTracks) {
+    FillProtonFemtoQa(pTrack);
+    protons.push_back(pTrack);
+  }
+}
+
+void StFemtoMaker::CollectHe4Track(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                                   const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                                   const NuclearIdCutConfig& nucIdCfg,
+                                   std::vector<He4TrackState>& he4Tracks) {
+  if (trk->nHitsDedx() < nucIdCfg.minNHitsDedxNuclear) return;
+  NuclearTrackState nucState;
+  StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+  if (nucState.dedx > 0 && m_histManager) {
+    m_histManager->Fill("hNSigmaHe4VsP_All", pMom.Mag(),
+                        StNuclearIdHelper::GetNSigma(kNucHe4, nucState.pMag, nucState.dedx));
+  }
+  if (StNuclearIdHelper::IsHe4(nucState)) {
+    TrackState hTrack;
+    BuildTrackState(hTrack, trk, event, pVtx, itrk);
+    FillTofInfo(hTrack, trk, pMom, btofIndex);
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    He4TrackState h4;
+    h4.trk = hTrack;
+    h4.nSigmaHe4 = (Float_t)StNuclearIdHelper::GetNSigma(kNucHe4, nucState.pMag, nucState.dedx);
+    if (m_histManager) {
+      m_histManager->Fill("hNSigmaHe4VsP", pMom.Mag(), h4.nSigmaHe4);
+    }
+    const Double_t he4Pmom = pMom.Mag();
+    if (he4Pmom < femtoCfg.he4MinPMom || he4Pmom > femtoCfg.he4MaxPMom) return;
+    if (h4.trk.pT < femtoCfg.he4MinPtPre || h4.trk.pT > femtoCfg.he4MaxPtPre) return;
+    FillHe4PreFemtoQa(h4.trk, h4.nSigmaHe4);
+    if (PassFemtoHe4Cuts(h4) && (Int_t)he4Tracks.size() < kMaxTracks) {
+      FillHe4FemtoQa(h4.trk);
+      he4Tracks.push_back(h4);
+    }
+  }
+}
+
+void StFemtoMaker::CollectDeuteronTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                                        const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                                        const NuclearIdCutConfig& nucIdCfg,
+                                        std::vector<DeuteronTrackState>& deuteronTracks) {
+  if (trk->nHitsDedx() < nucIdCfg.minNHitsDedxNuclear) return;
+  NuclearTrackState nucState;
+  StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+  if (nucState.dedx > 0 && m_histManager) {
+    m_histManager->Fill("hNSigmaDeuteronVsP_All", pMom.Mag(),
+                        StNuclearIdHelper::GetNSigma(kNucDeuteron, nucState.pMag, nucState.dedx));
+  }
+  if (StNuclearIdHelper::IsDeuteron(nucState)) {
+    TrackState dTrack;
+    BuildTrackState(dTrack, trk, event, pVtx, itrk);
+    FillTofInfo(dTrack, trk, pMom, btofIndex);
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    DeuteronTrackState dState;
+    dState.trk = dTrack;
+    dState.nSigmaDeuteron =
+        (Float_t)StNuclearIdHelper::GetNSigma(kNucDeuteron, nucState.pMag, nucState.dedx);
+    if (m_histManager) {
+      m_histManager->Fill("hNSigmaDeuteronVsP", pMom.Mag(), dState.nSigmaDeuteron);
+    }
+    const Double_t dPmom = pMom.Mag();
+    if (dPmom < femtoCfg.deuteronMinPMom || dPmom > femtoCfg.deuteronMaxPMom) return;
+    if (dState.trk.pT < femtoCfg.deuteronMinPtPre || dState.trk.pT > femtoCfg.deuteronMaxPtPre) return;
+    FillDeuteronPreFemtoQa(dState.trk, dState.nSigmaDeuteron);
+    if (PassFemtoDeuteronCuts(dState) && (Int_t)deuteronTracks.size() < kMaxTracks) {
+      FillDeuteronFemtoQa(dState.trk);
+      deuteronTracks.push_back(dState);
+    }
+  }
+}
+
+void StFemtoMaker::CollectTritonTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                                      const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                                      const NuclearIdCutConfig& nucIdCfg,
+                                      std::vector<TritonTrackState>& tritonTracks) {
+  if (trk->nHitsDedx() < nucIdCfg.minNHitsDedxNuclear) return;
+  NuclearTrackState nucState;
+  StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+  if (nucState.dedx > 0 && m_histManager) {
+    m_histManager->Fill("hNSigmaTritonVsP_All", pMom.Mag(),
+                        StNuclearIdHelper::GetNSigma(kNucTriton, nucState.pMag, nucState.dedx));
+  }
+  if (StNuclearIdHelper::IsTriton(nucState)) {
+    TrackState tTrack;
+    BuildTrackState(tTrack, trk, event, pVtx, itrk);
+    FillTofInfo(tTrack, trk, pMom, btofIndex);
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    TritonTrackState tState;
+    tState.trk = tTrack;
+    tState.nSigmaTriton =
+        (Float_t)StNuclearIdHelper::GetNSigma(kNucTriton, nucState.pMag, nucState.dedx);
+    if (m_histManager) {
+      m_histManager->Fill("hNSigmaTritonVsP", pMom.Mag(), tState.nSigmaTriton);
+    }
+    const Double_t tPmom = pMom.Mag();
+    if (tPmom < femtoCfg.tritonMinPMom || tPmom > femtoCfg.tritonMaxPMom) return;
+    if (tState.trk.pT < femtoCfg.tritonMinPtPre || tState.trk.pT > femtoCfg.tritonMaxPtPre) return;
+    FillTritonPreFemtoQa(tState.trk, tState.nSigmaTriton);
+    if (PassFemtoTritonCuts(tState) && (Int_t)tritonTracks.size() < kMaxTracks) {
+      FillTritonFemtoQa(tState.trk);
+      tritonTracks.push_back(tState);
+    }
+  }
+}
+
+void StFemtoMaker::CollectHe3Track(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                                   const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                                   const NuclearIdCutConfig& nucIdCfg,
+                                   std::vector<He3TrackState>& he3Tracks) {
+  if (trk->nHitsDedx() < nucIdCfg.minNHitsDedxNuclear) return;
+  NuclearTrackState nucState;
+  StNuclearIdHelper::FillFromPico(nucState, trk, mPicoDst);
+  if (nucState.dedx > 0 && m_histManager) {
+    m_histManager->Fill("hNSigmaHe3VsP_All", pMom.Mag(),
+                        StNuclearIdHelper::GetNSigma(kNucHe3, nucState.pMag, nucState.dedx));
+  }
+  if (StNuclearIdHelper::IsHe3(nucState)) {
+    TrackState h3Track;
+    BuildTrackState(h3Track, trk, event, pVtx, itrk);
+    FillTofInfo(h3Track, trk, pMom, btofIndex);
+    const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+    He3TrackState h3State;
+    h3State.trk = h3Track;
+    h3State.nSigmaHe3 = (Float_t)StNuclearIdHelper::GetNSigma(kNucHe3, nucState.pMag, nucState.dedx);
+    if (m_histManager) {
+      m_histManager->Fill("hNSigmaHe3VsP", pMom.Mag(), h3State.nSigmaHe3);
+    }
+    const Double_t h3Pmom = pMom.Mag();
+    if (h3Pmom < femtoCfg.he3MinPMom || h3Pmom > femtoCfg.he3MaxPMom) return;
+    if (h3State.trk.pT < femtoCfg.he3MinPtPre || h3State.trk.pT > femtoCfg.he3MaxPtPre) return;
+    FillHe3PreFemtoQa(h3State.trk, h3State.nSigmaHe3);
+    if (PassFemtoHe3Cuts(h3State) && (Int_t)he3Tracks.size() < kMaxTracks) {
+      FillHe3FemtoQa(h3State.trk);
+      he3Tracks.push_back(h3State);
+    }
+  }
+}
+
 
 Bool_t StFemtoMaker::IsProton(const TrackState& trk) { return PassTofProtonPid(trk); }
 

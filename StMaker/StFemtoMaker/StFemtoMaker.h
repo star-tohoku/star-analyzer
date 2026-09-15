@@ -20,6 +20,7 @@ class StPicoTrack;
 class TString;
 class HistManager;
 class CentralityHelper;
+class NuclearIdCutConfig;
 class TVector3;
 
 class StFemtoMaker;
@@ -123,6 +124,31 @@ class StFemtoMaker : public StMaker {
   static PhiKkTrackState ToPhiKkTrack(const TrackState& trk);
   void BuildTrackState(TrackState& track, StPicoTrack* pico, StPicoEvent* event, TVector3& pVtx, Int_t index);
   void FillTofInfo(TrackState& track, StPicoTrack* trk, const TVector3& pMom, Int_t btofIndex);
+
+  // Per-species collection for one track. Separate functions on purpose: inside the Make() track
+  // loop a rejection used to be a `continue`, which leaves the loop and so suppressed every
+  // species declared after it (closure-proton-20260914.md). Here a rejection is a `return` and
+  // reaches only its own species.
+  void CollectKaonMinusTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                             const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                             std::vector<TrackState>& kaonMinusTracks);
+  void CollectProtonTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                          const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                          std::vector<TrackState>& protons);
+  void CollectHe4Track(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                       const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                       const NuclearIdCutConfig& nucIdCfg, std::vector<He4TrackState>& he4Tracks);
+  void CollectDeuteronTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                            const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                            const NuclearIdCutConfig& nucIdCfg,
+                            std::vector<DeuteronTrackState>& deuteronTracks);
+  void CollectTritonTrack(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                          const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                          const NuclearIdCutConfig& nucIdCfg,
+                          std::vector<TritonTrackState>& tritonTracks);
+  void CollectHe3Track(StPicoTrack* trk, StPicoEvent* event, TVector3& pVtx,
+                       const TVector3& pMom, Int_t itrk, Int_t btofIndex,
+                       const NuclearIdCutConfig& nucIdCfg, std::vector<He3TrackState>& he3Tracks);
   Bool_t PassTofKaonPid(const TrackState& trk) const;
   Bool_t PassPhiDaughterTofPid(const TrackState& trk) const;
   Bool_t PassPhiDaughterTofPid(const FemtoCandidate& cand) const;
