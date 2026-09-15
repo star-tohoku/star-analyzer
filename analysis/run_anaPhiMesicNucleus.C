@@ -3,8 +3,11 @@ void run_anaPhiMesicNucleus(const Char_t* inputFile,
                             const Char_t* jobid = "0",
                             Long64_t nEventsMax = -1,
                             const Char_t* configPath = 0) {
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD: csh (every SUMS job) does not update
+  // the PWD environment variable on cd, so on the farm it named the wrong directory.
+  // See results/pilot-farm-20260915.md.
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
   gROOT->LoadMacro("$STAR/StRoot/StMuDSTMaker/COMMON/macros/loadSharedLibraries.C");
   loadSharedLibraries();

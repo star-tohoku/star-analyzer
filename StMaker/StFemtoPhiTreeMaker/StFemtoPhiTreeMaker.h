@@ -43,6 +43,10 @@ class StFemtoPhiTreeMaker : public StMaker {
   // 2026-09-15 pilot produced schema 2 trees with no nuclei that way.
   void SetMainconfPath(const char* path) { mMainconfArg = path ? path : ""; }
 
+  // Events to skip before filling. Negative means "not set here", so the environment
+  // fallback still applies; zero is a real value and must not be confused with unset.
+  void SetSkipEvents(Long64_t n) { mSkipArg = n; }
+
   virtual Int_t Init();
   virtual Int_t Make();
   virtual void Clear(Option_t* opt = "");
@@ -111,6 +115,7 @@ class StFemtoPhiTreeMaker : public StMaker {
   UInt_t mSubjobId;
   TString mJobIdArg;
   TString mMainconfArg;
+  Long64_t mSkipArg;
   std::vector<UInt_t> mTriggerIds;          // configured triggers, from YAML
   std::vector<std::string> mSourceFiles;    // sourceFileIndex -> PicoDst path
   std::string mPidCorrectionState;

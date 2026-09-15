@@ -22,6 +22,12 @@
     /bin/rm -f "$runtime_dir/analysis/"*_C.* 2>/dev/null
     cd "$runtime_dir"
     setenv LD_LIBRARY_PATH ${runtime_dir}/lib:${LD_LIBRARY_PATH}
+    # Provenance the analysis cannot work out for itself: the runtime bundle is a copy, with no
+    # git repository in it. Captured when this joblist was generated. Without these the tree
+    # records no revision at all, which is what the 2026-09-15 farm pilot did.
+    setenv STAR_ANA_GIT_REV "__GIT_REV__"
+    setenv STAR_ANA_GIT_DIRTY "__GIT_DIRTY__"
+    setenv STAR_ANA_LIBRARY_TAG "__STARVER__"
     singularity exec -B /star/nfs4/AFS:/star/nfs4/AFS -B /home/starlib:/home/starlib --env LD_LIBRARY_PATH="$LD_LIBRARY_PATH" /cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest /bin/bash -lc 'export STAR=/star/nfs4/AFS/star/packages/__STARVER__; export STAR_HOST_SYS=sl73_x8664_gcc485; export STAR_LIB=${STAR}/.${STAR_HOST_SYS}/lib; export STAR_BIN=${STAR}/.${STAR_HOST_SYS}/bin; export PATH=${STAR_BIN}:${STAR}/mgr:$PATH; export LD_LIBRARY_PATH=${STAR_LIB}:$LD_LIBRARY_PATH; root4star -q -b analysis/__RUN_MACRO__\(\"$FILELIST\",\"$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root\",\"$JOBID\",__MAX_EVENTS__,\"__MAINCONF__\"\)'
   </command>
 

@@ -13,6 +13,33 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 - **analysis_info sync**: Keep `anaName`, macro base names, output naming, and `starTag` consistent.
 - **Build environment for debug/repro**: For debug work and any build used for farm submission, use a **batch-matched STAR toolchain** before submit. **Either** (a) interactive SL7: `sl7`, then `source ./script/setup.sh <mainconf>` and `make`, **or** (b) from any host with Singularity: **`./script/singularity_make.sh <mainconf>`** — option (b) runs `make` inside `star-bnl/star-sw:latest` with the same `sl73_*` / `sl74_*` `STAR_HOST_SYS` resolution as batch and **counts as the SL7-class build** for agents and reproducibility. Do not rely on host-only `make` for farm-bound libraries or heap/exit-crash diagnosis. For `root4star` / QA on fragile login nodes, use the other **`script/singularity_*`** wrappers in `../../docs/REFERENCE.md`.
 
+## Batch safety: how values reach a job, and what happens when they do not
+
+These rules exist because three defects of the same shape reached a 241-job farm pilot on
+2026-09-15, each invisible to every local test
+(`analysisnote/auau3p85fxt_anaFemtoPhi/root-tree-study/results/pilot-farm-20260915.md`).
+
+- **A value the analysis needs arrives as an argument, not through the environment.** The
+  environment may *override* for local convenience; it may not *supply*. Locally the wrapper
+  scripts export `STAR_ANA_*`; the batch joblist calls `root4star` directly and exports nothing, so
+  anything read only from the environment is empty on the farm — and empty was silently accepted
+  for the job id, for the mainconf path, and for every tree schema key in turn.
+- **Never continue with a default when a configuration cannot be read.** `if (missing) return
+  kTRUE;` and "fall back to `.current_mainconf`" both turn a broken job into a job that produces
+  plausible, wrong output. A job that cannot find its configuration must fail.
+- **No built-in default mainconf.** A macro that is given no configuration stops.
+- **Resolve relative paths against `gSystem->WorkingDirectory()`, never `gSystem->Getenv("PWD")`.**
+  A SUMS job is a `csh` script that `cd`s into its runtime bundle, and csh does not update `PWD`.
+- **Print the resolved configuration path and where it came from, unconditionally**, so that a job
+  running with the wrong configuration is visible in the first lines of its log rather than in the
+  output months later.
+- **Required keys are checked, not defaulted.** A YAML read of the form "use the key if present,
+  else keep the default" makes a typo silent. Keys that decide what an output *contains* (schema
+  version, which species are stored, the storage envelope) must be present or the maker fails.
+- **Provenance that was not supplied is recorded as `unrecorded`, never as an empty string,** and a
+  warning is printed. An empty `gitRevision` reads like "no revision", which is what the pilot
+  trees carried.
+
 ## Adding analyses and scripts
 
 - **New analysis** requires: Maker code under `StMaker/StXXXMaker/` (auto-built; no Makefile edit), `run_anaXxx.C` that Loads/links `libStCommon` before the Maker `.so`, `anaXxx.C`, `script/run_anaXxx.sh`, mainconf, referenced YAMLs, and analysis_info.

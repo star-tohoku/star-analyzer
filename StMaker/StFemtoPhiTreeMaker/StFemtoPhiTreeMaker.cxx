@@ -83,6 +83,7 @@ StFemtoPhiTreeMaker::StFemtoPhiTreeMaker(const char* name, StPicoDstMaker* picoM
       mAutoFlush(10000),
       mSchemaVersion(femto_phi_tree::kSchemaVersionV2),
       mSubjobId(0),
+      mSkipArg(-1),
       mPidCorrectionState("none"),
       mSkipRemaining(0),
       mEnvMinNHitsRatio(0.50),
@@ -246,8 +247,43 @@ Bool_t StFemtoPhiTreeMaker::LoadTreeConfig() {
   if (values.find("envKaonMass2Lo") != values.end()) mEnvKaonMass2Lo = YamlParser::ToDouble(values["envKaonMass2Lo"], mEnvKaonMass2Lo);
   if (values.find("envKaonMass2Hi") != values.end()) mEnvKaonMass2Hi = YamlParser::ToDouble(values["envKaonMass2Hi"], mEnvKaonMass2Hi);
 
+  // Every read above is "use the key if it is there, otherwise keep the default", which is the
+  // same silent-default failure that cost three farm pilots, one YAML level down: a mistyped
+  // treeStoreTriton would quietly produce a tree with no tritons. The keys that decide what the
+  // tree CONTAINS are therefore required to be present; a missing one is an error, not a default.
+  {
+    static const char* kRequired[] = {
+        "treeSchemaVersion",   "treeStoreKaons",      "treeStoreDeuterons",
+        "treeStoreProtons",    "treeStoreTriton",     "treeStoreHe3",
+        "treeStoreHe4",        "envMinNHitsFit",      "envMinNHitsRatio",
+        "envMinNHitsDedx",     "envMaxDca",           "envMinPt",
+        "envMaxPt",            "envMinEta",           "envMaxEta",
+        "envMaxChi2",          "envMaxAbsNSigmaKaon", "envMaxAbsNSigmaDeuteron",
+        "envMaxAbsNSigmaProton", "envMaxAbsNSigmaTriton", "envMaxAbsNSigmaHe3",
+        "envMaxAbsNSigmaHe4",  "envMaxDcaKaon",       "envDeuteronMaxDca",
+        "envDeuteronMinPMom",  "envDeuteronMaxPMom",  "envProtonMaxDca",
+        "envProtonMinPt",      "envMinNHitsDedxNuclear", 0};
+    std::string missing;
+    for (Int_t i = 0; kRequired[i]; ++i) {
+      if (values.find(kRequired[i]) == values.end()) {
+        if (!missing.empty()) missing += ", ";
+        missing += kRequired[i];
+      }
+    }
+    if (!missing.empty()) {
+      std::cerr << "[StFemtoPhiTreeMaker] maker YAML is missing keys that decide what the tree "
+                << "contains:\n       " << missing << "\n       in " << mMakerYamlPath
+                << "\n       Refusing to write a tree from defaults." << std::endl;
+      return kFALSE;
+    }
+  }
+
+  // (4) The number of events to skip is an argument of the analysis macro. Reading it from the
+  // environment alone is the same mistake as the jobid was: the wrapper scripts export it, the
+  // batch joblist does not.
+  if (mSkipArg >= 0) mSkipRemaining = mSkipArg;
   TString skipEnv = EnvOrEmpty("STAR_ANA_NSKIP");
-  if (skipEnv.Length() > 0) mSkipRemaining = std::atoll(skipEnv.Data());
+  if (mSkipArg < 0 && skipEnv.Length() > 0) mSkipRemaining = std::atoll(skipEnv.Data());
   if (mSkipRemaining > 0) {
     std::cout << "[StFemtoPhiTreeMaker] skipping first " << mSkipRemaining << " events before fill" << std::endl;
   }
@@ -1430,6 +1466,18 @@ static void WriteNamed(const char* name, const TString& title) {
   obj.Write();
 }
 
+// Provenance that was never supplied is recorded as such. An empty TNamed is indistinguishable
+// from a value that happens to be empty, and it is exactly what the farm produced.
+static void WriteNamedOrUnrecorded(const char* name, const TString& title) {
+  if (title.Length() > 0) {
+    WriteNamed(name, title);
+    return;
+  }
+  std::cerr << "[StFemtoPhiTreeMaker] WARNING: " << name << " was not supplied; recording it as "
+            << "\"unrecorded\". Provenance in this tree is incomplete." << std::endl;
+  WriteNamed(name, "unrecorded");
+}
+
 void StFemtoPhiTreeMaker::WriteMetadata() {
   if (!mOutFile) return;
   mOutFile->cd();
@@ -1459,11 +1507,20 @@ void StFemtoPhiTreeMaker::WriteMetadata() {
                              (long long)mPackStats.nSigmaSentinel, (long long)mPackStats.evVertex,
                              (long long)mPackStats.evQ, (long long)mPackStats.evMult,
                              (long long)mPackStats.evCent));
-  WriteNamed("gitRevision", EnvOrEmpty("STAR_ANA_GIT_REV"));
-  WriteNamed("gitDirty", EnvOrEmpty("STAR_ANA_GIT_DIRTY"));
+  // Plan section 3.1 requires the tree to carry the git revision, the config and the STAR library
+  // tag. These arrive through the environment, and on the farm nothing set them, so the pilot
+  // trees recorded empty strings -- which reads like "no revision" rather than "not recorded".
+  // Write an explicit marker instead, and say so in the log: metadata that is missing should be
+  // visible, not blank.
+  WriteNamedOrUnrecorded("gitRevision", EnvOrEmpty("STAR_ANA_GIT_REV"));
+  WriteNamedOrUnrecorded("gitDirty", EnvOrEmpty("STAR_ANA_GIT_DIRTY"));
   WriteNamed("mainconfPath", mMainconfPath.c_str());
   WriteNamed("makerYamlPath", mMakerYamlPath.c_str());
-  WriteNamed("starLibraryTag", EnvOrEmpty("STAR_ANA_LIBRARY_TAG"));
+  // The paths above are what the job opened; under SUMS that is a scratch copy which is gone by
+  // the time anyone reads the tree, so keep the basenames too.
+  WriteNamed("mainconfName", gSystem->BaseName(mMainconfPath.c_str()));
+  WriteNamed("makerYamlName", gSystem->BaseName(mMakerYamlPath.c_str()));
+  WriteNamedOrUnrecorded("starLibraryTag", EnvOrEmpty("STAR_ANA_LIBRARY_TAG"));
   WriteNamed("rootVersion", gROOT->GetVersion());
   WriteNamed("compressionLevel", TString::Format("%d", mCompressLevel));
   WriteNamed("nInputEvents", TString::Format("%lld", (long long)mNInput));

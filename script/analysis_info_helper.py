@@ -585,7 +585,23 @@ def main():
         with open(template_path, 'r') as f:
             content = f.read()
 
+        # Stamped into the joblist at generation time: a batch job runs from a copy of the tree
+        # with no .git in it, so it cannot find this out for itself, and a tree with no revision
+        # cannot be tied back to the code that produced it.
+        def _git(args):
+            try:
+                import subprocess
+                return subprocess.check_output(['git', '-C', project_root] + args,
+                                               stderr=open(os.devnull, 'w')).decode().strip()
+            except Exception:
+                return ''
+        git_rev = _git(['rev-parse', 'HEAD']) or 'unknown'
+        git_dirty_files = _git(['status', '--porcelain'])
+        git_dirty = str(len([l for l in git_dirty_files.splitlines() if not l.startswith('??')]))
+
         replacements = [
+            ('__GIT_REV__', git_rev),
+            ('__GIT_DIRTY__', git_dirty),
             ('__JOB_NAME__', job_name),
             ('__RUN_MACRO__', run_macro),
             ('__STARVER__', starver),

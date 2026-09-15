@@ -31,8 +31,11 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
 
   Long64_t nEvents = (nEventsMax > 0) ? nEventsMax : 10000000;
 
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD: csh (every SUMS job) does not update
+  // the PWD environment variable on cd, so on the farm it named the wrong directory.
+  // See results/pilot-farm-20260915.md.
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
   // `run_anaLambda.C` loads the STAR/Pico/Maker libraries before ACLiC-compiling
   // this macro. Re-loading them here can mix STAR releases in one process and
@@ -55,7 +58,10 @@ void anaLambda(const Char_t* inputFile = "config/picoDstList/auau19GeV.list",
         mainConfigPath = line.c_str();
         if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
       } else {
-        mainConfigPath = TString(pwd) + "/config/mainconf/main_auau19_anaLambda.yaml";
+        std::cerr << "ERROR: no mainconf. Pass one as an argument, set "
+                  << "STAR_ANA_MAINCONF, or write one into .current_mainconf. There is no "
+                  << "built-in default: a job with no configuration must fail." << std::endl;
+        return;
       }
     }
   }

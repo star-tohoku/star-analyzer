@@ -164,8 +164,9 @@ void checkHistAnaPhi(const Char_t* inputRootFile,
   }
 
   gConfigLoaded = kFALSE;
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD (see results/pilot-farm-20260915.md).
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
   if (gSystem->Load(TString(pwd) + "/lib/libStarAnaConfig.so") >= 0) {
     TString mainconf;
     if (mainconfPath && strlen(mainconfPath) > 0) {

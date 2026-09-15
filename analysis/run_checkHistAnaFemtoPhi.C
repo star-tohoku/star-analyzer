@@ -5,8 +5,9 @@ void run_checkHistAnaFemtoPhi(const Char_t* rootFile,
                               const Char_t* anaName,
                               const Char_t* mainconfPath = 0)
 {
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD (see results/pilot-farm-20260915.md).
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
   if (gSystem->Load(TString(pwd) + "/lib/libStarAnaConfig.so") < 0) {
     std::cerr << "ERROR: failed to load libStarAnaConfig.so" << std::endl;

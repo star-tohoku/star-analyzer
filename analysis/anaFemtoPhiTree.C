@@ -110,6 +110,7 @@ void anaFemtoPhiTree(const Char_t* inputFile = "tmp/pico/bench1.picoDst.root",
   // Same reason: the tree-specific keys are re-parsed from the mainconf by the maker itself, and
   // on the farm there is no STAR_ANA_MAINCONF to find it by.
   treeMaker->SetMainconfPath(mainConfigPath.Data());
+  treeMaker->SetSkipEvents(nSkip);
   chain->AddMaker(picoMaker);
   chain->AddMaker(treeMaker);
 

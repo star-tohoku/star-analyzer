@@ -5,8 +5,9 @@ void run_checkCentrality(const Char_t* inputFile,
                          const Char_t* mainconfPath,
                          const Char_t* outputFile = "centrality_qa.root",
                          Long64_t nEventsMax = -1) {
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD (see results/pilot-farm-20260915.md).
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
   gROOT->LoadMacro("$STAR/StRoot/StMuDSTMaker/COMMON/macros/loadSharedLibraries.C");
   loadSharedLibraries();

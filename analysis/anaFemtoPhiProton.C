@@ -29,30 +29,57 @@ void anaFemtoPhiProton(const Char_t* inputFile = "config/picoDstList/auau19GeV.l
 
   Long64_t nEvents = (nEventsMax > 0) ? nEventsMax : 10000000;
 
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // Relative paths resolve against the process's real working directory, not against $PWD: $PWD
+  // is a shell variable, a SUMS job is a csh script that cd's into its runtime bundle, and csh
+  // does not update it. See results/pilot-farm-20260915.md.
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
+  // A configuration named on the command line is used or the job fails. It must never be quietly
+  // replaced: on the farm that is exactly what happened, and 241 trees were written with a
+  // different selection than the one submitted.
   TString mainConfigPath;
+  TString configSource;
   if (configPath && strlen(configPath) > 0) {
     mainConfigPath = configPath;
-    if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+    if (mainConfigPath(0) != '/') mainConfigPath = cwd + "/" + mainConfigPath;
+    configSource = "argument";
+    if (gSystem->AccessPathName(mainConfigPath.Data())) {
+      std::cerr << "ERROR: the mainconf given on the command line does not exist:\n"
+                << "       " << mainConfigPath.Data() << "\n"
+                << "       (working directory " << cwd.Data() << ")\n"
+                << "       Refusing to fall back to a different configuration." << std::endl;
+      return;
+    }
   } else {
     const char* env_conf = gSystem->Getenv("STAR_ANA_MAINCONF");
     if (env_conf && strlen(env_conf) > 0) {
       mainConfigPath = env_conf;
-      if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+      if (mainConfigPath(0) != '/') mainConfigPath = cwd + "/" + mainConfigPath;
+      configSource = "STAR_ANA_MAINCONF";
     } else {
-      TString fallbackPath = TString(pwd) + "/.current_mainconf";
+      TString fallbackPath = cwd + "/.current_mainconf";
       std::ifstream infile(fallbackPath.Data());
       std::string line;
-      if (infile.is_open() && std::getline(infile, line)) {
+      if (infile.is_open() && std::getline(infile, line) && !line.empty()) {
         mainConfigPath = line.c_str();
-        if (mainConfigPath(0) != '/') mainConfigPath = TString(pwd) + "/" + mainConfigPath;
+        if (mainConfigPath(0) != '/') mainConfigPath = cwd + "/" + mainConfigPath;
+        configSource = ".current_mainconf";
       } else {
-        mainConfigPath = TString(pwd) + "/config/mainconf/main_auau3p85fxt_anaFemtoPhiProton.yaml";
+        std::cerr << "ERROR: no mainconf. Pass one as an argument, set STAR_ANA_MAINCONF, or write "
+                  << "one into .current_mainconf.\n"
+                  << "       There is no built-in default: a job with no configuration must fail."
+                  << std::endl;
+        return;
       }
     }
+    if (gSystem->AccessPathName(mainConfigPath.Data())) {
+      std::cerr << "ERROR: mainconf from " << configSource.Data() << " does not exist:\n"
+                << "       " << mainConfigPath.Data() << std::endl;
+      return;
+    }
   }
+  std::cout << "[mainconf] (" << configSource.Data() << ") " << mainConfigPath.Data() << std::endl;
   if (!ConfigManager::GetInstance().LoadConfig(mainConfigPath.Data())) {
     std::cerr << "ERROR: Failed to load config: " << mainConfigPath.Data() << std::endl;
     return;

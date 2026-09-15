@@ -24,8 +24,11 @@ void anaPhiMesicNucleus(const Char_t* inputFile = "config/picoDstList/auau3p85Ge
   timer.Start();
 
   Long64_t nEvents = (nEventsMax > 0) ? nEventsMax : 10000000;
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD: csh (every SUMS job) does not update
+  // the PWD environment variable on cd, so on the farm it named the wrong directory.
+  // See results/pilot-farm-20260915.md.
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
 
   TString mainConfigPath;
   if (configPath && strlen(configPath) > 0) {
