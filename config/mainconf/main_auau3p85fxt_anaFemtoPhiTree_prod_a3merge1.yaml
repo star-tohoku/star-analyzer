@@ -1,0 +1,22 @@
+# PRODUCTION entry point for the reduced tree (Step 7). Frozen 2026-09-15.
+#
+# The SAME mainconf drives all three legs. This is required, not stylistic: the tree stores the
+# producer's configuration and the downstream refuses to run on a mismatch (119 keys).
+#   StFemtoMaker          ./script/singularity_run_anaFemtoPhi.sh <this> ...
+#   StFemtoPhiTreeMaker   ./script/singularity_run_anaFemtoPhiTree.sh <this> ...
+#   downstream            ./script/singularity_run_anaFemtoPhiTreeDownstreamV3.sh <this> ...
+#
+# Supersedes main_auau3p85fxt_anaFemtoPhiTree_v2.yaml as the production candidate: v2 carries no
+# channels, so the channel-driven downstream produces nothing from it.
+# Does not replace main_auau3p85fxt_anaFemtoPhi.yaml (the PicoDst-direct production analysis).
+
+event:         cuts/event/event_auau3p85fxt_anaPhi.yaml
+track:         cuts/track/track_auau3p85fxt_anaPhi.yaml
+pid:           cuts/pid/pid_auau3p85fxt_anaPhi.yaml
+mixing:        cuts/mixing/mixing_auau3p85fxt_anaFemtoPhiTree_g5match.yaml
+centrality:    cuts/centrality/centrality_auau3p85fxt_anaPhi.yaml
+nuclearid:     cuts/nuclearid/nuclearid_auau3p85fxt_anaFemtoPhi.yaml
+
+maker:         maker/maker_auau3p85fxt_anaFemtoPhiTree_prod_a3merge1.yaml
+hist:          hist/hist_anaFemtoPhi.yaml
+analysis:      analysis/analysis_info_auau3p85fxt_anaFemtoPhiTree_prod.yaml

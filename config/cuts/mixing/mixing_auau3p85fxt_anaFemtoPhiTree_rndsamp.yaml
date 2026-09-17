@@ -1,0 +1,20 @@
+# A1 of the Step 8 analysis contract: the direct production's mixing, on the tree.
+#
+# Same mix-bin geometry as the nominal (those three numbers are baked into the tree and are
+# checked by the 119-key config guard). Only the mode and the per-event cap change, and neither
+# is guarded -- the tree stores the bin division, not how the pairs are drawn from it.
+#
+# This exists because `--mixing-mode randomSample` alone is a no-op: the downstream takes every
+# eligible pair when the cap is 0, so randomSample without a cap IS bufferAll.
+#
+# Nominal: mixing_auau3p85fxt_anaFemtoPhiTree_g5match.yaml (bufferAll, cap 0).
+# Reference being matched: mixing_auau3p85fxt_anaPhi.yaml (the direct production).
+
+nVzBins: 10
+nCentralityBins: 9
+nEventPlaneBins: 1
+bufferSize: 20
+
+mixingMode: randomSample
+maxMixedPairsPerEvent: 500
+mixBothDirections: true

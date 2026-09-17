@@ -1,0 +1,568 @@
+# Step 8 contract, alternative a4alpha: the nominal maker config with ONE CF variable moved.
+# Used by checkHistAnaFemtoPhi only -- the downstream output it reads is the nominal one,
+# so no tree is re-read and the config guard is not involved.
+# Nominal: maker_auau3p85fxt_anaFemtoPhiTree_prod.yaml
+#
+# PRODUCTION tree configuration -- the one config for Step 7. Frozen 2026-09-15 after the
+# pre-production review (results/pre-production-review-20260915.md).
+#
+# One config drives all three legs, and that is a rule, not a convenience: the stored flags carry
+# the producer's configuration, so the 119-key FemtoFlagConfig guard refuses a downstream whose
+# config differs.
+#   StFemtoMaker          script/singularity_run_anaFemtoPhi.sh          (reference / QA)
+#   StFemtoPhiTreeMaker   script/singularity_run_anaFemtoPhiTree.sh      (production)
+#   downstream            script/singularity_run_anaFemtoPhiTreeDownstreamV3.sh
+#
+# Decisions recorded here, all taken 2026-09-15:
+#   * triton / 3He / 4He ARE stored and ARE channels. Envelope |nSigma| <= 3 costs nothing
+#     (results/nuclei-cost-20260914.md: all four nuclear species at 3.0 are SMALLER than the
+#     deuteron alone at 5.0), so the 18 nuclear channels come out of the same read.
+#   * Nuclear femto cuts use the PRODUCTION values, TofMomentumThreshold 0.0 -- NOT the 99.0 the
+#     closure configs inherited from the dE/dx-only study. Those keys are now inside the guard.
+#   * h-K is OFF: enableHKaonTwoBody: false and none of the ten phikaon_* channels are declared,
+#     matching production (which declares them with enabled: false). The phikaon_plus /
+#     phikaon_minus SPECIES stay in speciesKeys, because phi_mix draws its mixed KK population
+#     from exactly those candidate lists in the pool -- ConfigManager refuses the config without
+#     them. Species present, channels absent. The downstream can still build the h-K channels
+#     from this tree later if they are wanted: the kaon rows are stored.
+#   * nSigmaPion is kept. Nothing reads it yet; it is deliberate insurance for a pion-contamination
+#     systematic and is already counted in the 1.89 TB.
+#   * kstarMassFitCf* and normQMax follow production, not the study configs.
+#
+# Channels: 24 = phi x {p,d,t,3He,4He} x {base, signal, leftSB, rightSB} (20) + phi_rot x {p,d}
+# + phi_mix x {p,d}. Production's 34 minus the 10 h-K ones.
+# Does not replace maker_auau3p85fxt_anaFemtoPhi.yaml (the PicoDst-direct production config).
+
+# --- φ resonance builder (PhiCutConfig) ---
+rapidityFrame: lab
+sqrtSNNGeV: 3.85
+
+nSigmaKaon: 3.0
+maxDCAKaon: 2.0
+maxDCAKK: 200
+useInvMassCut: false
+minOpeningAngle: 0.0
+maxOpeningAngle: 3.4
+minPairRapidity: -1.5
+maxPairRapidity:  0.0
+
+minPtEp: 0.15
+maxPtEp: 2.0
+maxEtaEp: 1.0
+maxNTr: 0
+
+# --- Femto species/channels (FemtoConfig) ---
+
+speciesKeys: deuteron,proton,triton,he3,he4,phi,phi_rot,phi_mix,phikaon_plus,phikaon_minus
+
+species_proton_builderType: track
+species_proton_particleKey: proton
+
+species_deuteron_builderType: track
+species_deuteron_particleKey: deuteron
+
+species_triton_builderType: track
+species_triton_particleKey: triton
+
+species_he3_builderType: track
+species_he3_particleKey: he3
+
+species_he4_builderType: track
+species_he4_particleKey: he4
+
+species_phi_builderType: resonance
+species_phi_particleKey: phi
+
+species_phi_rot_builderType: resonance
+species_phi_rot_particleKey: phi_rotation
+
+species_phi_mix_builderType: resonance
+species_phi_mix_particleKey: phi_fully_mixed
+
+# phi-daughter kaon track species (h-K correlations extension): identical selection to phi daughters.
+species_phikaon_plus_builderType: track
+species_phikaon_plus_particleKey: phi_kaon_plus
+
+species_phikaon_minus_builderType: track
+species_phikaon_minus_particleKey: phi_kaon_minus
+
+# h-K correlations extension flags (additive; existing paths unchanged).
+# OFF for CF production (Kubo/h-K are heavy; re-enable in a dedicated mainconf if needed).
+enableHKaonTwoBody: false
+enableKuboTriplet: false
+enableKuboGenuine: false
+kuboStoreFullMass: false
+
+cfRebinFactor: 5
+cfCent9Min: 2
+cfCent9Max: 8
+cfCentSlicesQaPdfInclude: pct_0_10,pct_0_20,pct_0_30
+cfPdfExcludeQaSlices: true
+
+sidebandSubtractAlpha: 1.0
+sidebandAlphaMode: fixed
+negativeBinPolicy: zero
+
+# Deprecated Topic 3 / Method 5 (off unless legacyCfPagesEnabled).
+purityFitUseConstantBkg: true
+purityFitGaussSigmaMin: 0.002
+purityFitGaussSigmaMax: 0.020
+purityMinKstar: 0.0
+purityMaxKstar: 0.65
+purityMinEntriesPerBin: 20
+purityClampMin: 0.05
+purityClampMax: 1.0
+cfBkgMode: me_mass
+
+legacyCfPagesEnabled: false
+cfSubtractionMode: none
+cfSubPurityMode: fit_slice
+cfSubPurityFixed: 0.7
+cfSubSidebandCombine: sumLR
+cfSubWriteSidecarRoot: false
+cfSubLowStatsRebinExtra: 2
+
+# kstarMassFitCF: per-k* full M_KK, S=F-αB, C = Y_SE/Y_ME. Default template ROT; MIX is cross-check.
+kstarMassFitCfEnabled: true
+kstarMassFitCfTemplate: rot
+kstarMassFitCfCrossCheck: true
+kstarMassFitCfFitMassMin: 0.99
+kstarMassFitCfFitMassMax: 1.06
+kstarMassFitCfKstarBinWidth: 0.050
+kstarMassFitCfLowKstarMergeBins: 2
+kstarMassFitCfAlphaMassMin: 1.05
+kstarMassFitCfAlphaMassMax: 1.105
+kstarMassFitCfWriteSidecar: true
+purityDirectFitModel: gaus_pol2
+
+# PID QA: quality tracks near signal-window phi (PRF k*). Not used in CF.
+phiNearTrackQaEnabled: true
+phiNearTrackSignalChannel: phi_proton_signal
+phiNearTrackMaxKstarLoose: 1.0
+phiNearTrackMaxKstarTight: 0.3
+phiNearTrackMassHyp: pion
+
+# Proton bachelor cuts
+protonChargeMode: positive
+protonMaxDca: 1.0
+protonMinPtPre: 0.2
+protonMinPtPair: 0.4
+protonMaxPtPair: 2.0
+protonMaxAbsEta: 2.0
+protonMaxAbsNSigma: 2.0
+protonMinNHitsFit: 15
+protonMinNHitsRatio: 0.52
+# |p| < threshold: TPC nσ only (no TOF match, no m2 veto). |p| >= threshold: TOF + m2 in [protonMinMass2,protonMaxMass2].
+protonTofMomentumThreshold: 0.0
+protonMinMass2: 0.6
+protonMaxMass2: 1.2
+protonMinRapidityCm: -1.0
+protonMaxRapidityCm: 0.0
+
+# Deuteron bachelor cuts
+deuteronMaxDca: 1.0
+deuteronMinPMom: 0.2
+deuteronMaxPMom: 3.0
+deuteronMinPtPre: 0.2
+deuteronMaxPtPre: 3.0
+deuteronMinPtPair: 0.4
+deuteronMaxPtPair: 3.0
+deuteronMaxAbsEta: 2.0
+deuteronMaxAbsNSigma: 2.0
+deuteronMinNHitsFit: 15
+deuteronMinNHitsRatio: 0.52
+deuteronTofMomentumThreshold: 0.0
+deuteronMinMass2: 2.5
+deuteronMaxMass2: 4.5
+deuteronMinRapidityCm: -1.0
+deuteronMaxRapidityCm: 0.0
+
+# Triton bachelor cuts
+tritonMaxDca: 1.0
+tritonMinPMom: 0.2
+tritonMaxPMom: 3.0
+tritonMinPtPre: 0.2
+tritonMaxPtPre: 3.0
+tritonMinPtPair: 0.4
+tritonMaxPtPair: 3.0
+tritonMaxAbsEta: 2.0
+tritonMaxAbsNSigma: 2.0
+tritonMinNHitsFit: 15
+tritonMinNHitsRatio: 0.52
+tritonTofMomentumThreshold: 0.0
+tritonMinMass2: 5.8
+tritonMaxMass2: 9.8
+tritonMinRapidityCm: -1.0
+tritonMaxRapidityCm: 0.0
+
+# ³He bachelor cuts
+he3MaxDca: 1.0
+he3MinPMom: 0.2
+he3MaxPMom: 3.0
+he3MinPtPre: 0.2
+he3MaxPtPre: 3.0
+he3MinPtPair: 0.4
+he3MaxPtPair: 3.0
+he3MaxAbsEta: 2.0
+he3MaxAbsNSigma: 2.0
+he3MinNHitsFit: 15
+he3MinNHitsRatio: 0.52
+he3TofMomentumThreshold: 0.0
+he3MinMass2: 0.8
+he3MaxMass2: 2.8
+he3MinRapidityCm: -1.0
+he3MaxRapidityCm: 0.0
+
+# ⁴He bachelor cuts
+he4MaxDca: 1.0
+he4MinPMom: 0.2
+he4MaxPMom: 3.0
+he4MinPtPre: 0.2
+he4MaxPtPre: 3.0
+he4MinPtPair: 0.4
+he4MaxPtPair: 3.0
+he4MaxAbsEta: 2.0
+he4MaxAbsNSigma: 2.0
+he4MinNHitsFit: 15
+he4MinNHitsRatio: 0.52
+he4TofMomentumThreshold: 0.0
+he4MinMass2: 2.5
+he4MaxMass2: 4.5
+he4MinRapidityCm: -1.0
+he4MaxRapidityCm: 0.0
+
+# Rotation and fully-mixed KK on, with the production values. rotationSeed is set so that the
+# gRandom stream is reproducible across reruns of the reference itself; the downstream cannot
+# replay it and is compared statistically (the candidate count is exact, the shape is not).
+rotationSeed: 20260915
+rotationEnabled: true
+rotationSpeciesKey: phi_rot
+rotationParticleKey: phi_rotation
+rotationN: 10
+rotationMinAngle: 0.0
+rotationMaxAngle: 6.283185307179586
+
+fullyMixedEnabled: true
+fullyMixedSpeciesKey: phi_mix
+fullyMixedParticleKey: phi_fully_mixed
+fullyMixedMaxCandidates: 2000
+fullyMixedSamplingSeed: 314159
+
+nChannels: 24
+
+channel_0_channelName: phi_deuteron
+channel_0_partA: phi
+channel_0_partB: deuteron
+channel_0_enabled: true
+channel_0_doMixing: true
+channel_0_signalMin: 1.01
+channel_0_signalMax: 1.03
+channel_0_normQMin: 0.5
+channel_0_normQMax: 1.0
+
+channel_1_channelName: phi_deuteron_signal
+channel_1_partA: phi
+channel_1_partB: deuteron
+channel_1_enabled: true
+channel_1_doMixing: true
+channel_1_signalMin: 1.012
+channel_1_signalMax: 1.026
+channel_1_normQMin: 0.5
+channel_1_normQMax: 1.0
+
+channel_2_channelName: phi_deuteron_leftSB
+channel_2_partA: phi
+channel_2_partB: deuteron
+channel_2_enabled: true
+channel_2_doMixing: true
+channel_2_signalMin: 0.990
+channel_2_signalMax: 1.005
+channel_2_normQMin: 0.5
+channel_2_normQMax: 1.0
+
+channel_3_channelName: phi_deuteron_rightSB
+channel_3_partA: phi
+channel_3_partB: deuteron
+channel_3_enabled: true
+channel_3_doMixing: true
+channel_3_signalMin: 1.035
+channel_3_signalMax: 1.060
+channel_3_normQMin: 0.5
+channel_3_normQMax: 1.0
+
+channel_4_channelName: phi_proton
+channel_4_partA: phi
+channel_4_partB: proton
+channel_4_enabled: true
+channel_4_doMixing: true
+channel_4_signalMin: 1.01
+channel_4_signalMax: 1.03
+channel_4_normQMin: 0.5
+channel_4_normQMax: 1.0
+
+channel_5_channelName: phi_proton_signal
+channel_5_partA: phi
+channel_5_partB: proton
+channel_5_enabled: true
+channel_5_doMixing: true
+channel_5_signalMin: 1.012
+channel_5_signalMax: 1.026
+channel_5_normQMin: 0.5
+channel_5_normQMax: 1.0
+
+channel_6_channelName: phi_proton_leftSB
+channel_6_partA: phi
+channel_6_partB: proton
+channel_6_enabled: true
+channel_6_doMixing: true
+channel_6_signalMin: 0.990
+channel_6_signalMax: 1.005
+channel_6_normQMin: 0.5
+channel_6_normQMax: 1.0
+
+channel_7_channelName: phi_proton_rightSB
+channel_7_partA: phi
+channel_7_partB: proton
+channel_7_enabled: true
+channel_7_doMixing: true
+channel_7_signalMin: 1.035
+channel_7_signalMax: 1.060
+channel_7_normQMin: 0.5
+channel_7_normQMax: 1.0
+
+channel_8_channelName: phi_triton
+channel_8_partA: phi
+channel_8_partB: triton
+channel_8_enabled: true
+channel_8_doMixing: true
+channel_8_signalMin: 1.01
+channel_8_signalMax: 1.03
+channel_8_normQMin: 0.5
+channel_8_normQMax: 1.0
+channel_9_channelName: phi_triton_signal
+channel_9_partA: phi
+channel_9_partB: triton
+channel_9_enabled: true
+channel_9_doMixing: true
+channel_9_signalMin: 1.012
+channel_9_signalMax: 1.026
+channel_9_normQMin: 0.5
+channel_9_normQMax: 1.0
+channel_10_channelName: phi_triton_leftSB
+channel_10_partA: phi
+channel_10_partB: triton
+channel_10_enabled: true
+channel_10_doMixing: true
+channel_10_signalMin: 0.990
+channel_10_signalMax: 1.005
+channel_10_normQMin: 0.5
+channel_10_normQMax: 1.0
+channel_11_channelName: phi_triton_rightSB
+channel_11_partA: phi
+channel_11_partB: triton
+channel_11_enabled: true
+channel_11_doMixing: true
+channel_11_signalMin: 1.035
+channel_11_signalMax: 1.060
+channel_11_normQMin: 0.5
+channel_11_normQMax: 1.0
+channel_12_channelName: phi_he3
+channel_12_partA: phi
+channel_12_partB: he3
+channel_12_enabled: true
+channel_12_doMixing: true
+channel_12_signalMin: 1.01
+channel_12_signalMax: 1.03
+channel_12_normQMin: 0.5
+channel_12_normQMax: 1.0
+channel_13_channelName: phi_he3_signal
+channel_13_partA: phi
+channel_13_partB: he3
+channel_13_enabled: true
+channel_13_doMixing: true
+channel_13_signalMin: 1.012
+channel_13_signalMax: 1.026
+channel_13_normQMin: 0.5
+channel_13_normQMax: 1.0
+channel_14_channelName: phi_he3_leftSB
+channel_14_partA: phi
+channel_14_partB: he3
+channel_14_enabled: true
+channel_14_doMixing: true
+channel_14_signalMin: 0.990
+channel_14_signalMax: 1.005
+channel_14_normQMin: 0.5
+channel_14_normQMax: 1.0
+channel_15_channelName: phi_he3_rightSB
+channel_15_partA: phi
+channel_15_partB: he3
+channel_15_enabled: true
+channel_15_doMixing: true
+channel_15_signalMin: 1.035
+channel_15_signalMax: 1.060
+channel_15_normQMin: 0.5
+channel_15_normQMax: 1.0
+channel_16_channelName: phi_he4
+channel_16_partA: phi
+channel_16_partB: he4
+channel_16_enabled: true
+channel_16_doMixing: true
+channel_16_signalMin: 1.01
+channel_16_signalMax: 1.03
+channel_16_normQMin: 0.5
+channel_16_normQMax: 1.0
+channel_17_channelName: phi_he4_signal
+channel_17_partA: phi
+channel_17_partB: he4
+channel_17_enabled: true
+channel_17_doMixing: true
+channel_17_signalMin: 1.012
+channel_17_signalMax: 1.026
+channel_17_normQMin: 0.5
+channel_17_normQMax: 1.0
+channel_18_channelName: phi_he4_leftSB
+channel_18_partA: phi
+channel_18_partB: he4
+channel_18_enabled: true
+channel_18_doMixing: true
+channel_18_signalMin: 0.990
+channel_18_signalMax: 1.005
+channel_18_normQMin: 0.5
+channel_18_normQMax: 1.0
+channel_19_channelName: phi_he4_rightSB
+channel_19_partA: phi
+channel_19_partB: he4
+channel_19_enabled: true
+channel_19_doMixing: true
+channel_19_signalMin: 1.035
+channel_19_signalMax: 1.060
+channel_19_normQMin: 0.5
+channel_19_normQMax: 1.0
+
+channel_20_channelName: phi_rot_proton
+channel_20_partA: phi_rot
+channel_20_partB: proton
+channel_20_enabled: true
+channel_20_doMixing: true
+channel_20_signalMin: 1.01
+channel_20_signalMax: 1.03
+channel_20_normQMin: 0.5
+channel_20_normQMax: 1.0
+channel_21_channelName: phi_rot_deuteron
+channel_21_partA: phi_rot
+channel_21_partB: deuteron
+channel_21_enabled: true
+channel_21_doMixing: true
+channel_21_signalMin: 1.01
+channel_21_signalMax: 1.03
+channel_21_normQMin: 0.5
+channel_21_normQMax: 1.0
+channel_22_channelName: phi_mix_proton
+channel_22_partA: phi_mix
+channel_22_partB: proton
+channel_22_enabled: true
+channel_22_doMixing: true
+channel_22_signalMin: 1.01
+channel_22_signalMax: 1.03
+channel_22_normQMin: 0.5
+channel_22_normQMax: 1.0
+channel_23_channelName: phi_mix_deuteron
+channel_23_partA: phi_mix
+channel_23_partB: deuteron
+channel_23_enabled: true
+channel_23_doMixing: true
+channel_23_signalMin: 1.01
+channel_23_signalMax: 1.03
+channel_23_normQMin: 0.5
+channel_23_normQMax: 1.0
+
+# ---- tree I/O ----
+treeSchemaVersion: 3        # packed event row as well
+treeWriteEvent: true
+treeWriteTrack: true
+treeWritePhiPair: false        # schema 2 does not support it; pairs are rebuilt downstream
+treeStoreKaons: true
+treeStoreDeuterons: true
+treeStoreProtons: true         # plan sec 3.3: unconditional, no K- gate
+treeCompressionLevel: 1        # T6: LZMA costs 3.4-4x read time for 13% size
+treeAutoFlush: 10000
+# Companion tree with the phi-daughter kaon helix origin, so the maxDCAKK systematic stays
+# available. Measured cost +0.211% of the tree (1.8984 -> 1.9021 TB): the KK DCA is a phi-daughter
+# quantity, and kaons are 0.66% of stored rows once the daughter-PID reach gate is applied. On
+# every row the same three components would cost +32%. Decision log, 2026-09-14.
+treeWriteKaonOrigin: true
+# Light nuclei beyond the deuteron. OFF pending the capacity decision: they serve 18 of the
+# analysis's 34 channels but the headroom against 2.0 TB is thin. Measured cost in
+# results/nuclei-cost-20260914.md.
+treeStoreTriton: true
+treeStoreHe3: true
+treeStoreHe4: true
+envMaxAbsNSigmaTriton: 3.0
+envMaxAbsNSigmaHe3: 3.0
+envMaxAbsNSigmaHe4: 3.0
+
+# ---- provenance ----
+# Recorded per event; no selection is applied on them here, so a trigger variation
+# stays possible downstream. Run21 3.85 GeV FXT bbce_tofmult triggers.
+triggerIds: [820010, 820020, 820030]
+# No dE/dx nSigma recalibration is applied anywhere in this chain yet. If one is added,
+# change this string so that trees produced before and after are distinguishable.
+pidCorrectionState: "none"
+
+# ---- loose storage envelope ----
+# Values are the loosest of every planned variation (T3). Tightening any of these
+# forecloses the corresponding systematic and requires a full re-production.
+envMinNHitsFit: 15             # variations: 15 / 17 / 20
+envMinNHitsRatio: 0.50
+envMinNHitsDedx: 10
+envMaxDca: 3.0                 # variations: 1.0 / 2.0 / 3.0
+envMinPt: 0.15                 # variations: 0.15 / 0.2
+envMaxPt: 10.0
+envMinEta: -2.0
+envMaxEta: 0.2                 # inert in this frame: FXT primaries all have eta < 0
+envMaxChi2: 5.0                # variations: 3.0 / 5.0
+envMaxAbsNSigmaKaon: 5.0       # variations: 3.0 (nominal) / 5.0
+# Restrict the kaon store to what the production daughter PID can use. Measured to be
+# lossless: signal phi, ROT, MIX and the K-p kaon species all apply PassPhiDaughterTofPid,
+# and tofFallbackMode only gates the loose collection, which reaches QA histograms alone.
+envKaonRequireTofOrLowP: true
+envKaonLowPMax: 0.5            # must equal pid.pMomKaonPID
+# Narrow the kaon store to rows PassPhiDaughterTofPid could ever accept. Step 5 measurement on
+# the 5-file pilot: this drops the kaon store from 602,074 rows to 24,201 and pays for raising
+# envMaxAbsNSigmaKaon from 3.0 to 5.0 several times over -- 833.88 -> 767.59 B/event,
+# 1.899 -> 1.748 TB, while recovering the |nSigmaK| <= 5 systematic (+13.5% phi daughters) that
+# the 3.0 envelope had foreclosed. The TPC-only branch keeps both charges so that the
+# K- TPC-only variation stays reproducible.
+envKaonRequireDaughterPidReach: true
+# Storage envelope, NOT the PID cut. Must stay wider than any planned m2 systematic; the widest
+# planned one is 0.10-0.40, so this leaves real headroom. Costs 0.003 TB over a 0.10-0.40 gate.
+envKaonMass2Lo: 0.05
+envKaonMass2Hi: 0.50
+envMaxAbsNSigmaDeuteron: 3.0   # variations: 2.0 / 3.0 / 5.0
+envMaxAbsNSigmaProton: 3.0     # loosest planned variation
+envMaxDcaKaon: 3.0
+envDeuteronMaxDca: 2.0         # variations: 1.0 / 2.0
+envDeuteronMinPMom: 0.15
+envDeuteronMaxPMom: 4.0
+envProtonMaxDca: 1.5           # loosest planned variation
+envProtonMinPt: 0.15
+envMinNHitsDedxNuclear: 10
+
+# --- TPC two-track (close-pair) cut, Step 4b ---
+# Applied between each phi daughter and the bachelor, in same-event and mixed-event alike.
+# Windows measured on this dataset (results/closepair-step4b-20260914.md); they differ per
+# bachelor species, so phi-d's value is NOT reused for phi-p. Both are indicative at five files
+# and must be re-measured at production statistics before they are quoted as final.
+closePairEnabled: false          # off until the windows are re-measured at full statistics
+closePairShape: box              # box | ellipse
+closePairRadiusMin: 0.6          # m, TPC inner field cage
+closePairRadiusMax: 2.0          # m, TPC outer radius
+closePairRadiusStep: 0.05        # m
+closePairDEtaDeuteron: 0.040
+closePairDPhiStarDeuteron: 0.040
+closePairDEtaProton: 0.015
+closePairDPhiStarProton: 0.015
+# One physical track can satisfy two species storage rules: 4.10% of selected phi-daughter kaons
+# are also selected as bachelor protons. Without this veto such a pair is a track paired with
+# itself, and it lands at exactly zero separation.
+closePairVetoSameTrack: true
