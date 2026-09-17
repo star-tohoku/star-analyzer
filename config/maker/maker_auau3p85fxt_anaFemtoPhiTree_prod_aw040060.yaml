@@ -1,3 +1,8 @@
+# Step 10 T2 alpha-window scan: the nominal config with the alpha window moved to
+# [1.040, 1.060]. Everything else, including the counting yield mode, is the nominal.
+# If the ROT template has the right shape, alpha does not depend on where it is measured;
+# a drift with window position is a template-shape error, not a statistical effect.
+#
 # PRODUCTION tree configuration -- the one config for Step 7. Frozen 2026-09-15 after the
 # pre-production review (results/pre-production-review-20260915.md).
 #
@@ -129,13 +134,8 @@ kstarMassFitCfFitMassMin: 0.99
 kstarMassFitCfFitMassMax: 1.06
 kstarMassFitCfKstarBinWidth: 0.050
 kstarMassFitCfLowKstarMergeBins: 2
-# alpha window. Moved off 1.04-1.06 on 2026-09-17 after the window scan (Step 10 T2):
-# there the phi's Breit-Wigner tail still contributes 1.03% of the window's counts, and the
-# correlation function at k* = 0.05 has not yet reached its plateau. At 1.07-1.09 the leak is
-# 0.24% and C(0.05) sits inside the plateau that runs from 1.06 to 1.12 (spread 0.007, which is
-# 0.4 sigma). This window is also entirely outside the fit range, so the overlap warning is gone.
-kstarMassFitCfAlphaMassMin: 1.070
-kstarMassFitCfAlphaMassMax: 1.090
+kstarMassFitCfAlphaMassMin: 1.040
+kstarMassFitCfAlphaMassMax: 1.060
 kstarMassFitCfWriteSidecar: true
 purityDirectFitModel: gaus_pol2
 
