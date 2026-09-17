@@ -224,6 +224,14 @@ class FemtoConfig {
   // kstarMassFitCF: per-k* full M_KK, S=F-αB (ROT/MIX template), C = Y_SE/Y_ME.
   Bool_t kstarMassFitCfEnabled;
   std::string kstarMassFitCfTemplate;  // rot | mix
+  // How the uncertainty on alpha reaches the extracted yield.
+  //   perbin   : add |B_i| * dAlpha in quadrature to every mass bin of S before the fit (legacy)
+  //   coherent : fit S with statistical errors only, then add the yield shift under
+  //              alpha -> alpha +- dAlpha in quadrature to the fit error
+  //   off      : ignore dAlpha
+  // alpha is one number shared by every mass bin, so "perbin" treats a fully correlated
+  // uncertainty as if it were independent: it inflates the yield error and deflates chi2/ndf.
+  std::string kstarMassFitCfAlphaErrorMode;  // perbin | coherent | off
   Bool_t kstarMassFitCfCrossCheck;
   Double_t kstarMassFitCfFitMassMin;
   Double_t kstarMassFitCfFitMassMax;

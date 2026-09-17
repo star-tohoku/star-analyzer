@@ -223,6 +223,7 @@ void FemtoConfig::SetDefaults() {
 
   kstarMassFitCfEnabled = kTRUE;
   kstarMassFitCfTemplate = "rot";
+  kstarMassFitCfAlphaErrorMode = "perbin";
   kstarMassFitCfCrossCheck = kTRUE;
   kstarMassFitCfFitMassMin = 0.99;
   kstarMassFitCfFitMassMax = 1.06;
@@ -583,6 +584,9 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
 
   if (values.find("kstarMassFitCfEnabled") != values.end()) {
     kstarMassFitCfEnabled = YamlParser::ToBool(values.at("kstarMassFitCfEnabled"), kstarMassFitCfEnabled);
+  }
+  if (values.find("kstarMassFitCfAlphaErrorMode") != values.end()) {
+    kstarMassFitCfAlphaErrorMode = values.at("kstarMassFitCfAlphaErrorMode");
   }
   if (values.find("kstarMassFitCfTemplate") != values.end()) {
     kstarMassFitCfTemplate = values.at("kstarMassFitCfTemplate");

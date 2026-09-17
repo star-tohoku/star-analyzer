@@ -17,6 +17,7 @@
 #include <TFitResultPtr.h>
 #include <TMatrixDSym.h>
 #include <TLine.h>
+#include <TProfile.h>
 #include <TMath.h>
 #include <TObject.h>
 #include <TString.h>
@@ -49,9 +50,11 @@ static TString sanitizeGraphName(const std::string& key);
 static const Double_t kKstarHistXMin = 0.0;
 static const Double_t kKstarHistXMax = 3.0;
 static const Double_t kCfKstarXMin = 0.0;
-static const Double_t kCfKstarXMax = 0.65;
-static const Double_t kCfYMin = 0.5;
-static const Double_t kCfYMax = 2.0;
+static const Double_t kCfKstarXMax = 0.61;
+static const Double_t kCfYMin = 0.75;
+static const Double_t kCfYMax = 1.25;
+static const Int_t kCfColRot = kRed + 1;
+static const Int_t kCfColMix = kBlue + 1;
 
 
 struct BachelorQaSpec {
@@ -2439,6 +2442,11 @@ struct KstarMassFitCfFitResult {
   Double_t polB;
   Double_t polC;
   Bool_t usedPol2;
+  Bool_t usedNegativeClipFallback;
+  Int_t originalFitStatus;
+  Int_t fallbackFitStatus;
+  Double_t chi2NdfOnOriginalHistogram;
+  Int_t nNegativeBins;
   KstarMassFitCfFitResult()
       : ok(kFALSE),
         nSig(0.0),
@@ -2452,7 +2460,12 @@ struct KstarMassFitCfFitResult {
         polA(0.0),
         polB(0.0),
         polC(0.0),
-        usedPol2(kFALSE) {}
+        usedPol2(kFALSE),
+        usedNegativeClipFallback(kFALSE),
+        originalFitStatus(-1),
+        fallbackFitStatus(-1),
+        chi2NdfOnOriginalHistogram(0.0),
+        nNegativeBins(0) {}
 };
 
 static Bool_t fitPurityOneModel(TH1* hMass, Double_t fitMin, Double_t fitMax, Double_t sigMin, Double_t sigMax,
@@ -2559,6 +2572,10 @@ static Bool_t fitPurityGausOnly(TH1* hMass, Double_t fitMin, Double_t fitMax, Do
   f->SetParLimits(2, sigmaMin, sigmaMax);
   TFitResultPtr rfit = hMass->Fit(f, "RQS0");
   const Int_t fitStat = (Int_t)rfit;
+  out.originalFitStatus = fitStat;
+  for (Int_t ib = binFitLo; ib <= binFitHi; ++ib) {
+    if (hMass->GetBinContent(ib) < 0.0) ++out.nNegativeBins;
+  }
   if (fitStat != 0 || rfit.Get() == 0) {
     delete f;
     return kFALSE;
@@ -2596,6 +2613,19 @@ static Bool_t fitPurityGausOnly(TH1* hMass, Double_t fitMin, Double_t fitMax, Do
                                      TMath::Power(eS / (f->GetParameter(2) + 1e-12), 2));
   }
   out.errPurity = 0.0;
+  out.usedNegativeClipFallback = kFALSE;
+  out.fallbackFitStatus = -1;
+  Double_t chi2 = 0.0;
+  Int_t nChi = 0;
+  for (Int_t ib = binFitLo; ib <= binFitHi; ++ib) {
+    const Double_t e = hMass->GetBinError(ib);
+    if (e <= 0.0) continue;
+    const Double_t d = (hMass->GetBinContent(ib) - f->Eval(hMass->GetXaxis()->GetBinCenter(ib))) / e;
+    chi2 += d * d;
+    ++nChi;
+  }
+  const Int_t ndf = nChi - 3;
+  out.chi2NdfOnOriginalHistogram = (ndf > 0) ? (chi2 / (Double_t)ndf) : 0.0;
   delete f;
   return kTRUE;
 }
@@ -3617,6 +3647,7 @@ static void drawDirectMassFitPurityPageForBase(TCanvas* canvas, TFile* fin, cons
 // Mass-axis rebin applied to SE/ME F and B projections before alpha, S, and gaus fit.
 // Trial value (YAML wiring deferred); set 1 to disable.
 static const Int_t kKmfMassRebin = 3;
+static const Double_t kKmfMassXMaxDisplay = 1.12;
 
 static Bool_t getChannelSidebandWindows(const std::string& channelBase, Double_t& lMin, Double_t& lMax,
                                         Double_t& rMin, Double_t& rMax) {
@@ -3696,7 +3727,43 @@ static Double_t kmfAlphaFromSingleWindow(TH1* hF, TH1* hB, Double_t mMin, Double
   return a;
 }
 
+static std::string kmfAlphaErrorMode() {
+  if (!gConfigLoaded) return "perbin";
+  const std::string m = ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfAlphaErrorMode;
+  return m.empty() ? std::string("perbin") : m;
+}
+
+// alpha is one number shared by every mass bin of S = F - alpha B, so its uncertainty moves the
+// whole background level together. Propagating it coherently means refitting S at alpha +- dAlpha
+// and taking half the spread of the extracted yield, rather than smearing |B_i| * dAlpha into each
+// bin as if the bins were independent.
+static Double_t kmfCoherentAlphaYieldError(TH1* hF, TH1* hB, Double_t alpha, Double_t alphaErr,
+                                           Double_t fitMin, Double_t fitMax, Double_t sigMin,
+                                           Double_t sigMax, Double_t sigmaMin, Double_t sigmaMax,
+                                           std::vector<TH1*>& keepAlive) {
+  if (!hF || !hB || alphaErr <= 0.0) return 0.0;
+  // The clones are handed to keepAlive rather than deleted here. fitPurityGausOnly names its TF1
+  // after the histogram's address and leaves it attached; freeing the histogram underneath that
+  // and then reusing the address is what made this crash the first time it ran.
+  static Int_t seq = 0;
+  ++seq;
+  TH1* hUp = (TH1*)hF->Clone(Form("_kmfAlphaUp_%d", seq));
+  TH1* hDn = (TH1*)hF->Clone(Form("_kmfAlphaDn_%d", seq));
+  hUp->SetDirectory(0);
+  hDn->SetDirectory(0);
+  hUp->Add(hB, -(alpha + alphaErr));
+  hDn->Add(hB, -(alpha - alphaErr));
+  keepAlive.push_back(hUp);
+  keepAlive.push_back(hDn);
+  KstarMassFitCfFitResult frUp, frDn;
+  const Bool_t okUp = fitPurityGausOnly(hUp, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frUp);
+  const Bool_t okDn = fitPurityGausOnly(hDn, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frDn);
+  if (!(okUp && okDn)) return 0.0;
+  return 0.5 * TMath::Abs(frUp.nSig - frDn.nSig);
+}
+
 static void kmfApplyAlphaErrorToS(TH1* hS, TH1* hB, Double_t alphaErr) {
+  if (kmfAlphaErrorMode() != "perbin") return;
   if (!hS || !hB || alphaErr <= 0.0) return;
   const Int_t n = hS->GetNbinsX();
   for (Int_t i = 1; i <= n; ++i) {
@@ -3773,7 +3840,7 @@ static void drawKstarMassFitCfGuidePage(TCanvas* canvas) {
   const Double_t dy = 0.034;
   t->DrawLatex(0.06, y, "This PDF is the primary CF QA (simple SE/ME ratio is diagnostic only).");
   y -= dy;
-  t->DrawLatex(0.06, y, "Pages below (phi-p / phi-d only): per k* bin, SE and ME rows.");
+  t->DrawLatex(0.06, y, "Pages below (phi-p / phi-d only): per k* bin, 3 rows (SE / ME / SE#leftarrow ME BKG).");
   y -= dy;
   t->DrawLatex(0.06, y, "Col1: F = full candidate (hPhiMKK_vs_Kstar*_phi_{p,d}_wide)");
   y -= dy;
@@ -3782,6 +3849,10 @@ static void drawKstarMassFitCfGuidePage(TCanvas* canvas) {
   t->DrawLatex(0.06, y, "Col3: S = F - #alpha B with gaus-only fit (no pol; residual BG ~ 0)");
   y -= dy;
   t->DrawLatex(0.06, y, "Col4: overlay F (blue) + #alpha B (black) + S (red) on one pad");
+  y -= dy;
+  t->DrawLatex(0.06, y, "Col5 (row1 only): shape-normed (#alpha_{SE} B_{SE})/(#alpha_{ME} B_{ME}); same shape => 1.");
+  y -= dy;
+  t->DrawLatex(0.06, y, "Row3: same columns for S = F_{SE} - #alpha B_{ME} (#alpha from F_{SE} / B_{ME} in #alpha window).");
   y -= dy * 1.2;
   t->SetTextFont(62);
   t->DrawLatex(0.06, y, "Mass rebin (before #alpha / S / fit):");
@@ -3789,7 +3860,7 @@ static void drawKstarMassFitCfGuidePage(TCanvas* canvas) {
   y -= dy;
   t->DrawLatex(0.08, y, Form("SE and ME: Rebin(%d) on F and B projections (kKmfMassRebin).",
                              kKmfMassRebin));
-  y -= dy * 1.2;
+  y -= dy;
   t->DrawLatex(0.08, y, Form("Low k*: merge first %d x %.3f-GeV/c bins before projection and fit.",
                              getKstarMassFitCfLowKstarMergeBins(), getKstarMassFitCfKstarBinTarget()));
   y -= dy * 1.2;
@@ -3819,25 +3890,31 @@ static void drawKstarMassFitCfGuidePage(TCanvas* canvas) {
   y -= dy;
   t->DrawLatex(0.06, y, "C_{raw}(k*) = Y_SE(k*)/Y_ME(k*);  C_{norm} scaled to ~1 in channel normQMin-normQMax.");
   y -= dy;
+  t->DrawLatex(0.06, y, "CF summary: Y_{SE}, Y_{ME}, C_{raw}, C_{norm}[0.5,1.5], C_{norm}[0.75,1.25], C_{norm} (SE#leftarrow ME BKG).");
+  y -= dy;
   t->DrawLatex(0.06, y, "Graphs also written to sidecar ROOT (CF_kmf_{rot|mix}_*_{raw|norm}, kmf_Y_*, kmf_fitstatus_*).");
   y -= dy;
-  t->DrawLatex(0.06, y, "k* binning matches kstarMassFitCfKstarBinWidth; centrality: pct_0_10 / 0_20 / 0_30.");
+  t->DrawLatex(0.06, y, "k* binning matches kstarMassFitCfKstarBinWidth; centrality: pct_0_10 / 0_20 / 0_30 / 0_60.");
   y -= dy * 1.2;
   t->SetTextColor(kRed + 1);
   t->DrawLatex(0.06, y, "MIX keys need a farm re-run after switching to standard current#timesbuffer MIX.");
 }
 
-// One page per k* bin: Divide(4,2): row0 SE F / αB / S+fit / overlay, row1 ME.
-// Optionally fills nSigSE/ME (+errors) from S fits when pointers are non-null.
+// One page per k* bin: Divide(5,3):
+//   row0 SE: F / αB_SE / S+fit / overlay / shape (α_SE B_SE)/(α_ME B_ME)
+//   row1 ME: F / αB_ME / S+fit / overlay
+//   row2 SE←ME: F_SE / αB_ME / S=F_SE-α B_ME +fit / overlay
+// Optionally fills nSigSE/ME/SEme (+errors) from S fits when pointers are non-null.
 static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const FemtoConfig::CfCentSlice& slice,
                                          const std::string& channelBase, const char* templateTag, Int_t iyFirst,
                                          Int_t iyLast, Double_t kstar, TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bme,
                                          Double_t kstarBinTarget, std::vector<TH1*>& keepAlive, Double_t* nSigSE,
                                          Double_t* eSigSE, Double_t* nSigME, Double_t* eSigME, Int_t* statusSE,
-                                         Int_t* statusME) {
+                                         Int_t* statusME, Double_t* nSigSEme, Double_t* eSigSEme, Int_t* statusSEme) {
   if (!canvas) return kFALSE;
   canvas->Clear();
-  canvas->Divide(4, 2);
+  canvas->SetCanvasSize(2400, 1400);
+  canvas->Divide(5, 3);
 
   Double_t fitMin = 0.99, fitMax = 1.06, sigmaMin = 0.002, sigmaMax = 0.020;
   Double_t purityMinK = 0.0, purityMaxK = 0.65, clampMin = 0.05, clampMax = 1.0;
@@ -3886,7 +3963,8 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
   rebinMass(hBse);
   rebinMass(hBme);
 
-  auto buildScaledAndS = [&](TH1* hF, TH1* hB, Double_t& alphaOut, Double_t& alphaErrOut, TH1*& hBscOut, TH1*& hSOut) {
+  auto buildScaledAndS = [&](TH1* hF, TH1* hB, Double_t& alphaOut, Double_t& alphaErrOut, TH1*& hBscOut, TH1*& hSOut,
+                             const char* extra) {
     alphaOut = 0.0;
     alphaErrOut = 0.0;
     hBscOut = 0;
@@ -3898,26 +3976,32 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
       alphaOut = 0.0;
       alphaErrOut = 0.0;
     }
-    hBscOut = (TH1*)hB->Clone(Form("%s_scaled", hB->GetName()));
+    hBscOut = (TH1*)hB->Clone(Form("%s_scaled%s", hB->GetName(), extra ? extra : ""));
     hBscOut->SetDirectory(0);
     hBscOut->Scale(alphaOut);
     keepAlive.push_back(hBscOut);
-    hSOut = (TH1*)hF->Clone(Form("%s_sub", hF->GetName()));
+    hSOut = (TH1*)hF->Clone(Form("%s_sub%s", hF->GetName(), extra ? extra : ""));
     hSOut->SetDirectory(0);
     hSOut->Add(hBscOut, -1.0);
     kmfApplyAlphaErrorToS(hSOut, hB, alphaErrOut);
     keepAlive.push_back(hSOut);
   };
 
-  Double_t aSE = 0.0, aME = 0.0, aSEerr = 0.0, aMEerr = 0.0;
-  TH1 *hBscSE = 0, *hSSE = 0, *hBscME = 0, *hSME = 0;
-  buildScaledAndS(hFse, hBse, aSE, aSEerr, hBscSE, hSSE);
-  buildScaledAndS(hFme, hBme, aME, aMEerr, hBscME, hSME);
+  Double_t aSE = 0.0, aME = 0.0, aSEme = 0.0, aSEerr = 0.0, aMEerr = 0.0, aSEmeErr = 0.0;
+  TH1 *hBscSE = 0, *hSSE = 0, *hBscME = 0, *hSME = 0, *hBscSEme = 0, *hSSEme = 0;
+  buildScaledAndS(hFse, hBse, aSE, aSEerr, hBscSE, hSSE, "_se");
+  buildScaledAndS(hFme, hBme, aME, aMEerr, hBscME, hSME, "_me");
+  buildScaledAndS(hFse, hBme, aSEme, aSEmeErr, hBscSEme, hSSEme, "_seme");
 
-  Bool_t okSE = kFALSE, okME = kFALSE;
-  KstarMassFitCfFitResult frSE, frME;
+  Bool_t okSE = kFALSE, okME = kFALSE, okSEme = kFALSE;
+  KstarMassFitCfFitResult frSE, frME, frSEme;
 
-  auto drawOverlay = [&](TH1* hF, TH1* hBsc, TH1* hS, const char* rowTag, Double_t alpha) {
+  auto applyMassX = [&](TH1* h) {
+    if (!h) return;
+    h->GetXaxis()->SetRangeUser(h->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+  };
+
+  auto drawOverlay = [&](TH1* hF, TH1* hBsc, TH1* hS, const char* rowTag, Double_t alpha, const char* extra) {
     if (!hF && !hBsc && !hS) {
       TLatex* z = new TLatex();
       z->SetNDC(kTRUE);
@@ -3925,9 +4009,10 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
       return;
     }
     // Clones so pad-1..3 styles / axes stay independent of the composite pad.
-    TH1* cF = hF ? (TH1*)hF->Clone(Form("%s_ovF", hF->GetName())) : 0;
-    TH1* cB = hBsc ? (TH1*)hBsc->Clone(Form("%s_ovB", hBsc->GetName())) : 0;
-    TH1* cS = hS ? (TH1*)hS->Clone(Form("%s_ovS", hS->GetName())) : 0;
+    const char* suf = extra ? extra : "";
+    TH1* cF = hF ? (TH1*)hF->Clone(Form("%s_ovF%s", hF->GetName(), suf)) : 0;
+    TH1* cB = hBsc ? (TH1*)hBsc->Clone(Form("%s_ovB%s", hBsc->GetName(), suf)) : 0;
+    TH1* cS = hS ? (TH1*)hS->Clone(Form("%s_ovS%s", hS->GetName(), suf)) : 0;
     if (cF) {
       cF->SetDirectory(0);
       keepAlive.push_back(cF);
@@ -3969,6 +4054,7 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
 
     TH1* frame = cF ? cF : (cB ? cB : cS);
     frame->SetTitle(Form("%s overlay (#alpha=%.3f);#it{M}_{KK};Counts", rowTag, alpha));
+    applyMassX(frame);
     frame->SetMinimum(ymin);
     frame->SetMaximum(ymax);
     if (cF) {
@@ -4011,72 +4097,40 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
     leg->DrawLatex(0.38, 0.86, "S");
   };
 
-  // Row 0: SE  pads 1-4
-  canvas->cd(1);
-  if (hFse) {
-    hFse->SetTitle(Form("SE F  %.3f<k*<%.3f;#it{M}_{KK};Counts", kstarLo, kstarHi));
-    hFse->SetLineColor(kBlue + 1);
-    hFse->Draw("E");
-  }
-  canvas->cd(2);
-  if (hBscSE) {
-    hBscSE->SetTitle(Form("SE #alpha B (#alpha=%.3f #pm %.3f);#it{M}_{KK};Counts", aSE, aSEerr));
-    hBscSE->SetLineColor(kBlack);
-    hBscSE->Draw("HIST");
-  } else {
-    TLatex* z = new TLatex();
-    z->SetNDC(kTRUE);
-    z->DrawLatex(0.2, 0.5, "SE: missing BG");
-  }
-  canvas->cd(3);
-  if (hSSE) {
-    hSSE->SetTitle(Form("SE S = F-#alpha B (gaus);#it{M}_{KK};Counts"));
-    hSSE->SetMarkerColor(kRed);
-    hSSE->SetLineColor(kRed);
-    hSSE->Draw("E");
-    okSE = fitPurityGausOnly(hSSE, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSE);
-    if (okSE) {
-      TF1* fDraw = new TF1(Form("_m3sub_se_%d_%d", iyFirst, iyLast), "gaus", fitMin, fitMax);
-      fDraw->SetParameters(frSE.amp, frSE.mean, frSE.sigma);
-      fDraw->SetLineColor(kMagenta + 1);
-      fDraw->SetLineWidth(2);
-      fDraw->Draw("SAME");
+  auto drawFB = [&](Int_t pad, TH1* hF, const char* titleF, TH1* hBsc, const char* titleB, const char* missB) {
+    canvas->cd(pad);
+    if (hF) {
+      hF->SetTitle(titleF);
+      hF->SetLineColor(kBlue + 1);
+      applyMassX(hF);
+      hF->Draw("E");
     }
-    TLatex* lat = new TLatex();
-    lat->SetNDC(kTRUE);
-    lat->SetTextSize(0.045);
-    lat->DrawLatex(0.14, 0.84, Form("N_{sig}=%.1f %s", okSE ? frSE.nSig : 0.0, okSE ? "" : "FAIL"));
-  }
-  canvas->cd(4);
-  drawOverlay(hFse, hBscSE, hSSE, "SE", aSE);
+    canvas->cd(pad + 1);
+    if (hBsc) {
+      hBsc->SetTitle(titleB);
+      hBsc->SetLineColor(kBlack);
+      applyMassX(hBsc);
+      hBsc->Draw("HIST");
+    } else {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.2, 0.5, missB);
+    }
+  };
 
-  // Row 1: ME  pads 5-8
-  canvas->cd(5);
-  if (hFme) {
-    hFme->SetTitle(Form("ME F  %.3f<k*<%.3f;#it{M}_{KK};Counts", kstarLo, kstarHi));
-    hFme->SetLineColor(kBlue + 1);
-    hFme->Draw("E");
-  }
-  canvas->cd(6);
-  if (hBscME) {
-    hBscME->SetTitle(Form("ME #alpha B (#alpha=%.3f #pm %.3f);#it{M}_{KK};Counts", aME, aMEerr));
-    hBscME->SetLineColor(kBlack);
-    hBscME->Draw("HIST");
-  } else {
-    TLatex* z = new TLatex();
-    z->SetNDC(kTRUE);
-    z->DrawLatex(0.2, 0.5, "ME: missing BG");
-  }
-  canvas->cd(7);
-  if (hSME) {
-    hSME->SetTitle(Form("ME S = F-#alpha B (gaus);#it{M}_{KK};Counts"));
-    hSME->SetMarkerColor(kRed);
-    hSME->SetLineColor(kRed);
-    hSME->Draw("E");
-    okME = fitPurityGausOnly(hSME, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frME);
-    if (okME) {
-      TF1* fDraw = new TF1(Form("_m3sub_me_%d_%d", iyFirst, iyLast), "gaus", fitMin, fitMax);
-      fDraw->SetParameters(frME.amp, frME.mean, frME.sigma);
+  auto drawSFit = [&](Int_t pad, TH1* hS, const char* titleS, const char* fName, Bool_t& okOut,
+                      KstarMassFitCfFitResult& frOut) {
+    canvas->cd(pad);
+    if (!hS) return;
+    hS->SetTitle(titleS);
+    hS->SetMarkerColor(kRed);
+    hS->SetLineColor(kRed);
+    applyMassX(hS);
+    hS->Draw("E");
+    okOut = fitPurityGausOnly(hS, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frOut);
+    if (okOut) {
+      TF1* fDraw = new TF1(fName, "gaus", fitMin, fitMax);
+      fDraw->SetParameters(frOut.amp, frOut.mean, frOut.sigma);
       fDraw->SetLineColor(kMagenta + 1);
       fDraw->SetLineWidth(2);
       fDraw->Draw("SAME");
@@ -4084,43 +4138,141 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
     TLatex* lat = new TLatex();
     lat->SetNDC(kTRUE);
     lat->SetTextSize(0.045);
-    lat->DrawLatex(0.14, 0.84, Form("N_{sig}=%.1f %s", okME ? frME.nSig : 0.0, okME ? "" : "FAIL"));
+    lat->DrawLatex(0.14, 0.84, Form("N_{sig}=%.1f %s", okOut ? frOut.nSig : 0.0, okOut ? "" : "FAIL"));
+  };
+
+  // Row 0: SE  pads 1-5
+  const TString tFse = Form("SE F  %.3f<k*<%.3f;#it{M}_{KK};Counts", kstarLo, kstarHi);
+  const TString tBse = Form("SE #alpha B (#alpha=%.3f #pm %.3f);#it{M}_{KK};Counts", aSE, aSEerr);
+  drawFB(1, hFse, tFse.Data(), hBscSE, tBse.Data(), "SE: missing BG");
+  drawSFit(3, hSSE, "SE S = F-#alpha B (gaus);#it{M}_{KK};Counts", Form("_m3sub_se_%d_%d", iyFirst, iyLast), okSE,
+           frSE);
+  canvas->cd(4);
+  drawOverlay(hFse, hBscSE, hSSE, "SE", aSE, "_se");
+
+  canvas->cd(5);
+  if (hBscSE && hBscME) {
+    TH1* hR = (TH1*)hBscSE->Clone(Form("%s_shapeR", hBscSE->GetName()));
+    hR->SetDirectory(0);
+    keepAlive.push_back(hR);
+    hR->Divide(hBscME);
+    const Double_t xLo = hR->GetXaxis()->GetXmin();
+    const Double_t xHi = kKmfMassXMaxDisplay;
+    const Double_t iSE = histIntegralRange(hBscSE, xLo, xHi);
+    const Double_t iME = histIntegralRange(hBscME, xLo, xHi);
+    const Double_t rawIB = (iME > 0.0) ? (iSE / iME) : 0.0;
+    if (rawIB > 0.0 && TMath::Finite(rawIB)) hR->Scale(1.0 / rawIB);
+    applyMassX(hR);
+    Int_t nFilled = 0;
+    Double_t sumR = 0.0;
+    for (Int_t ib = 1; ib <= hR->GetNbinsX(); ++ib) {
+      const Double_t xc = hR->GetXaxis()->GetBinCenter(ib);
+      if (xc < xLo || xc > xHi) continue;
+      const Double_t den = hBscME->GetBinContent(ib);
+      if (!(TMath::Abs(den) > 0.0)) continue;
+      ++nFilled;
+      sumR += hR->GetBinContent(ib);
+    }
+    const Double_t meanR = (nFilled > 0) ? (sumR / (Double_t)nFilled) : 0.0;
+    hR->SetTitle("shape (#alpha_{SE} B_{SE})/(#alpha_{ME} B_{ME}) / I_{SE}/I_{ME};#it{M}_{KK};ratio");
+    hR->SetMarkerStyle(20);
+    hR->SetMarkerColor(kBlue + 1);
+    hR->SetLineColor(kBlue + 1);
+    hR->SetMinimum(0.0);
+    hR->SetMaximum(2.0);
+    hR->Draw("E");
+    TLine* one = new TLine(xLo, 1.0, xHi, 1.0);
+    one->SetLineStyle(2);
+    one->SetLineColor(kGray + 2);
+    one->Draw("same");
+    TLatex* lat = new TLatex();
+    lat->SetNDC(kTRUE);
+    lat->SetTextSize(0.040);
+    lat->DrawLatex(0.12, 0.86, "shape-normed: same shape #Rightarrow 1");
+    lat->SetTextSize(0.036);
+    lat->DrawLatex(0.12, 0.80, Form("filled=%d  <R>=%.3f  raw I_{SE}/I_{ME}=%.3f", nFilled, meanR, rawIB));
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.12, 0.5, "shape: missing #alpha B");
   }
-  canvas->cd(8);
-  drawOverlay(hFme, hBscME, hSME, "ME", aME);
+
+  // Row 1: ME  pads 6-9
+  const TString tFme = Form("ME F  %.3f<k*<%.3f;#it{M}_{KK};Counts", kstarLo, kstarHi);
+  const TString tBme = Form("ME #alpha B (#alpha=%.3f #pm %.3f);#it{M}_{KK};Counts", aME, aMEerr);
+  drawFB(6, hFme, tFme.Data(), hBscME, tBme.Data(), "ME: missing BG");
+  drawSFit(8, hSME, "ME S = F-#alpha B (gaus);#it{M}_{KK};Counts", Form("_m3sub_me_%d_%d", iyFirst, iyLast), okME,
+           frME);
+  canvas->cd(9);
+  drawOverlay(hFme, hBscME, hSME, "ME", aME, "_me");
+
+  // Row 2: SE ← ME BKG  pads 11-14
+  TH1* hFseMe = 0;
+  if (hFse) {
+    hFseMe = (TH1*)hFse->Clone(Form("%s_semeF", hFse->GetName()));
+    hFseMe->SetDirectory(0);
+    keepAlive.push_back(hFseMe);
+  }
+  const TString tFseMe = Form("SE F (ME BKG)  %.3f<k*<%.3f;#it{M}_{KK};Counts", kstarLo, kstarHi);
+  const TString tBseMe = Form("SE #alpha B_{ME} (#alpha=%.3f #pm %.3f);#it{M}_{KK};Counts", aSEme, aSEmeErr);
+  drawFB(11, hFseMe, tFseMe.Data(), hBscSEme, tBseMe.Data(), "SE#leftarrow ME: missing B_{ME}");
+  drawSFit(13, hSSEme, "SE S = F-#alpha B_{ME} (gaus);#it{M}_{KK};Counts",
+           Form("_m3sub_seme_%d_%d", iyFirst, iyLast), okSEme, frSEme);
+  canvas->cd(14);
+
+  // The three fits above used statistical errors only when the alpha uncertainty is propagated
+  // coherently; add its contribution to the yield error here, once, as a shift of the whole
+  // background level (Step 10 T1).
+  if (kmfAlphaErrorMode() == "coherent") {
+    const Double_t dSE = kmfCoherentAlphaYieldError(hFse, hBse, aSE, aSEerr, fitMin, fitMax, sigMin,
+                                                    sigMax, sigmaMin, sigmaMax, keepAlive);
+    const Double_t dME = kmfCoherentAlphaYieldError(hFme, hBme, aME, aMEerr, fitMin, fitMax, sigMin,
+                                                    sigMax, sigmaMin, sigmaMax, keepAlive);
+    const Double_t dSEme = kmfCoherentAlphaYieldError(hFse, hBme, aSEme, aSEmeErr, fitMin, fitMax,
+                                                      sigMin, sigMax, sigmaMin, sigmaMax, keepAlive);
+    if (okSE) frSE.errNSig = TMath::Sqrt(frSE.errNSig * frSE.errNSig + dSE * dSE);
+    if (okME) frME.errNSig = TMath::Sqrt(frME.errNSig * frME.errNSig + dME * dME);
+    if (okSEme) frSEme.errNSig = TMath::Sqrt(frSEme.errNSig * frSEme.errNSig + dSEme * dSEme);
+  }
+  drawOverlay(hFse, hBscSEme, hSSEme, "SE#leftarrow ME", aSEme, "_seme");
 
   canvas->cd(0);
   TLatex* title = new TLatex();
   title->SetNDC(kTRUE);
-  title->SetTextSize(0.020);
+  title->SetTextSize(0.018);
   title->SetTextFont(62);
   title->DrawLatex(0.02, 0.985,
-                   Form("%s  %s  template=%s  %.3f<k*<%.3f GeV/c  (x=%.3f)  Rebin(%d)  F | #alpha B | S+gaus | overlay",
+                   Form("%s  %s  template=%s  %.3f<k*<%.3f GeV/c  (x=%.3f)  Rebin(%d)  rows: SE | ME | SE#leftarrow ME BKG",
                         channelBase.c_str(), slice.id.c_str(), templateTag, kstarLo, kstarHi, kstar,
                         kKmfMassRebin));
   (void)minEntries;
   (void)fin;
   (void)slice;
+  (void)kstarBinTarget;
 
   const Int_t stSE = kmfYieldStatus(okSE, frSE.nSig, frSE.errNSig, kFALSE);
   const Int_t stME = kmfYieldStatus(okME, frME.nSig, frME.errNSig, kFALSE);
+  const Int_t stSEme = kmfYieldStatus(okSEme, frSEme.nSig, frSEme.errNSig, kFALSE);
   if (nSigSE) *nSigSE = (stSE == kKmfStatusOk) ? frSE.nSig : 0.0;
   if (eSigSE) *eSigSE = (stSE == kKmfStatusOk) ? frSE.errNSig : 0.0;
   if (nSigME) *nSigME = (stME == kKmfStatusOk) ? frME.nSig : 0.0;
   if (eSigME) *eSigME = (stME == kKmfStatusOk) ? frME.errNSig : 0.0;
+  if (nSigSEme) *nSigSEme = (stSEme == kKmfStatusOk) ? frSEme.nSig : 0.0;
+  if (eSigSEme) *eSigSEme = (stSEme == kKmfStatusOk) ? frSEme.errNSig : 0.0;
   if (statusSE) *statusSE = stSE;
   if (statusME) *statusME = stME;
+  if (statusSEme) *statusSEme = stSEme;
   return (stSE == kKmfStatusOk && stME == kKmfStatusOk);
 }
 
 static void drawKstarMassFitCfPage(TCanvas* canvas, const FemtoConfig::CfCentSlice& slice,
                                     const std::string& channelBase, const char* templateTag,
                                     TGraphErrors* gNSE, TGraphErrors* gNME, TGraphErrors* gCF,
-                                    TGraphErrors* gCFn) {
+                                    TGraphErrors* gCFn, TGraphErrors* gCFme) {
   if (!canvas) return;
   canvas->Clear();
-  canvas->SetCanvasSize(1400, 1000);
-  canvas->Divide(2, 2);
+  canvas->SetCanvasSize(1800, 1200);
+  canvas->Divide(3, 2);
 
   auto drawOne = [&](Int_t pad, TGraphErrors* g, const char* ytitle, Bool_t logy, Double_t yMin, Double_t yMax) {
     canvas->cd(pad);
@@ -4170,27 +4322,43 @@ static void drawKstarMassFitCfPage(TCanvas* canvas, const FemtoConfig::CfCentSli
     t->SetNDC(kTRUE);
     t->DrawLatex(0.2, 0.5, "CF raw: no data");
   }
-  canvas->cd(4);
-  if (gCFn) {
-    gCFn->SetMarkerStyle(21);
-    gCFn->SetMarkerColor(kAzure + 2);
-    gCFn->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
-    gCFn->Draw("AP");
-    if (gCFn->GetHistogram()) {
-      gCFn->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
-      gCFn->GetHistogram()->GetYaxis()->SetRangeUser(0.0, 2.5);
-      gCFn->GetHistogram()->SetTitle(
-          Form("C_{norm} %s %s %s;k* [GeV/c];C_{norm}", channelBase.c_str(), slice.id.c_str(), templateTag));
+  auto drawCFn = [&](Int_t pad, TGraphErrors* g, Double_t yMin, Double_t yMax, Color_t col, Style_t sty,
+                     const char* title, const char* cloneTag) {
+    canvas->cd(pad);
+    if (!g) {
+      TLatex* t = new TLatex();
+      t->SetNDC(kTRUE);
+      t->DrawLatex(0.2, 0.5, "CF norm: no data / norm window empty");
+      return;
+    }
+    TGraphErrors* gc = (TGraphErrors*)g->Clone(Form("%s_%s_%d", g->GetName(), cloneTag, pad));
+    gc->SetMarkerStyle(sty);
+    gc->SetMarkerColor(col);
+    gc->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+    gc->Draw("AP");
+    if (gc->GetHistogram()) {
+      gc->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+      gc->GetHistogram()->GetYaxis()->SetRangeUser(yMin, yMax);
+      gc->GetHistogram()->SetTitle(title);
     }
     TLine* one = new TLine(kCfKstarXMin, 1.0, kCfKstarXMax, 1.0);
     one->SetLineStyle(2);
     one->SetLineColor(kGray + 2);
     one->Draw("same");
-  } else {
-    TLatex* t = new TLatex();
-    t->SetNDC(kTRUE);
-    t->DrawLatex(0.2, 0.5, "CF norm: no data / norm window empty");
-  }
+  };
+
+  drawCFn(4, gCFn, 0.5, 1.5, kAzure + 2, 21,
+          Form("C_{norm} [0.5,1.5] %s %s %s;k* [GeV/c];C_{norm}", channelBase.c_str(), slice.id.c_str(),
+               templateTag),
+          "z15");
+  drawCFn(5, gCFn, 0.75, 1.25, kAzure + 2, 21,
+          Form("C_{norm} [0.75,1.25] %s %s %s;k* [GeV/c];C_{norm}", channelBase.c_str(), slice.id.c_str(),
+               templateTag),
+          "z125");
+  drawCFn(6, gCFme, 0.75, 1.25, kMagenta + 1, 21,
+          Form("C_{norm} [0.75,1.25] SE#leftarrow ME BKG %s %s %s;k* [GeV/c];C_{norm}", channelBase.c_str(),
+               slice.id.c_str(), templateTag),
+          "seme");
 
   canvas->cd(0);
   TLatex* title = new TLatex();
@@ -4210,7 +4378,7 @@ static void drawKstarMassFitCfCachedPages(TCanvas* canvas, const TString& pdfPat
   std::vector<std::string> templates;
   getKstarMassFitCfTemplateOrder(templates);
   const char* bases[] = {"phi_proton", "phi_deuteron", 0};
-  const char* rebinSliceIds[] = {"pct_0_10", "pct_0_20", "pct_0_30", 0};
+  const char* rebinSliceIds[] = {"pct_0_10", "pct_0_20", "pct_0_30", "pct_0_60", 0};
   const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
   for (size_t it = 0; it < templates.size(); ++it) {
     const std::string tag = templates[it];
@@ -4233,16 +4401,5029 @@ static void drawKstarMassFitCfCachedPages(TCanvas* canvas, const TString& pdfPat
             cfSliceCacheKey(slicePtr->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_raw");
         const std::string cfNormKey =
             cfSliceCacheKey(slicePtr->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_norm");
+        const std::string cfMeKey =
+            cfSliceCacheKey(slicePtr->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_norm");
         TGraphErrors* gNSE = cfCache.count(nSeKey) ? cfCache[nSeKey] : 0;
         TGraphErrors* gNME = cfCache.count(nMeKey) ? cfCache[nMeKey] : 0;
         TGraphErrors* gCF = cfCache.count(cfKey) ? cfCache[cfKey] : 0;
         TGraphErrors* gCFn = cfCache.count(cfNormKey) ? cfCache[cfNormKey] : 0;
-        drawKstarMassFitCfPage(canvas, *slicePtr, base, tag.c_str(), gNSE, gNME, gCF, gCFn);
+        TGraphErrors* gCFme = cfCache.count(cfMeKey) ? cfCache[cfMeKey] : 0;
+        drawKstarMassFitCfPage(canvas, *slicePtr, base, tag.c_str(), gNSE, gNME, gCF, gCFn, gCFme);
         canvas->Print(pdfPath);
       }
     }
   }
 }
+
+static Int_t gPwgHistSeq = 0;
+static TString pwgUniq(const char* prefix) { return Form("_pwg_%s_%d", prefix, ++gPwgHistSeq); }
+
+static const FemtoConfig::CfCentSlice* findCfCentSliceById(const char* id) {
+  if (!id) return 0;
+  const std::vector<FemtoConfig::CfCentSlice> slices = getCfCentSliceList();
+  for (size_t i = 0; i < slices.size(); ++i) {
+    if (slices[i].id == id) {
+      static FemtoConfig::CfCentSlice held;
+      held = slices[i];
+      return &held;
+    }
+  }
+  return 0;
+}
+
+static TGraphErrors* kmfLookupGraph(std::map<std::string, TGraphErrors*>& cfCache, const std::string& sliceId,
+                                    const std::string& tag) {
+  const std::string key = cfSliceCacheKey(sliceId, tag);
+  std::map<std::string, TGraphErrors*>::iterator it = cfCache.find(key);
+  if (it == cfCache.end()) return 0;
+  return it->second;
+}
+
+static void drawPwgMissingPage(TCanvas* canvas, const TString& pdfPath, const char* title, const char* detail) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->cd();
+  canvas->SetCanvasSize(1200, 800);
+  TLatex* t = new TLatex();
+  t->SetNDC(kTRUE);
+  t->SetTextSize(0.035);
+  t->DrawLatex(0.08, 0.70, title ? title : "missing input");
+  t->SetTextSize(0.028);
+  if (detail) t->DrawLatex(0.08, 0.55, detail);
+  t->SetTextColor(kRed + 1);
+  t->DrawLatex(0.08, 0.40, "No empty pad drawn. Check merge ROOT keys / farm schema.");
+  canvas->Print(pdfPath);
+}
+
+static TH2* kmfProjectRebinY(TH3* h3, Int_t cent9Min, Int_t cent9Max, Double_t kstarWidth, const char* nameStem) {
+  if (!h3) return 0;
+  TH2* h2 = projectMkkVsKstarForSlice(h3, cent9Min, cent9Max, pwgUniq(nameStem).Data());
+  if (!h2) return 0;
+  const Int_t kRebin = kmfRebinFactorForWidth(h2->GetYaxis()->GetBinWidth(1), kstarWidth);
+  if (kRebin > 1) h2 = (TH2*)h2->RebinY(kRebin);
+  return h2;
+}
+
+static TH1* kmfProjectMassKstar(TH2* h2, Double_t kLo, Double_t kHi, const char* stem, std::vector<TH1*>& keepAlive) {
+  if (!h2) return 0;
+  const Int_t iy0 = h2->GetYaxis()->FindBin(kLo + 1e-9);
+  const Int_t iy1 = h2->GetYaxis()->FindBin(kHi - 1e-9);
+  if (iy1 < iy0) return 0;
+  TH1* h = h2->ProjectionX(pwgUniq(stem).Data(), iy0, iy1);
+  if (!h) return 0;
+  h->SetDirectory(0);
+  if (kKmfMassRebin > 1) h->Rebin(kKmfMassRebin);
+  keepAlive.push_back(h);
+  return h;
+}
+
+static TH1* kmfScaleClone(TH1* h, Double_t alpha, const char* stem, std::vector<TH1*>& keepAlive) {
+  if (!h) return 0;
+  TH1* c = (TH1*)h->Clone(pwgUniq(stem).Data());
+  c->SetDirectory(0);
+  c->Scale(alpha);
+  keepAlive.push_back(c);
+  return c;
+}
+
+static void pwgDrawUnity(Double_t x0, Double_t x1, Int_t color = kGray + 2) {
+  TLine* l = new TLine(x0, 1.0, x1, 1.0);
+  l->SetLineColor(color);
+  l->SetLineStyle(2);
+  l->Draw("same");
+}
+
+static TGraphErrors* pwgMakeGraphDiff(TGraphErrors* gA, TGraphErrors* gB, const char* title) {
+  if (!gA || !gB) return 0;
+  std::vector<Double_t> x, y, ey;
+  for (Int_t i = 0; i < gA->GetN(); ++i) {
+    Double_t xa = 0.0, ya = 0.0;
+    gA->GetPoint(i, xa, ya);
+    const Double_t eA = gA->GetErrorY(i);
+    Int_t jBest = -1;
+    Double_t dBest = 1e9;
+    for (Int_t j = 0; j < gB->GetN(); ++j) {
+      Double_t xb = 0.0, yb = 0.0;
+      gB->GetPoint(j, xb, yb);
+      const Double_t d = TMath::Abs(xb - xa);
+      if (d < dBest) {
+        dBest = d;
+        jBest = j;
+      }
+    }
+    if (jBest < 0 || dBest > 1e-4) continue;
+    Double_t xb = 0.0, yb = 0.0;
+    gB->GetPoint(jBest, xb, yb);
+    const Double_t eB = gB->GetErrorY(jBest);
+    x.push_back(xa);
+    y.push_back(yb - ya);
+    ey.push_back(TMath::Sqrt(eA * eA + eB * eB));
+  }
+  if (x.empty()) return 0;
+  TGraphErrors* g = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, &ey[0]);
+  g->SetTitle(title);
+  return g;
+}
+
+static void pwgMaxAbsOnGraph(TGraphErrors* g, Double_t& maxAbs, Double_t& kAt) {
+  maxAbs = 0.0;
+  kAt = -1.0;
+  if (!g) return;
+  for (Int_t i = 0; i < g->GetN(); ++i) {
+    Double_t x = 0.0, y = 0.0;
+    g->GetPoint(i, x, y);
+    if (x < kCfKstarXMin || x > kCfKstarXMax) continue;
+    if (TMath::Abs(y) > maxAbs) {
+      maxAbs = TMath::Abs(y);
+      kAt = x;
+    }
+  }
+}
+
+static void pwgStyleCfGraph(TGraphErrors* g, Int_t color, Int_t marker) {
+  if (!g) return;
+  g->SetMarkerColor(color);
+  g->SetLineColor(color);
+  g->SetMarkerStyle(marker);
+  g->SetMarkerSize(0.9);
+}
+
+static void drawPwgKmfGuidePage(TCanvas* canvas, const TString& pdfPath) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1200, 900);
+  canvas->cd();
+  TLatex* t = new TLatex();
+  t->SetNDC(kTRUE);
+  t->SetTextFont(62);
+  t->SetTextSize(0.036);
+  t->DrawLatex(0.08, 0.92, "PWG comparison (0-60%, cent9 2-8)  —  diagnostic, not physics claim");
+  t->SetTextFont(42);
+  t->SetTextSize(0.026);
+  Double_t y = 0.84;
+  const Double_t dy = 0.045;
+  t->DrawLatex(0.08, y, "Nominal #phi background: ROT.  Cross-check: MIX.  Sideband #alpha window from YAML.");
+  y -= dy;
+  t->DrawLatex(0.08, y, "CF in this section: Y_{SE} from S = F_{SE} - #alpha B_{ME} (SE#leftarrow ME).  B_{SE} remains a method check.");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-1: mass-shape overlay F vs #alpha_{ROT}B_{ROT} vs #alpha_{MIX}B_{MIX} (SB-normalized).");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-2: signal-window background ratio R_B and SE/ME double ratio D_B.");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-3: C_{mebkg,norm} ROT vs MIX, and ROT C_{norm} vs C_{mebkg,norm} (method spread, not #chi^{2}).");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-4: Y_{SE,ME}, relative error, fit status; 40 vs 80 MeV/c (Y/#Delta k*).");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-5/6: same F_{SE}, SB-normalized B_{SE} vs B_{ME#rightarrow SE} mass and R_{src,sig}, #delta_B.");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-7: Y_{SE}^{B_{SE}} vs Y_{SE}^{B_{ME}} and whether that tracks #Delta C.");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-8: LSB/RSB/SBLR CF of F vs ROT/MIX templates (not kstarMassFitCF).");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P0-9: 40 vs 80 MeV/c for ROT and MIX; #phi-d MIX mass at the 80 MeV/c bin around k*=0.10.");
+  y -= dy;
+  t->DrawLatex(0.08, y, "P1-1/2: #alpha-window and CF-normalization-window variations (same TH3 / raw CF).");
+  y -= dy;
+  t->DrawLatex(0.08, y, "Method spreads are correlated; no #chi^{2}. Do not infer attraction/repulsion/bound state.");
+  y -= dy * 1.4;
+  t->SetTextColor(kRed + 1);
+  t->DrawLatex(0.08, y, "Missing keys: a text page is printed instead of an empty pad.");
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfRotMixMassClosurePages(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                          std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-1 ROT/MIX mass closure", "slice pct_0_60 not found");
+    return;
+  }
+  const Double_t kW = getKstarMassFitCfKstarBinTarget();
+  Double_t aMin = 1.05, aMax = 1.105;
+  getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+  const Double_t kBins[3][2] = {{0.00, 0.04}, {0.08, 0.12}, {0.40, 0.44}};
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    TH3* h3Fse = (TH3*)fin->Get(phiMkkVsKstarWideSeKey(base).c_str());
+    TH3* h3Fme = (TH3*)fin->Get(phiMkkVsKstarWideMeKey(base).c_str());
+    TH3* h3Rse = (TH3*)fin->Get(kmfBkgWideKey(base, "rot", kTRUE).c_str());
+    TH3* h3Rme = (TH3*)fin->Get(kmfBkgWideKey(base, "rot", kFALSE).c_str());
+    TH3* h3Mse = (TH3*)fin->Get(kmfBkgWideKey(base, "mix", kTRUE).c_str());
+    TH3* h3Mme = (TH3*)fin->Get(kmfBkgWideKey(base, "mix", kFALSE).c_str());
+    if (!h3Fse || !h3Fme || !h3Rse || !h3Rme || !h3Mse || !h3Mme) {
+      drawPwgMissingPage(canvas, pdfPath, Form("P0-1 %s missing wide TH3", base.c_str()),
+                         Form("Fse=%s  RotSE=%s  MixSE=%s", phiMkkVsKstarWideSeKey(base).c_str(),
+                              kmfBkgWideKey(base, "rot", kTRUE).c_str(), kmfBkgWideKey(base, "mix", kTRUE).c_str()));
+      continue;
+    }
+    TH2* h2Fse = kmfProjectRebinY(h3Fse, sl->cent9Min, sl->cent9Max, kW, "Fse");
+    TH2* h2Fme = kmfProjectRebinY(h3Fme, sl->cent9Min, sl->cent9Max, kW, "Fme");
+    TH2* h2Rse = kmfProjectRebinY(h3Rse, sl->cent9Min, sl->cent9Max, kW, "Rse");
+    TH2* h2Rme = kmfProjectRebinY(h3Rme, sl->cent9Min, sl->cent9Max, kW, "Rme");
+    TH2* h2Mse = kmfProjectRebinY(h3Mse, sl->cent9Min, sl->cent9Max, kW, "Mse");
+    TH2* h2Mme = kmfProjectRebinY(h3Mme, sl->cent9Min, sl->cent9Max, kW, "Mme");
+
+    for (Int_t ik = 0; ik < 3; ++ik) {
+      const Double_t kLo = kBins[ik][0];
+      const Double_t kHi = kBins[ik][1];
+      canvas->Clear();
+      canvas->SetCanvasSize(1600, 1000);
+      canvas->Divide(2, 2);
+      const char* xTags[2] = {"SE", "ME"};
+      TH2* h2F[2] = {h2Fse, h2Fme};
+      TH2* h2R[2] = {h2Rse, h2Rme};
+      TH2* h2M[2] = {h2Mse, h2Mme};
+      for (Int_t ix = 0; ix < 2; ++ix) {
+        TH1* hF = kmfProjectMassKstar(h2F[ix], kLo, kHi, Form("F%s", xTags[ix]), keepAlive);
+        TH1* hR = kmfProjectMassKstar(h2R[ix], kLo, kHi, Form("R%s", xTags[ix]), keepAlive);
+        TH1* hM = kmfProjectMassKstar(h2M[ix], kLo, kHi, Form("X%s", xTags[ix]), keepAlive);
+        Double_t eArot = 0.0, eAmix = 0.0;
+        const Double_t aRot = kmfAlphaFromSingleWindow(hF, hR, aMin, aMax, eArot);
+        const Double_t aMix = kmfAlphaFromSingleWindow(hF, hM, aMin, aMax, eAmix);
+        TH1* hRsc = kmfScaleClone(hR, aRot, Form("Rsc%s", xTags[ix]), keepAlive);
+        TH1* hMsc = kmfScaleClone(hM, aMix, Form("Msc%s", xTags[ix]), keepAlive);
+
+        canvas->cd(ix + 1);
+        if (!hF || !hRsc || !hMsc) {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.15, 0.5, Form("%s: missing projection", xTags[ix]));
+        } else {
+          hF->SetLineColor(kBlue + 1);
+          hF->SetLineWidth(2);
+          hRsc->SetLineColor(kBlack);
+          hRsc->SetLineWidth(2);
+          hMsc->SetLineColor(kRed + 1);
+          hMsc->SetLineStyle(2);
+          hMsc->SetLineWidth(2);
+          hF->GetXaxis()->SetRangeUser(hF->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+          hF->SetTitle(Form("%s %s  %.2f<k*<%.2f;M_{KK};Counts", base.c_str(), xTags[ix], kLo, kHi));
+          hF->Draw("HIST");
+          hRsc->Draw("HIST SAME");
+          hMsc->Draw("HIST SAME");
+          TLegend* leg = new TLegend(0.50, 0.62, 0.88, 0.88);
+          leg->SetBorderSize(0);
+          leg->SetFillStyle(0);
+          leg->AddEntry(hF, "F (foreground)", "l");
+          leg->AddEntry(hRsc, Form("#alpha_{ROT} B_{ROT} (#alpha=%.3g)", aRot), "l");
+          leg->AddEntry(hMsc, Form("#alpha_{MIX} B_{MIX} (#alpha=%.3g)", aMix), "l");
+          leg->Draw();
+        }
+
+        canvas->cd(ix + 3);
+        if (!hRsc || !hMsc) {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.15, 0.5, "no R_M");
+        } else {
+          TH1* hRm = (TH1*)hRsc->Clone(pwgUniq("Rm").Data());
+          hRm->SetDirectory(0);
+          keepAlive.push_back(hRm);
+          hRm->Divide(hMsc);
+          hRm->SetLineColor(kBlack);
+          hRm->SetMarkerStyle(20);
+          hRm->GetXaxis()->SetRangeUser(hRm->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+          hRm->GetYaxis()->SetRangeUser(0.5, 1.5);
+          hRm->SetTitle(Form("R_{M}=#alpha_{ROT}B_{ROT}/#alpha_{MIX}B_{MIX}  %s;M_{KK};ratio", xTags[ix]));
+          hRm->Draw("E");
+          pwgDrawUnity(hRm->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+        }
+      }
+      canvas->cd();
+      TLatex* cap = new TLatex();
+      cap->SetNDC(kTRUE);
+      cap->SetTextSize(0.022);
+      cap->DrawLatex(0.02, 0.97,
+                     Form("P0-1 SB-normalized mass closure  %s  pct_0_60  %.2f<k*<%.2f  (not raw B_{ROT}/B_{MIX})",
+                          base.c_str(), kLo, kHi));
+      canvas->Print(pdfPath);
+    }
+    delete h2Fse;
+    delete h2Fme;
+    delete h2Rse;
+    delete h2Rme;
+    delete h2Mse;
+    delete h2Mme;
+  }
+}
+
+static void drawKmfRotMixBackgroundRatioPage(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                             std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-2 R_B page", "slice pct_0_60 not found");
+    return;
+  }
+  const Double_t kW = getKstarMassFitCfKstarBinTarget();
+  Double_t aMin = 1.05, aMax = 1.105;
+  getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+  Double_t sigMin = 1.012, sigMax = 1.026;
+  Double_t purityMinK = 0.0, purityMaxK = 0.65;
+  Double_t dummy = 0.0;
+  Int_t minEntries = 20;
+  Bool_t preferPol2 = kTRUE;
+  getKstarMassFitCfFitConfig(dummy, dummy, dummy, dummy, purityMinK, purityMaxK, minEntries, dummy, dummy, preferPol2);
+
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 900);
+  canvas->Divide(2, 1);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    getChannelSignalMassWindow(channelSignal(base), sigMin, sigMax);
+    TH3* h3Fse = (TH3*)fin->Get(phiMkkVsKstarWideSeKey(base).c_str());
+    TH3* h3Fme = (TH3*)fin->Get(phiMkkVsKstarWideMeKey(base).c_str());
+    TH3* h3Rse = (TH3*)fin->Get(kmfBkgWideKey(base, "rot", kTRUE).c_str());
+    TH3* h3Rme = (TH3*)fin->Get(kmfBkgWideKey(base, "rot", kFALSE).c_str());
+    TH3* h3Mse = (TH3*)fin->Get(kmfBkgWideKey(base, "mix", kTRUE).c_str());
+    TH3* h3Mme = (TH3*)fin->Get(kmfBkgWideKey(base, "mix", kFALSE).c_str());
+    canvas->cd(ib + 1);
+    if (!h3Fse || !h3Fme || !h3Rse || !h3Rme || !h3Mse || !h3Mme) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, Form("%s: missing TH3", base.c_str()));
+      continue;
+    }
+    TH2* h2Fse = kmfProjectRebinY(h3Fse, sl->cent9Min, sl->cent9Max, kW, "rbFse");
+    TH2* h2Fme = kmfProjectRebinY(h3Fme, sl->cent9Min, sl->cent9Max, kW, "rbFme");
+    TH2* h2Rse = kmfProjectRebinY(h3Rse, sl->cent9Min, sl->cent9Max, kW, "rbRse");
+    TH2* h2Rme = kmfProjectRebinY(h3Rme, sl->cent9Min, sl->cent9Max, kW, "rbRme");
+    TH2* h2Mse = kmfProjectRebinY(h3Mse, sl->cent9Min, sl->cent9Max, kW, "rbMse");
+    TH2* h2Mme = kmfProjectRebinY(h3Mme, sl->cent9Min, sl->cent9Max, kW, "rbMme");
+    if (!h2Fse) continue;
+
+    std::vector<Double_t> kx, rse, erse, rme, erme, db, edb;
+    Double_t maxRse = 0.0, maxRme = 0.0, maxDb = 0.0;
+    for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+      const Double_t kstar = h2Fse->GetYaxis()->GetBinCenter(iy);
+      if (kstar < purityMinK || kstar > purityMaxK) continue;
+      const Double_t kLo = h2Fse->GetYaxis()->GetBinLowEdge(iy);
+      const Double_t kHi = h2Fse->GetYaxis()->GetBinUpEdge(iy);
+      TH1* hFse = kmfProjectMassKstar(h2Fse, kLo, kHi, "rbFse1", keepAlive);
+      TH1* hFme = kmfProjectMassKstar(h2Fme, kLo, kHi, "rbFme1", keepAlive);
+      TH1* hRse = kmfProjectMassKstar(h2Rse, kLo, kHi, "rbRse1", keepAlive);
+      TH1* hRme = kmfProjectMassKstar(h2Rme, kLo, kHi, "rbRme1", keepAlive);
+      TH1* hMse = kmfProjectMassKstar(h2Mse, kLo, kHi, "rbMse1", keepAlive);
+      TH1* hMme = kmfProjectMassKstar(h2Mme, kLo, kHi, "rbMme1", keepAlive);
+      Double_t aRseE = 0, aRmeE = 0, aMseE = 0, aMmeE = 0;
+      const Double_t aRse = kmfAlphaFromSingleWindow(hFse, hRse, aMin, aMax, aRseE);
+      const Double_t aRme = kmfAlphaFromSingleWindow(hFme, hRme, aMin, aMax, aRmeE);
+      const Double_t aMse = kmfAlphaFromSingleWindow(hFse, hMse, aMin, aMax, aMseE);
+      const Double_t aMme = kmfAlphaFromSingleWindow(hFme, hMme, aMin, aMax, aMmeE);
+      Double_t eBRse = 0, eBRme = 0, eBMse = 0, eBMme = 0;
+      const Double_t iBRse = histIntegralAndErrorRange(hRse, sigMin, sigMax, eBRse);
+      const Double_t iBRme = histIntegralAndErrorRange(hRme, sigMin, sigMax, eBRme);
+      const Double_t iBMse = histIntegralAndErrorRange(hMse, sigMin, sigMax, eBMse);
+      const Double_t iBMme = histIntegralAndErrorRange(hMme, sigMin, sigMax, eBMme);
+      const Double_t nSE = aRse * iBRse;
+      const Double_t dSE = aMse * iBMse;
+      const Double_t nME = aRme * iBRme;
+      const Double_t dME = aMme * iBMme;
+      if (dSE <= 0.0 || dME <= 0.0 || nSE <= 0.0 || nME <= 0.0) continue;
+      const Double_t eNSE = TMath::Sqrt(TMath::Power(iBRse * aRseE, 2) + TMath::Power(aRse * eBRse, 2));
+      const Double_t eDSE = TMath::Sqrt(TMath::Power(iBMse * aMseE, 2) + TMath::Power(aMse * eBMse, 2));
+      const Double_t eNME = TMath::Sqrt(TMath::Power(iBRme * aRmeE, 2) + TMath::Power(aRme * eBRme, 2));
+      const Double_t eDME = TMath::Sqrt(TMath::Power(iBMme * aMmeE, 2) + TMath::Power(aMme * eBMme, 2));
+      const Double_t Rse = nSE / dSE;
+      const Double_t Rme = nME / dME;
+      const Double_t eRse = Rse * TMath::Sqrt(TMath::Power(eNSE / nSE, 2) + TMath::Power(eDSE / dSE, 2));
+      const Double_t eRme = Rme * TMath::Sqrt(TMath::Power(eNME / nME, 2) + TMath::Power(eDME / dME, 2));
+      const Double_t Db = Rse / Rme;
+      const Double_t eDb = Db * TMath::Sqrt(TMath::Power(eRse / Rse, 2) + TMath::Power(eRme / Rme, 2));
+      kx.push_back(kstar);
+      rse.push_back(Rse);
+      erse.push_back(eRse);
+      rme.push_back(Rme);
+      erme.push_back(eRme);
+      db.push_back(Db);
+      edb.push_back(eDb);
+      if (TMath::Abs(Rse - 1.0) > maxRse) maxRse = TMath::Abs(Rse - 1.0);
+      if (TMath::Abs(Rme - 1.0) > maxRme) maxRme = TMath::Abs(Rme - 1.0);
+      if (TMath::Abs(Db - 1.0) > maxDb) maxDb = TMath::Abs(Db - 1.0);
+    }
+    std::cout << "[PWG P0-2] " << base << " max|R_B^SE-1|=" << maxRse << " max|R_B^ME-1|=" << maxRme
+              << " max|D_B-1|=" << maxDb << std::endl;
+    if (kx.empty()) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, Form("%s: no R_B points", base.c_str()));
+    } else {
+      TGraphErrors* gSE = new TGraphErrors((Int_t)kx.size(), &kx[0], &rse[0], 0, &erse[0]);
+      TGraphErrors* gME = new TGraphErrors((Int_t)kx.size(), &kx[0], &rme[0], 0, &erme[0]);
+      TGraphErrors* gD = new TGraphErrors((Int_t)kx.size(), &kx[0], &db[0], 0, &edb[0]);
+      pwgStyleCfGraph(gSE, kBlack, 20);
+      pwgStyleCfGraph(gME, kBlue + 1, 21);
+      pwgStyleCfGraph(gD, kRed + 1, 22);
+      gSE->SetTitle(Form("%s  R_B and D_B;k* [GeV/c];ratio", base.c_str()));
+      gSE->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gSE->Draw("AP");
+      if (gSE->GetHistogram()) {
+        gSE->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+        gSE->GetHistogram()->GetYaxis()->SetRangeUser(0.90, 1.10);
+      }
+      gME->Draw("P SAME");
+      gD->Draw("P SAME");
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      TLegend* leg = new TLegend(0.50, 0.70, 0.88, 0.88);
+      leg->SetBorderSize(0);
+      leg->SetFillStyle(0);
+      leg->AddEntry(gSE, "R_{B}^{SE} = (#alpha B)_{ROT}/(#alpha B)_{MIX} in sig", "p");
+      leg->AddEntry(gME, "R_{B}^{ME}", "p");
+      leg->AddEntry(gD, "D_{B}=R_{B}^{SE}/R_{B}^{ME}", "p");
+      leg->Draw();
+      TLatex* n = new TLatex();
+      n->SetNDC(kTRUE);
+      n->SetTextSize(0.028);
+      n->DrawLatex(0.14, 0.92, Form("max |R^{SE}-1|=%.3f  |R^{ME}-1|=%.3f  |D_B-1|=%.3f", maxRse, maxRme, maxDb));
+    }
+    delete h2Fse;
+    delete h2Fme;
+    delete h2Rse;
+    delete h2Rme;
+    delete h2Mse;
+    delete h2Mme;
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.022);
+  cap->DrawLatex(0.02, 0.97, "P0-2 signal-window SB-normalized background ratio (errors Poisson; SE/ME correlated)");
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfRotMixCfComparisonPage(TCanvas* canvas, const TString& pdfPath,
+                                          std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const std::string suf = kmfCacheSuffix(getKstarMassFitCfKstarBinTarget());
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 1000);
+  canvas->Divide(2, 2);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    TGraphErrors* gRot =
+        kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + suf + "_mebkg_norm");
+    TGraphErrors* gMix =
+        kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_mix_") + base + suf + "_mebkg_norm");
+    canvas->cd(ib + 1);
+    if (!gRot && !gMix) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, Form("%s: missing mebkg_norm graphs", base.c_str()));
+      canvas->cd(ib + 3);
+      TLatex* z2 = new TLatex();
+      z2->SetNDC(kTRUE);
+      z2->DrawLatex(0.12, 0.5, "no #Delta C");
+      continue;
+    }
+    if (gRot) {
+      pwgStyleCfGraph(gRot, kCfColRot, 20);
+      gRot->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gRot->Draw("AP");
+      if (gRot->GetHistogram()) {
+        gRot->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+        gRot->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        gRot->GetHistogram()->SetTitle(Form("%s C_{mebkg,norm} ROT vs MIX;k*;C", base.c_str()));
+      }
+    }
+    if (gMix) {
+      pwgStyleCfGraph(gMix, kCfColMix, 21);
+      TString opt = gRot ? "P SAME" : "AP";
+      if (!gRot) gMix->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gMix->Draw(opt);
+    }
+    TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    if (gRot) leg->AddEntry(gRot, "ROT (nominal)", "p");
+    if (gMix) leg->AddEntry(gMix, "MIX (cross-check)", "p");
+    leg->Draw();
+    pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+
+    TGraphErrors* gD = pwgMakeGraphDiff(gRot, gMix, Form("#Delta C = C_{MIX}-C_{ROT} %s", base.c_str()));
+    canvas->cd(ib + 3);
+    if (!gD) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, "no #Delta C");
+    } else {
+      pwgStyleCfGraph(gD, kBlack, 20);
+      gD->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gD->Draw("AP");
+      if (gD->GetHistogram()) {
+        gD->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+        gD->GetHistogram()->GetYaxis()->SetRangeUser(-0.08, 0.08);
+        gD->GetHistogram()->SetTitle(Form("%s method spread C_{MIX}-C_{ROT};k*;#Delta C", base.c_str()));
+      }
+      TLine* z = new TLine(kCfKstarXMin, 0.0, kCfKstarXMax, 0.0);
+      z->SetLineStyle(2);
+      z->Draw("same");
+      Double_t mx = 0.0, kx = -1.0;
+      pwgMaxAbsOnGraph(gD, mx, kx);
+      std::cout << "[PWG P0-3A] " << base << " max|C_MIX-C_ROT|=" << mx << " at k*=" << kx << std::endl;
+      TLatex* n = new TLatex();
+      n->SetNDC(kTRUE);
+      n->SetTextSize(0.03);
+      n->DrawLatex(0.14, 0.92, Form("max |#Delta C|=%.4f at k*=%.3f (not a #chi^{2} test)", mx, kx));
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.022);
+  cap->DrawLatex(0.02, 0.97, "P0-3A  C_{mebkg,norm} ROT vs MIX   (same data; method spread only)");
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfBkgSourceComparisonPage(TCanvas* canvas, const TString& pdfPath,
+                                           std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const std::string suf = kmfCacheSuffix(getKstarMassFitCfKstarBinTarget());
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 1000);
+  canvas->Divide(2, 2);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    TGraphErrors* gN = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + suf + "_norm");
+    TGraphErrors* gM = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + suf + "_mebkg_norm");
+    canvas->cd(ib + 1);
+    if (!gN && !gM) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, Form("%s: missing ROT norm graphs", base.c_str()));
+      canvas->cd(ib + 3);
+      continue;
+    }
+    if (gN) {
+      pwgStyleCfGraph(gN, kBlack, 20);
+      gN->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gN->Draw("AP");
+      if (gN->GetHistogram()) {
+        gN->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+        gN->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        gN->GetHistogram()->SetTitle(Form("%s ROT  C_{norm} (B_{SE}) vs C_{mebkg,norm} (B_{ME});k*;C", base.c_str()));
+      }
+    }
+    if (gM) {
+      pwgStyleCfGraph(gM, kBlue + 1, 21);
+      TString opt = gN ? "P SAME" : "AP";
+      gM->Draw(opt);
+    }
+    TLegend* leg = new TLegend(0.48, 0.72, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    if (gN) leg->AddEntry(gN, "C_{norm}  (B_{SE})", "p");
+    if (gM) leg->AddEntry(gM, "C_{mebkg,norm} (B_{ME})", "p");
+    leg->Draw();
+    pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+
+    TGraphErrors* gD = pwgMakeGraphDiff(gN, gM, Form("C_{mebkg}-C_{norm} %s", base.c_str()));
+    canvas->cd(ib + 3);
+    if (!gD) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, "no difference");
+    } else {
+      pwgStyleCfGraph(gD, kBlack, 20);
+      gD->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gD->Draw("AP");
+      if (gD->GetHistogram()) {
+        gD->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+        gD->GetHistogram()->GetYaxis()->SetRangeUser(-0.12, 0.12);
+        gD->GetHistogram()->SetTitle(Form("%s C_{mebkg,norm}-C_{norm};k*;#Delta C", base.c_str()));
+      }
+      TLine* z = new TLine(kCfKstarXMin, 0.0, kCfKstarXMax, 0.0);
+      z->SetLineStyle(2);
+      z->Draw("same");
+      Double_t mx = 0.0, kx = -1.0;
+      pwgMaxAbsOnGraph(gD, mx, kx);
+      std::cout << "[PWG P0-3B] " << base << " max|C_mebkg-C_norm|=" << mx << " at k*=" << kx << std::endl;
+      TLatex* n = new TLatex();
+      n->SetNDC(kTRUE);
+      n->SetTextSize(0.03);
+      n->DrawLatex(0.14, 0.92, Form("max |#Delta C|=%.4f at k*=%.3f", mx, kx));
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.022);
+  cap->DrawLatex(0.02, 0.97, "P0-3B  ROT only: B_{SE} (norm) vs B_{ME} (mebkg_norm)   method spread, not #chi^{2}");
+  canvas->Print(pdfPath);
+}
+
+struct KmfYieldPack {
+  TGraphErrors* gYse;
+  TGraphErrors* gYme;
+  TGraphErrors* gYseMe;
+  TGraphErrors* gSt;
+  TGraphErrors* gStSEme;
+  TGraphErrors* gCFraw;
+  TGraphErrors* gCFn;
+  TGraphErrors* gCFme;
+  TGraphErrors* gCFmeRaw;
+  // Per-k* fit diagnostics (Step 10 T1). The status code says whether a fit returned, not whether
+  // it behaved: on 2026-09-17 the phi-d k* = 0.125 point had status OK, 1.8x the pairs of the
+  // comparison run and 61% MORE error. Nothing in the sidecar could say why, because the fit
+  // parameters were never stored. These graphs are that record.
+  TGraphErrors* gMeanSE;    // gaussian mean of S = F - alpha B, SE
+  TGraphErrors* gSigmaSE;   // gaussian sigma, SE. At the parameter limit it is pinned, not fitted
+  TGraphErrors* gChi2SE;    // chi2/ndf of that fit on the original histogram
+  TGraphErrors* gNegBinsSE; // bins of S that went negative inside the fit range
+  TGraphErrors* gAlphaSE;   // alpha and its error, SE
+  TGraphErrors* gAlphaME;   // alpha and its error, ME
+  KmfYieldPack()
+      : gYse(0), gYme(0), gYseMe(0), gSt(0), gStSEme(0), gCFraw(0), gCFn(0), gCFme(0), gCFmeRaw(0),
+        gMeanSE(0), gSigmaSE(0), gChi2SE(0), gNegBinsSE(0), gAlphaSE(0), gAlphaME(0) {}
+};
+
+static const Int_t kKmfAlphaYamlSingle = 0;
+static const Int_t kKmfAlphaLsb = 1;
+static const Int_t kKmfAlphaRsb = 2;
+static const Int_t kKmfAlphaSblr = 3;
+
+static const char* kmfAlphaModeLabel(Int_t mode) {
+  if (mode == kKmfAlphaLsb) return "LSB";
+  if (mode == kKmfAlphaRsb) return "RSB";
+  if (mode == kKmfAlphaSblr) return "SBLR";
+  return "nominal";
+}
+
+static std::string kmfAlphaCacheExtra(Int_t mode) {
+  if (mode == kKmfAlphaLsb) return "_aLSB";
+  if (mode == kKmfAlphaRsb) return "_aRSB";
+  if (mode == kKmfAlphaSblr) return "_aSBLR";
+  return "";
+}
+
+static Double_t kmfAlphaByMode(TH1* hF, TH1* hB, const std::string& channelBase, Int_t mode, Double_t& err) {
+  err = 0.0;
+  Double_t aMin = 1.05, aMax = 1.105;
+  getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+  Double_t lMin = 0.99, lMax = 1.005, rMin = 1.035, rMax = 1.060;
+  getChannelSidebandWindows(channelBase, lMin, lMax, rMin, rMax);
+  if (mode == kKmfAlphaLsb) return kmfAlphaFromSingleWindow(hF, hB, lMin, lMax, err);
+  if (mode == kKmfAlphaRsb) return kmfAlphaFromSingleWindow(hF, hB, rMin, rMax, err);
+  if (mode == kKmfAlphaSblr) return kmfAlphaFromWindows(hF, hB, lMin, lMax, rMin, rMax, err);
+  return kmfAlphaFromSingleWindow(hF, hB, aMin, aMax, err);
+}
+
+static void computeKmfYieldsNoDraw(TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bme, const std::string& channelBase,
+                                   std::vector<TH1*>& keepAlive, KmfYieldPack& out, Int_t alphaMode = 0) {
+  out = KmfYieldPack();
+  if (!h2Fse || !h2Fme || !h2Bse || !h2Bme) return;
+  Double_t fitMin = 0.99, fitMax = 1.06, sigmaMin = 0.002, sigmaMax = 0.020;
+  Double_t purityMinK = 0.0, purityMaxK = 0.65, clampMin = 0.05, clampMax = 1.0;
+  Int_t minEntries = 20;
+  Bool_t preferPol2 = kTRUE;
+  getKstarMassFitCfFitConfig(fitMin, fitMax, sigmaMin, sigmaMax, purityMinK, purityMaxK, minEntries, clampMin, clampMax,
+                             preferPol2);
+  Double_t sigMin = 1.012, sigMax = 1.026;
+  getChannelSignalMassWindow(channelSignal(channelBase), sigMin, sigMax);
+
+  std::vector<Double_t> kx, ySE, eSE, yME, eME, cfx, cfy, cfe, stx, sty, cfxMe, cfyMe, cfeMe;
+  std::vector<Double_t> kxSEme, ySEme, eSEme, stxSEme, stySEme;
+  // Diagnostics live on their own spine: they exist for every bin where a fit was attempted,
+  // including the bins whose fit then failed, which are exactly the ones worth looking at.
+  std::vector<Double_t> dgx, dgMean, dgSigma, dgChi2, dgNeg, dgASE, dgASEe, dgAME, dgAMEe;
+  const Int_t lowMerge = getKstarMassFitCfLowKstarMergeBins();
+  for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+    const Int_t iyFirst = iy;
+    const Int_t iyLast = (iyFirst == 1) ? TMath::Min(h2Fse->GetNbinsY(), lowMerge) : iyFirst;
+    iy = iyLast;
+    const Double_t kstar =
+        0.5 * (h2Fse->GetYaxis()->GetBinLowEdge(iyFirst) + h2Fse->GetYaxis()->GetBinUpEdge(iyLast));
+    if (kstar < purityMinK || kstar > purityMaxK) continue;
+    const Double_t nF = h2Fse->Integral(1, h2Fse->GetNbinsX(), iyFirst, iyLast) +
+                        h2Fme->Integral(1, h2Fme->GetNbinsX(), iyFirst, iyLast);
+    stx.push_back(kstar);
+    sty.push_back((Double_t)kKmfStatusFitFail);
+    stxSEme.push_back(kstar);
+    stySEme.push_back((Double_t)kKmfStatusFitFail);
+    if (nF < (Double_t)minEntries || nF <= 0.0) {
+      sty.back() = (Double_t)kKmfStatusLowStat;
+      stySEme.back() = (Double_t)kKmfStatusLowStat;
+      continue;
+    }
+    TH1* hFse = h2Fse->ProjectionX(pwgUniq("ndFse").Data(), iyFirst, iyLast);
+    TH1* hFme = h2Fme->ProjectionX(pwgUniq("ndFme").Data(), iyFirst, iyLast);
+    TH1* hBse = h2Bse->ProjectionX(pwgUniq("ndBse").Data(), iyFirst, iyLast);
+    TH1* hBme = h2Bme->ProjectionX(pwgUniq("ndBme").Data(), iyFirst, iyLast);
+    hFse->SetDirectory(0);
+    hFme->SetDirectory(0);
+    hBse->SetDirectory(0);
+    hBme->SetDirectory(0);
+    if (kKmfMassRebin > 1) {
+      hFse->Rebin(kKmfMassRebin);
+      hFme->Rebin(kKmfMassRebin);
+      hBse->Rebin(kKmfMassRebin);
+      hBme->Rebin(kKmfMassRebin);
+    }
+    keepAlive.push_back(hFse);
+    keepAlive.push_back(hFme);
+    keepAlive.push_back(hBse);
+    keepAlive.push_back(hBme);
+    Double_t aSE = 0, aME = 0, aSEe = 0, aMEe = 0, aSEme = 0, aSEmeE = 0;
+    aSE = kmfAlphaByMode(hFse, hBse, channelBase, alphaMode, aSEe);
+    aME = kmfAlphaByMode(hFme, hBme, channelBase, alphaMode, aMEe);
+    aSEme = kmfAlphaByMode(hFse, hBme, channelBase, alphaMode, aSEmeE);
+    TH1* hSse = (TH1*)hFse->Clone(pwgUniq("ndSse").Data());
+    TH1* hSme = (TH1*)hFme->Clone(pwgUniq("ndSme").Data());
+    TH1* hSseMe = (TH1*)hFse->Clone(pwgUniq("ndSseMe").Data());
+    hSse->SetDirectory(0);
+    hSme->SetDirectory(0);
+    hSseMe->SetDirectory(0);
+    hSse->Add(hBse, -aSE);
+    hSme->Add(hBme, -aME);
+    hSseMe->Add(hBme, -aSEme);
+    kmfApplyAlphaErrorToS(hSse, hBse, aSEe);
+    kmfApplyAlphaErrorToS(hSme, hBme, aMEe);
+    kmfApplyAlphaErrorToS(hSseMe, hBme, aSEmeE);
+    keepAlive.push_back(hSse);
+    keepAlive.push_back(hSme);
+    keepAlive.push_back(hSseMe);
+    KstarMassFitCfFitResult frSE, frME, frSEme;
+    const Bool_t okSE = fitPurityGausOnly(hSse, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSE);
+    const Bool_t okME = fitPurityGausOnly(hSme, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frME);
+    const Bool_t okSEme = fitPurityGausOnly(hSseMe, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSEme);
+    if (kmfAlphaErrorMode() == "coherent") {
+      const Double_t dSE = kmfCoherentAlphaYieldError(hFse, hBse, aSE, aSEe, fitMin, fitMax, sigMin,
+                                                      sigMax, sigmaMin, sigmaMax, keepAlive);
+      const Double_t dME = kmfCoherentAlphaYieldError(hFme, hBme, aME, aMEe, fitMin, fitMax, sigMin,
+                                                      sigMax, sigmaMin, sigmaMax, keepAlive);
+      const Double_t dSEme = kmfCoherentAlphaYieldError(hFse, hBme, aSEme, aSEmeE, fitMin, fitMax,
+                                                        sigMin, sigMax, sigmaMin, sigmaMax, keepAlive);
+      frSE.errNSig = TMath::Sqrt(frSE.errNSig * frSE.errNSig + dSE * dSE);
+      frME.errNSig = TMath::Sqrt(frME.errNSig * frME.errNSig + dME * dME);
+      frSEme.errNSig = TMath::Sqrt(frSEme.errNSig * frSEme.errNSig + dSEme * dSEme);
+    }
+    dgx.push_back(kstar);
+    dgMean.push_back(frSE.mean);
+    dgSigma.push_back(frSE.sigma);
+    dgChi2.push_back(frSE.chi2NdfOnOriginalHistogram);
+    dgNeg.push_back((Double_t)frSE.nNegativeBins);
+    dgASE.push_back(aSE);
+    dgASEe.push_back(aSEe);
+    dgAME.push_back(aME);
+    dgAMEe.push_back(aMEe);
+    const Int_t stSE = kmfYieldStatus(okSE, frSE.nSig, frSE.errNSig, kFALSE);
+    const Int_t stME = kmfYieldStatus(okME, frME.nSig, frME.errNSig, kFALSE);
+    const Int_t stSEme = kmfYieldStatus(okSEme, frSEme.nSig, frSEme.errNSig, kFALSE);
+    sty.back() = (Double_t)((stSE != kKmfStatusOk) ? stSE : stME);
+    stySEme.back() = (Double_t)stSEme;
+    const Bool_t meOk = (stME == kKmfStatusOk && frME.nSig > 0.0);
+    if (stSE == kKmfStatusOk && meOk) {
+      kx.push_back(kstar);
+      ySE.push_back(frSE.nSig);
+      eSE.push_back(frSE.errNSig);
+      yME.push_back(frME.nSig);
+      eME.push_back(frME.errNSig);
+      const Double_t cf = frSE.nSig / frME.nSig;
+      const Double_t ecf = cf * TMath::Sqrt(TMath::Power(frSE.errNSig / (frSE.nSig + 1e-12), 2) +
+                                            TMath::Power(frME.errNSig / (frME.nSig + 1e-12), 2));
+      cfx.push_back(kstar);
+      cfy.push_back(cf);
+      cfe.push_back(ecf);
+    }
+    if (stSEme == kKmfStatusOk) {
+      kxSEme.push_back(kstar);
+      ySEme.push_back(frSEme.nSig);
+      eSEme.push_back(frSEme.errNSig);
+    }
+    if (stSEme == kKmfStatusOk && meOk) {
+      const Double_t cfMe = frSEme.nSig / frME.nSig;
+      const Double_t ecfMe = cfMe * TMath::Sqrt(TMath::Power(frSEme.errNSig / (frSEme.nSig + 1e-12), 2) +
+                                                TMath::Power(frME.errNSig / (frME.nSig + 1e-12), 2));
+      cfxMe.push_back(kstar);
+      cfyMe.push_back(cfMe);
+      cfeMe.push_back(ecfMe);
+    }
+  }
+  if (!dgx.empty()) {
+    out.gMeanSE = new TGraphErrors((Int_t)dgx.size(), &dgx[0], &dgMean[0], 0, 0);
+    out.gSigmaSE = new TGraphErrors((Int_t)dgx.size(), &dgx[0], &dgSigma[0], 0, 0);
+    out.gChi2SE = new TGraphErrors((Int_t)dgx.size(), &dgx[0], &dgChi2[0], 0, 0);
+    out.gNegBinsSE = new TGraphErrors((Int_t)dgx.size(), &dgx[0], &dgNeg[0], 0, 0);
+    out.gAlphaSE = new TGraphErrors((Int_t)dgx.size(), &dgx[0], &dgASE[0], 0, &dgASEe[0]);
+    out.gAlphaME = new TGraphErrors((Int_t)dgx.size(), &dgx[0], &dgAME[0], 0, &dgAMEe[0]);
+  }
+  if (!stx.empty()) out.gSt = new TGraphErrors((Int_t)stx.size(), &stx[0], &sty[0], 0, 0);
+  if (!stxSEme.empty()) out.gStSEme = new TGraphErrors((Int_t)stxSEme.size(), &stxSEme[0], &stySEme[0], 0, 0);
+  if (!kxSEme.empty()) out.gYseMe = new TGraphErrors((Int_t)kxSEme.size(), &kxSEme[0], &ySEme[0], 0, &eSEme[0]);
+  if (!kx.empty()) {
+    out.gYse = new TGraphErrors((Int_t)kx.size(), &kx[0], &ySE[0], 0, &eSE[0]);
+    out.gYme = new TGraphErrors((Int_t)kx.size(), &kx[0], &yME[0], 0, &eME[0]);
+    out.gCFraw = new TGraphErrors((Int_t)cfx.size(), &cfx[0], &cfy[0], 0, &cfe[0]);
+    const Double_t nQMin = channelNormQMin(channelSignal(channelBase));
+    const Double_t nQMax = channelNormQMax(channelSignal(channelBase));
+    Double_t sumC = 0.0;
+    Int_t nNorm = 0;
+    for (size_t i = 0; i < cfx.size(); ++i) {
+      if (cfx[i] < nQMin || cfx[i] > nQMax) continue;
+      sumC += cfy[i];
+      ++nNorm;
+    }
+    if (nNorm > 0 && sumC > 0.0) {
+      const Double_t scale = 1.0 / (sumC / (Double_t)nNorm);
+      std::vector<Double_t> ny, ne;
+      for (size_t i = 0; i < cfy.size(); ++i) {
+        ny.push_back(cfy[i] * scale);
+        ne.push_back(cfe[i] * scale);
+      }
+      out.gCFn = new TGraphErrors((Int_t)cfx.size(), &cfx[0], &ny[0], 0, &ne[0]);
+    }
+  }
+  if (!cfxMe.empty()) {
+    out.gCFmeRaw = new TGraphErrors((Int_t)cfxMe.size(), &cfxMe[0], &cfyMe[0], 0, &cfeMe[0]);
+    const Double_t nQMin = channelNormQMin(channelSignal(channelBase));
+    const Double_t nQMax = channelNormQMax(channelSignal(channelBase));
+    Double_t sumC = 0.0;
+    Int_t nNorm = 0;
+    for (size_t i = 0; i < cfxMe.size(); ++i) {
+      if (cfxMe[i] < nQMin || cfxMe[i] > nQMax) continue;
+      sumC += cfyMe[i];
+      ++nNorm;
+    }
+    if (nNorm > 0 && sumC > 0.0) {
+      const Double_t scale = (Double_t)nNorm / sumC;
+      std::vector<Double_t> ny, ne;
+      for (size_t i = 0; i < cfyMe.size(); ++i) {
+        ny.push_back(cfyMe[i] * scale);
+        ne.push_back(cfeMe[i] * scale);
+      }
+      out.gCFme = new TGraphErrors((Int_t)cfxMe.size(), &cfxMe[0], &ny[0], 0, &ne[0]);
+    }
+  }
+}
+
+static void drawKmfFitStabilityPage(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                    std::map<std::string, TGraphErrors*>& cfCache, std::vector<TH1*>& keepAlive) {
+  if (!canvas) return;
+  const std::string suf = kmfCacheSuffix(getKstarMassFitCfKstarBinTarget());
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1100);
+    canvas->Divide(3, 2);
+    TGraphErrors* gYseR = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_rot_") + base + suf);
+    TGraphErrors* gYseM = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_mix_") + base + suf);
+    TGraphErrors* gYmeR = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_ME_rot_") + base + suf);
+    TGraphErrors* gYmeM = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_ME_mix_") + base + suf);
+    TGraphErrors* gStR = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitstatus_rot_") + base + suf);
+    TGraphErrors* gStM = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitstatus_mix_") + base + suf);
+
+    canvas->cd(1);
+    if (gYseR || gYseM) {
+      if (gYseR) {
+        pwgStyleCfGraph(gYseR, kBlack, 20);
+        gYseR->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        gYseR->Draw("AP");
+        if (gYseR->GetHistogram()) {
+          gYseR->GetHistogram()->SetTitle(Form("%s Y_{SE}^{B_{ME}};k*;Y_{SE}", base.c_str()));
+          gPad->SetLogy();
+        }
+      }
+      if (gYseM) {
+        pwgStyleCfGraph(gYseM, kRed + 1, 21);
+        gYseM->Draw(gYseR ? "P SAME" : "AP");
+      }
+      TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
+      leg->SetBorderSize(0);
+      leg->SetFillStyle(0);
+      if (gYseR) leg->AddEntry(gYseR, "ROT", "p");
+      if (gYseM) leg->AddEntry(gYseM, "MIX", "p");
+      leg->Draw();
+    } else {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.2, 0.5, "missing Y_SE");
+    }
+
+    canvas->cd(2);
+    if (gYmeR || gYmeM) {
+      if (gYmeR) {
+        pwgStyleCfGraph(gYmeR, kBlack, 20);
+        gYmeR->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        gYmeR->Draw("AP");
+        if (gYmeR->GetHistogram()) gYmeR->GetHistogram()->SetTitle(Form("%s Y_{ME};k*;Y_{ME}", base.c_str()));
+        gPad->SetLogy();
+      }
+      if (gYmeM) {
+        pwgStyleCfGraph(gYmeM, kRed + 1, 21);
+        gYmeM->Draw(gYmeR ? "P SAME" : "AP");
+      }
+    } else {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.2, 0.5, "missing Y_ME");
+    }
+
+    canvas->cd(3);
+    TGraphErrors* gRatSE = pwgMakeGraphDiff(0, 0, "");
+    (void)gRatSE;
+    if (gYseR && gYseM) {
+      std::vector<Double_t> x, y, ey;
+      for (Int_t i = 0; i < gYseR->GetN(); ++i) {
+        Double_t xr = 0, yr = 0;
+        gYseR->GetPoint(i, xr, yr);
+        if (yr <= 0) continue;
+        for (Int_t j = 0; j < gYseM->GetN(); ++j) {
+          Double_t xm = 0, ym = 0;
+          gYseM->GetPoint(j, xm, ym);
+          if (TMath::Abs(xm - xr) > 1e-4) continue;
+          const Double_t er = gYseR->GetErrorY(i);
+          const Double_t em = gYseM->GetErrorY(j);
+          if (ym <= 0) continue;
+          x.push_back(xr);
+          y.push_back(ym / yr);
+          ey.push_back((ym / yr) * TMath::Sqrt(TMath::Power(em / ym, 2) + TMath::Power(er / yr, 2)));
+        }
+      }
+      if (!x.empty()) {
+        TGraphErrors* g = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, &ey[0]);
+        pwgStyleCfGraph(g, kBlack, 20);
+        g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        g->Draw("AP");
+        if (g->GetHistogram()) {
+          g->GetHistogram()->SetTitle("Y_{SE}^{B_{ME},MIX}/Y_{SE}^{B_{ME},ROT};k*;ratio");
+          g->GetHistogram()->GetYaxis()->SetRangeUser(0.5, 1.5);
+        }
+        pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      }
+    }
+
+    canvas->cd(4);
+    {
+      TLegend* leg = new TLegend(0.50, 0.62, 0.88, 0.88);
+      leg->SetBorderSize(0);
+      leg->SetFillStyle(0);
+      Bool_t first = kTRUE;
+      for (Int_t it = 0; tags[it]; ++it) {
+        TGraphErrors* gY = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_") + tags[it] + "_" + base + suf);
+        if (!gY) continue;
+        std::vector<Double_t> x, y, ey;
+        for (Int_t i = 0; i < gY->GetN(); ++i) {
+          Double_t xx = 0, yy = 0;
+          gY->GetPoint(i, xx, yy);
+          const Double_t e = gY->GetErrorY(i);
+          if (!(yy > 0.0)) continue;
+          x.push_back(xx);
+          y.push_back(e / yy);
+          ey.push_back(0.0);
+          if (e / yy > 0.30) {
+            std::cout << "[PWG P0-4] " << base << " " << tags[it] << " Y_SE relErr=" << (e / yy) << "  Y=" << yy
+                      << " ± " << e << " at k*=" << xx << std::endl;
+          }
+        }
+        if (x.empty()) continue;
+        TGraphErrors* g = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, 0);
+        pwgStyleCfGraph(g, it == 0 ? kBlack : kRed + 1, it == 0 ? 20 : 21);
+        if (first) {
+          g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g->Draw("AP");
+          if (g->GetHistogram()) {
+            g->GetHistogram()->SetTitle("#sigma_Y/Y (Y_{SE}^{B_{ME}});k*;rel. err.");
+            g->GetHistogram()->GetYaxis()->SetRangeUser(0.0, 1.2);
+          }
+          first = kFALSE;
+        } else {
+          g->Draw("P SAME");
+        }
+        leg->AddEntry(g, tags[it], "p");
+      }
+      TLine* th = new TLine(kCfKstarXMin, 0.30, kCfKstarXMax, 0.30);
+      th->SetLineColor(kRed + 1);
+      th->SetLineStyle(3);
+      th->Draw("same");
+      if (!first) leg->Draw();
+      TLatex* n = new TLatex();
+      n->SetNDC(kTRUE);
+      n->SetTextSize(0.028);
+      n->DrawLatex(0.14, 0.92, "status=0 is not enough if #sigma_Y/Y is large (dashed=0.3)");
+    }
+
+    canvas->cd(5);
+    if (gStR) {
+      pwgStyleCfGraph(gStR, kBlack, 20);
+      gStR->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gStR->Draw("AP");
+      if (gStR->GetHistogram()) {
+        gStR->GetHistogram()->SetTitle("fit status ROT (0=OK);k*;status");
+        gStR->GetHistogram()->GetYaxis()->SetRangeUser(-0.5, 5.5);
+      }
+    }
+    canvas->cd(6);
+    if (gStM) {
+      pwgStyleCfGraph(gStM, kRed + 1, 21);
+      gStM->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gStM->Draw("AP");
+      if (gStM->GetHistogram()) {
+        gStM->GetHistogram()->SetTitle("fit status MIX (0=OK);k*;status");
+        gStM->GetHistogram()->GetYaxis()->SetRangeUser(-0.5, 5.5);
+      }
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.022);
+    cap->DrawLatex(0.02, 0.97, Form("P0-4 mass-fit stability  %s  pct_0_60  Y_{SE}=F_{SE}-#alpha B_{ME}  (do not pass on status alone)", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+
+  // 40 vs 80 MeV/c: independent graphs, do not overwrite _dk40 cache keys.
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl || !fin) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-4 40 vs 80 MeV/c", "pct_0_60 or TFile missing");
+    return;
+  }
+  const Double_t w80 = 0.080;
+  const std::string suf80 = kmfCacheSuffix(w80);
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 1000);
+  canvas->Divide(2, 2);
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    TGraphErrors* g40 =
+        kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + suf + "_mebkg_norm");
+    TH3* h3Fse = (TH3*)fin->Get(phiMkkVsKstarWideSeKey(base).c_str());
+    TH3* h3Fme = (TH3*)fin->Get(phiMkkVsKstarWideMeKey(base).c_str());
+    TH3* h3Bse = (TH3*)fin->Get(kmfBkgWideKey(base, "rot", kTRUE).c_str());
+    TH3* h3Bme = (TH3*)fin->Get(kmfBkgWideKey(base, "rot", kFALSE).c_str());
+    TGraphErrors *gYse = 0, *gYme = 0, *gSt = 0, *gRaw = 0, *gN = 0, *gMe = 0;
+    if (h3Fse && h3Fme && h3Bse && h3Bme) {
+      TH2* h2Fse = kmfProjectRebinY(h3Fse, sl->cent9Min, sl->cent9Max, w80, "w80Fse");
+      TH2* h2Fme = kmfProjectRebinY(h3Fme, sl->cent9Min, sl->cent9Max, w80, "w80Fme");
+      TH2* h2Bse = kmfProjectRebinY(h3Bse, sl->cent9Min, sl->cent9Max, w80, "w80Bse");
+      TH2* h2Bme = kmfProjectRebinY(h3Bme, sl->cent9Min, sl->cent9Max, w80, "w80Bme");
+      KmfYieldPack pack80;
+      computeKmfYieldsNoDraw(h2Fse, h2Fme, h2Bse, h2Bme, base, keepAlive, pack80, kKmfAlphaYamlSingle);
+      gYse = pack80.gYse;
+      gYme = pack80.gYme;
+      gSt = pack80.gSt;
+      gRaw = pack80.gCFraw;
+      gN = pack80.gCFn;
+      gMe = pack80.gCFme;
+      if (gMe) {
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("CF_kmf_rot_") + base + suf80 + "_mebkg_norm")] = gMe;
+        gMe->SetTitle(Form("CF_{mebkg,norm} ROT 80 MeV/c %s", base.c_str()));
+      }
+      if (pack80.gCFmeRaw)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("CF_kmf_rot_") + base + suf80 + "_mebkg_raw")] = pack80.gCFmeRaw;
+      if (pack80.gCFraw)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("CF_kmf_rot_") + base + suf80 + "_raw")] = pack80.gCFraw;
+      if (pack80.gCFn)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("CF_kmf_rot_") + base + suf80 + "_norm")] = pack80.gCFn;
+      if (pack80.gYse)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("kmf_Y_SE_rot_") + base + suf80)] = pack80.gYse;
+      if (pack80.gYme)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("kmf_Y_ME_rot_") + base + suf80)] = pack80.gYme;
+      if (pack80.gYseMe)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("kmf_Y_SE_mebkg_rot_") + base + suf80)] = pack80.gYseMe;
+      if (pack80.gSt)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("kmf_fitstatus_rot_") + base + suf80)] = pack80.gSt;
+      if (pack80.gStSEme)
+        cfCache[cfSliceCacheKey("pct_0_60", std::string("kmf_fitstatus_SE_mebkg_rot_") + base + suf80)] = pack80.gStSEme;
+      (void)gYme;
+      (void)gSt;
+      (void)gRaw;
+      (void)gN;
+      delete h2Fse;
+      delete h2Fme;
+      delete h2Bse;
+      delete h2Bme;
+    }
+    canvas->cd(ib + 1);
+    if (g40) {
+      pwgStyleCfGraph(g40, kBlack, 20);
+      g40->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g40->Draw("AP");
+      if (g40->GetHistogram()) {
+        g40->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        g40->GetHistogram()->SetTitle(Form("%s ROT C_{mebkg,norm} 40 vs 80 MeV/c;k*;C", base.c_str()));
+      }
+    }
+    if (gMe) {
+      pwgStyleCfGraph(gMe, kBlue + 1, 21);
+      gMe->Draw(g40 ? "P SAME" : "AP");
+    }
+    TLegend* leg = new TLegend(0.50, 0.72, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    if (g40) leg->AddEntry(g40, "40 MeV/c (nominal, cached)", "p");
+    if (gMe) leg->AddEntry(gMe, "80 MeV/c (same TH3, independent)", "p");
+    leg->Draw();
+    pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    canvas->cd(ib + 3);
+    TGraphErrors* gY40 = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_rot_") + base + suf);
+    const Double_t dk40 = getKstarMassFitCfKstarBinTarget();
+    if (gYse || gY40) {
+      TGraphErrors* gDen40 = 0;
+      TGraphErrors* gDen80 = 0;
+      if (gY40 && dk40 > 0.0) {
+        gDen40 = (TGraphErrors*)gY40->Clone(pwgUniq("yden40").Data());
+        for (Int_t i = 0; i < gDen40->GetN(); ++i) {
+          Double_t x = 0, y = 0;
+          gDen40->GetPoint(i, x, y);
+          gDen40->SetPoint(i, x, y / dk40);
+          gDen40->SetPointError(i, 0.0, gDen40->GetErrorY(i) / dk40);
+        }
+      }
+      if (gYse && w80 > 0.0) {
+        gDen80 = (TGraphErrors*)gYse->Clone(pwgUniq("yden80").Data());
+        for (Int_t i = 0; i < gDen80->GetN(); ++i) {
+          Double_t x = 0, y = 0;
+          gDen80->GetPoint(i, x, y);
+          gDen80->SetPoint(i, x, y / w80);
+          gDen80->SetPointError(i, 0.0, gDen80->GetErrorY(i) / w80);
+        }
+      }
+      TGraphErrors* gFirst = gDen40 ? gDen40 : gDen80;
+      if (gFirst) {
+        pwgStyleCfGraph(gDen40 ? gDen40 : gFirst, kBlack, 20);
+        if (gDen80) pwgStyleCfGraph(gDen80, kBlue + 1, 21);
+        gFirst->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        gFirst->Draw("AP");
+        gPad->SetLogy();
+        if (gFirst->GetHistogram())
+          gFirst->GetHistogram()->SetTitle(Form("%s Y_{SE}/#Delta k* ROT (bin-width corrected);k*;Y/#Delta k*",
+                                                base.c_str()));
+        if (gDen80 && gDen40) gDen80->Draw("P SAME");
+        TLegend* legY = new TLegend(0.50, 0.72, 0.88, 0.88);
+        legY->SetBorderSize(0);
+        legY->SetFillStyle(0);
+        if (gDen40) legY->AddEntry(gDen40, Form("40 MeV/c / %.3f", dk40), "p");
+        if (gDen80) legY->AddEntry(gDen80, Form("80 MeV/c / %.3f", w80), "p");
+        legY->Draw();
+      }
+    } else {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.15, 0.5, "80 MeV/c compute failed");
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.022);
+  cap->DrawLatex(0.02, 0.97,
+                 "P0-4  40 vs 80 MeV/c (ROT).  Yield pad is Y/#Delta k* (not raw counts).  Full MIX 40/80 is P0-9.");
+  canvas->Print(pdfPath);
+}
+
+static void pwgDrawZero(Double_t x0, Double_t x1) {
+  TLine* l = new TLine(x0, 0.0, x1, 0.0);
+  l->SetLineStyle(2);
+  l->SetLineColor(kGray + 2);
+  l->Draw("same");
+}
+
+static TGraphErrors* pwgRelErrGraph(TGraphErrors* gY) {
+  if (!gY) return 0;
+  std::vector<Double_t> x, y;
+  for (Int_t i = 0; i < gY->GetN(); ++i) {
+    Double_t xx = 0, yy = 0;
+    gY->GetPoint(i, xx, yy);
+    if (!(yy > 0.0)) continue;
+    x.push_back(xx);
+    y.push_back(gY->GetErrorY(i) / yy);
+  }
+  if (x.empty()) return 0;
+  return new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, 0);
+}
+
+static TGraphErrors* pwgRelDiffGraph(TGraphErrors* gA, TGraphErrors* gB, const char* title) {
+  if (!gA || !gB) return 0;
+  std::vector<Double_t> x, y, ey;
+  for (Int_t i = 0; i < gA->GetN(); ++i) {
+    Double_t xa = 0, ya = 0;
+    gA->GetPoint(i, xa, ya);
+    if (!(ya > 0.0)) continue;
+    Int_t jBest = -1;
+    Double_t dBest = 1e9;
+    for (Int_t j = 0; j < gB->GetN(); ++j) {
+      Double_t xb = 0, yb = 0;
+      gB->GetPoint(j, xb, yb);
+      const Double_t d = TMath::Abs(xb - xa);
+      if (d < dBest) {
+        dBest = d;
+        jBest = j;
+      }
+    }
+    if (jBest < 0 || dBest > 1e-4) continue;
+    Double_t xb = 0, yb = 0;
+    gB->GetPoint(jBest, xb, yb);
+    const Double_t eA = gA->GetErrorY(i);
+    const Double_t eB = gB->GetErrorY(jBest);
+    x.push_back(xa);
+    y.push_back((yb - ya) / ya);
+    ey.push_back(TMath::Sqrt(TMath::Power(eA / ya, 2) + TMath::Power(eB / ya, 2)));
+  }
+  if (x.empty()) return 0;
+  TGraphErrors* g = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, &ey[0]);
+  g->SetTitle(title ? title : "");
+  return g;
+}
+
+static TGraphErrors* pwgRenormCf(TGraphErrors* gRaw, Double_t qMin, Double_t qMax, Double_t& scale) {
+  scale = 0.0;
+  if (!gRaw) return 0;
+  Double_t sum = 0.0;
+  Int_t n = 0;
+  for (Int_t i = 0; i < gRaw->GetN(); ++i) {
+    Double_t x = 0, y = 0;
+    gRaw->GetPoint(i, x, y);
+    if (x < qMin || x > qMax) continue;
+    if (!TMath::Finite(y)) continue;
+    sum += y;
+    ++n;
+  }
+  if (n <= 0 || !(sum > 0.0)) return 0;
+  scale = (Double_t)n / sum;
+  std::vector<Double_t> x, y, ey;
+  for (Int_t i = 0; i < gRaw->GetN(); ++i) {
+    Double_t xx = 0, yy = 0;
+    gRaw->GetPoint(i, xx, yy);
+    x.push_back(xx);
+    y.push_back(yy * scale);
+    ey.push_back(gRaw->GetErrorY(i) * scale);
+  }
+  TGraphErrors* g = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, &ey[0]);
+  g->SetTitle(Form("C_{norm} [%.3f,%.3f];k*;C", qMin, qMax));
+  return g;
+}
+
+static TH1* kmfProjectKstarMassWindow(TH2* h2, Double_t mLo, Double_t mHi, const char* stem,
+                                      std::vector<TH1*>& keepAlive) {
+  if (!h2) return 0;
+  const Int_t ix0 = h2->GetXaxis()->FindBin(mLo + 1e-9);
+  const Int_t ix1 = h2->GetXaxis()->FindBin(mHi - 1e-9);
+  if (ix1 < ix0) return 0;
+  TH1* h = h2->ProjectionY(pwgUniq(stem).Data(), ix0, ix1);
+  if (!h) return 0;
+  h->SetDirectory(0);
+  keepAlive.push_back(h);
+  return h;
+}
+
+static Bool_t kmfLoadFAndB(TFile* fin, const FemtoConfig::CfCentSlice* sl, const std::string& base, const char* tag,
+                           Double_t kW, TH2*& h2Fse, TH2*& h2Fme, TH2*& h2Bse, TH2*& h2Bme) {
+  h2Fse = h2Fme = h2Bse = h2Bme = 0;
+  if (!fin || !sl || !tag) return kFALSE;
+  TH3* h3Fse = (TH3*)fin->Get(phiMkkVsKstarWideSeKey(base).c_str());
+  TH3* h3Fme = (TH3*)fin->Get(phiMkkVsKstarWideMeKey(base).c_str());
+  TH3* h3Bse = (TH3*)fin->Get(kmfBkgWideKey(base, tag, kTRUE).c_str());
+  TH3* h3Bme = (TH3*)fin->Get(kmfBkgWideKey(base, tag, kFALSE).c_str());
+  if (!h3Fse || !h3Fme || !h3Bse || !h3Bme) return kFALSE;
+  h2Fse = kmfProjectRebinY(h3Fse, sl->cent9Min, sl->cent9Max, kW, "ldFse");
+  h2Fme = kmfProjectRebinY(h3Fme, sl->cent9Min, sl->cent9Max, kW, "ldFme");
+  h2Bse = kmfProjectRebinY(h3Bse, sl->cent9Min, sl->cent9Max, kW, "ldBse");
+  h2Bme = kmfProjectRebinY(h3Bme, sl->cent9Min, sl->cent9Max, kW, "ldBme");
+  return (h2Fse && h2Fme && h2Bse && h2Bme);
+}
+
+static void kmfDelete2s(TH2* a, TH2* b, TH2* c, TH2* d) {
+  delete a;
+  delete b;
+  delete c;
+  delete d;
+}
+
+static void kmfPwgClosureKstarBins(Double_t bins[4][2]) {
+  const Double_t dk = getKstarMassFitCfKstarBinTarget();
+  Double_t qMin = channelNormQMin(channelSignal("phi_proton"));
+  bins[0][0] = 0.0;
+  bins[0][1] = dk;
+  bins[1][0] = dk;
+  bins[1][1] = 2.0 * dk;
+  bins[2][0] = 2.0 * dk;
+  bins[2][1] = 3.0 * dk;
+  bins[3][0] = qMin;
+  bins[3][1] = qMin + dk;
+}
+
+static void kmfStorePack(std::map<std::string, TGraphErrors*>& cfCache, const std::string& sliceId,
+                         const std::string& tag, const std::string& base, const std::string& suf,
+                         const KmfYieldPack& p) {
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_Y_SE_") + tag + "_" + base + suf)] = p.gYse;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_Y_ME_") + tag + "_" + base + suf)] = p.gYme;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_Y_SE_mebkg_") + tag + "_" + base + suf)] = p.gYseMe;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitstatus_") + tag + "_" + base + suf)] = p.gSt;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitstatus_SE_mebkg_") + tag + "_" + base + suf)] = p.gStSEme;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitdiag_mean_") + tag + "_" + base + suf)] = p.gMeanSE;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitdiag_sigma_") + tag + "_" + base + suf)] = p.gSigmaSE;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitdiag_chi2ndf_") + tag + "_" + base + suf)] = p.gChi2SE;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitdiag_negbins_") + tag + "_" + base + suf)] = p.gNegBinsSE;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitdiag_alphaSE_") + tag + "_" + base + suf)] = p.gAlphaSE;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmf_fitdiag_alphaME_") + tag + "_" + base + suf)] = p.gAlphaME;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmf_") + tag + "_" + base + suf + "_raw")] = p.gCFraw;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmf_") + tag + "_" + base + suf + "_norm")] = p.gCFn;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_norm")] = p.gCFme;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_raw")] = p.gCFmeRaw;
+}
+
+static void kmfCachePutIfAbsent(std::map<std::string, TGraphErrors*>& cfCache, const std::string& key,
+                                TGraphErrors* g) {
+  if (cfCache.find(key) != cfCache.end() && cfCache[key]) return;
+  cfCache[key] = g;
+}
+
+static void kmfEnsureYieldsCached(TFile* fin, const FemtoConfig::CfCentSlice* sl, const std::string& base,
+                                  const char* tag, Double_t kW, std::vector<TH1*>& keepAlive,
+                                  std::map<std::string, TGraphErrors*>& cfCache, Int_t alphaMode = 0) {
+  if (!fin || !sl || !tag) return;
+  const std::string suf = kmfCacheSuffix(kW) + kmfAlphaCacheExtra(alphaMode);
+  const Bool_t havePrimary = kmfLookupGraph(cfCache, sl->id, std::string("kmf_Y_SE_") + tag + "_" + base + suf);
+  const Bool_t haveMebkg =
+      kmfLookupGraph(cfCache, sl->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_norm");
+  // The fit diagnostics are part of what has to exist, not an extra. The nominal dk50 point set is
+  // built by the drawing path, which returns only yields and statuses through pointers; without
+  // this third condition the one point set the analysis uses is also the only one with no fit
+  // record. Recomputing it here costs one pass of ~10 mass fits.
+  const Bool_t haveDiag =
+      kmfLookupGraph(cfCache, sl->id, std::string("kmf_fitdiag_mean_") + tag + "_" + base + suf);
+  if (havePrimary && haveMebkg && haveDiag) return;
+  TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+  if (!kmfLoadFAndB(fin, sl, base, tag, kW, h2Fse, h2Fme, h2Bse, h2Bme)) {
+    std::cout << "[PWG] missing wide TH3 for ensure " << base << " " << tag << " dk=" << kW << std::endl;
+    kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+    return;
+  }
+  KmfYieldPack pack;
+  computeKmfYieldsNoDraw(h2Fse, h2Fme, h2Bse, h2Bme, base, keepAlive, pack, alphaMode);
+  if (havePrimary) {
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_Y_SE_mebkg_") + tag + "_" + base + suf),
+                        pack.gYseMe);
+    kmfCachePutIfAbsent(cfCache,
+                        cfSliceCacheKey(sl->id, std::string("kmf_fitstatus_SE_mebkg_") + tag + "_" + base + suf),
+                        pack.gStSEme);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_norm"),
+                        pack.gCFme);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_raw"),
+                        pack.gCFmeRaw);
+    // The primary graphs came from the drawing path, which does not store diagnostics. Without
+    // these six lines the nominal dk50 point set -- the one the analysis actually uses -- is the
+    // only one with no fit record at all.
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_fitdiag_mean_") + tag + "_" + base + suf),
+                        pack.gMeanSE);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_fitdiag_sigma_") + tag + "_" + base + suf),
+                        pack.gSigmaSE);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_fitdiag_chi2ndf_") + tag + "_" + base + suf),
+                        pack.gChi2SE);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_fitdiag_negbins_") + tag + "_" + base + suf),
+                        pack.gNegBinsSE);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_fitdiag_alphaSE_") + tag + "_" + base + suf),
+                        pack.gAlphaSE);
+    kmfCachePutIfAbsent(cfCache, cfSliceCacheKey(sl->id, std::string("kmf_fitdiag_alphaME_") + tag + "_" + base + suf),
+                        pack.gAlphaME);
+  } else {
+    kmfStorePack(cfCache, sl->id, tag, base, suf, pack);
+  }
+  kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+}
+
+static void kmfDrawThreeCf(TGraphErrors* gF, TGraphErrors* gRot, TGraphErrors* gMix, const char* title,
+                           const char* nF = "C_F", const char* nRot = "C_{B,ROT}", const char* nMix = "C_{B,MIX}") {
+  TGraphErrors* g0 = gF ? gF : (gRot ? gRot : gMix);
+  if (!g0) {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.12, 0.5, "missing CF");
+    return;
+  }
+  if (gF) pwgStyleCfGraph(gF, kBlack, 20);
+  if (gRot) pwgStyleCfGraph(gRot, kCfColRot, 21);
+  if (gMix) pwgStyleCfGraph(gMix, kCfColMix, 22);
+  g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+  g0->Draw("AP");
+  if (g0->GetHistogram()) {
+    g0->GetHistogram()->GetXaxis()->SetRangeUser(kCfKstarXMin, kCfKstarXMax);
+    g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+    g0->GetHistogram()->SetTitle(title);
+  }
+  if (gRot && gRot != g0) gRot->Draw("P SAME");
+  if (gMix && gMix != g0) gMix->Draw("P SAME");
+  if (gF && gF != g0) gF->Draw("P SAME");
+  pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+  TLegend* leg = new TLegend(0.50, 0.70, 0.88, 0.88);
+  leg->SetBorderSize(0);
+  leg->SetFillStyle(0);
+  if (gF) leg->AddEntry(gF, nF, "p");
+  if (gRot) leg->AddEntry(gRot, nRot, "p");
+  if (gMix) leg->AddEntry(gMix, nMix, "p");
+  leg->Draw();
+}
+
+static void drawKmfBkgSourceMassClosurePages(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                             std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-5 B_SE/B_ME mass closure", "slice pct_0_60 not found");
+    return;
+  }
+  const Double_t kW = getKstarMassFitCfKstarBinTarget();
+  Double_t aMin = 1.05, aMax = 1.105;
+  getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+  Double_t kBins[4][2];
+  kmfPwgClosureKstarBins(kBins);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    TH3* h3Fse = (TH3*)fin->Get(phiMkkVsKstarWideSeKey(base).c_str());
+    if (!h3Fse) {
+      drawPwgMissingPage(canvas, pdfPath, Form("P0-5 %s missing F_SE", base.c_str()),
+                         phiMkkVsKstarWideSeKey(base).c_str());
+      continue;
+    }
+    TH2* h2Fse = kmfProjectRebinY(h3Fse, sl->cent9Min, sl->cent9Max, kW, "srcFse");
+    TH2* h2Bse[2] = {0, 0};
+    TH2* h2Bme[2] = {0, 0};
+    Bool_t okT[2] = {kFALSE, kFALSE};
+    for (Int_t it = 0; tags[it]; ++it) {
+      TH3* h3Bse = (TH3*)fin->Get(kmfBkgWideKey(base, tags[it], kTRUE).c_str());
+      TH3* h3Bme = (TH3*)fin->Get(kmfBkgWideKey(base, tags[it], kFALSE).c_str());
+      if (!h3Bse || !h3Bme) continue;
+      h2Bse[it] = kmfProjectRebinY(h3Bse, sl->cent9Min, sl->cent9Max, kW, Form("srcBse%d", it));
+      h2Bme[it] = kmfProjectRebinY(h3Bme, sl->cent9Min, sl->cent9Max, kW, Form("srcBme%d", it));
+      okT[it] = (h2Bse[it] && h2Bme[it]);
+    }
+    if (!okT[0] && !okT[1]) {
+      drawPwgMissingPage(canvas, pdfPath, Form("P0-5 %s missing B TH3", base.c_str()), "rot/mix wide");
+      delete h2Fse;
+      continue;
+    }
+    for (Int_t ik = 0; ik < 4; ++ik) {
+      const Double_t kLo = kBins[ik][0];
+      const Double_t kHi = kBins[ik][1];
+      canvas->Clear();
+      canvas->SetCanvasSize(1600, 1000);
+      canvas->Divide(2, 2);
+      for (Int_t it = 0; it < 2; ++it) {
+        canvas->cd(it + 1);
+        if (!okT[it]) {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.12, 0.5, Form("missing %s", tags[it]));
+          canvas->cd(it + 3);
+          continue;
+        }
+        TH1* hF = kmfProjectMassKstar(h2Fse, kLo, kHi, "srcF", keepAlive);
+        TH1* hBse = kmfProjectMassKstar(h2Bse[it], kLo, kHi, "srcBse", keepAlive);
+        TH1* hBme = kmfProjectMassKstar(h2Bme[it], kLo, kHi, "srcBme", keepAlive);
+        Double_t eAse = 0, eAme = 0;
+        const Double_t aSE = kmfAlphaFromSingleWindow(hF, hBse, aMin, aMax, eAse);
+        const Double_t aME = kmfAlphaFromSingleWindow(hF, hBme, aMin, aMax, eAme);
+        TH1* hBseHat = kmfScaleClone(hBse, aSE, "srcBseH", keepAlive);
+        TH1* hBmeHat = kmfScaleClone(hBme, aME, "srcBmeH", keepAlive);
+        if (!hF || !hBseHat || !hBmeHat) {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.12, 0.5, "missing projection");
+        } else {
+          hF->SetLineColor(kBlue + 1);
+          hF->SetLineWidth(2);
+          hBseHat->SetLineColor(kBlack);
+          hBseHat->SetLineWidth(2);
+          hBmeHat->SetLineColor(kRed + 1);
+          hBmeHat->SetLineStyle(2);
+          hBmeHat->SetLineWidth(2);
+          hF->GetXaxis()->SetRangeUser(hF->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+          hF->SetTitle(Form("%s %s  %.2f<k*<%.2f;M_{KK};Counts", base.c_str(), tags[it], kLo, kHi));
+          hF->Draw("HIST");
+          hBseHat->Draw("HIST SAME");
+          hBmeHat->Draw("HIST SAME");
+          TLegend* leg = new TLegend(0.48, 0.60, 0.88, 0.88);
+          leg->SetBorderSize(0);
+          leg->SetFillStyle(0);
+          leg->AddEntry(hF, "F_{SE}", "l");
+          leg->AddEntry(hBseHat, Form("#hat{B}_{SE} #alpha=%.3g", aSE), "l");
+          leg->AddEntry(hBmeHat, Form("#hat{B}_{ME#rightarrow SE} #alpha=%.3g", aME), "l");
+          leg->Draw();
+        }
+        canvas->cd(it + 3);
+        if (!hBseHat || !hBmeHat) {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.12, 0.5, "no R_src");
+        } else {
+          TH1* hR = (TH1*)hBseHat->Clone(pwgUniq("Rsrc").Data());
+          hR->SetDirectory(0);
+          keepAlive.push_back(hR);
+          hR->Divide(hBmeHat);
+          hR->SetMarkerStyle(20);
+          hR->GetXaxis()->SetRangeUser(hR->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+          hR->GetYaxis()->SetRangeUser(0.5, 1.5);
+          hR->SetTitle(Form("R_{src}=#hat{B}_{SE}/#hat{B}_{ME#rightarrow SE}  %s;M_{KK};ratio", tags[it]));
+          hR->Draw("E");
+          pwgDrawUnity(hR->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+        }
+      }
+      canvas->cd();
+      TLatex* cap = new TLatex();
+      cap->SetNDC(kTRUE);
+      cap->SetTextSize(0.020);
+      cap->DrawLatex(0.02, 0.97,
+                     Form("P0-5  same F_{SE}, SB-normalized B_{SE} vs B_{ME#rightarrow SE}  %s  %.2f<k*<%.2f  (not raw B ratio)",
+                          base.c_str(), kLo, kHi));
+      canvas->Print(pdfPath);
+    }
+    delete h2Fse;
+    delete h2Bse[0];
+    delete h2Bse[1];
+    delete h2Bme[0];
+    delete h2Bme[1];
+  }
+}
+
+static void drawKmfBkgSourceIntegralPage(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                         std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-6 R_src,sig", "slice pct_0_60 not found");
+    return;
+  }
+  const Double_t kW = getKstarMassFitCfKstarBinTarget();
+  Double_t aMin = 1.05, aMax = 1.105;
+  getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+  Double_t purityMinK = 0.0, purityMaxK = 0.65, dummy = 0.0;
+  Int_t minEntries = 20;
+  Bool_t preferPol2 = kTRUE;
+  getKstarMassFitCfFitConfig(dummy, dummy, dummy, dummy, purityMinK, purityMaxK, minEntries, dummy, dummy, preferPol2);
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 1000);
+  canvas->Divide(2, 2);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  Int_t colors[2] = {kCfColRot, kCfColMix};
+  Int_t markers[2] = {20, 21};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    Double_t sigMin = 1.012, sigMax = 1.026;
+    getChannelSignalMassWindow(channelSignal(base), sigMin, sigMax);
+    TH2 *h2Fse = 0, *h2Fme = 0, *h2Dummy = 0, *h2Dummy2 = 0;
+    if (!kmfLoadFAndB(fin, sl, base, "rot", kW, h2Fse, h2Fme, h2Dummy, h2Dummy2)) {
+      canvas->cd(ib + 1);
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, Form("%s: missing F/B TH3", base.c_str()));
+      kmfDelete2s(h2Fse, h2Fme, h2Dummy, h2Dummy2);
+      continue;
+    }
+    delete h2Dummy;
+    delete h2Dummy2;
+    delete h2Fme;
+    TGraphErrors* gR[2] = {0, 0};
+    TGraphErrors* gD[2] = {0, 0};
+    for (Int_t it = 0; tags[it]; ++it) {
+      TH2 *h2Bse = 0, *h2Bme = 0, *h2a = 0, *h2b = 0;
+      if (!kmfLoadFAndB(fin, sl, base, tags[it], kW, h2a, h2b, h2Bse, h2Bme)) {
+        kmfDelete2s(h2a, h2b, h2Bse, h2Bme);
+        continue;
+      }
+      delete h2a;
+      delete h2b;
+      std::vector<Double_t> kx, r, er, dlt, ed;
+      Double_t maxR = 0.0, kR = -1, maxD = 0.0, kD = -1;
+      for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+        const Double_t kstar = h2Fse->GetYaxis()->GetBinCenter(iy);
+        if (kstar < purityMinK || kstar > purityMaxK) continue;
+        const Double_t kLo = h2Fse->GetYaxis()->GetBinLowEdge(iy);
+        const Double_t kHi = h2Fse->GetYaxis()->GetBinUpEdge(iy);
+        TH1* hF = kmfProjectMassKstar(h2Fse, kLo, kHi, "intF", keepAlive);
+        TH1* hBse = kmfProjectMassKstar(h2Bse, kLo, kHi, "intBse", keepAlive);
+        TH1* hBme = kmfProjectMassKstar(h2Bme, kLo, kHi, "intBme", keepAlive);
+        Double_t eAse = 0, eAme = 0;
+        const Double_t aSE = kmfAlphaFromSingleWindow(hF, hBse, aMin, aMax, eAse);
+        const Double_t aME = kmfAlphaFromSingleWindow(hF, hBme, aMin, aMax, eAme);
+        Double_t eBse = 0, eBme = 0, eF = 0;
+        const Double_t iBse = aSE * histIntegralAndErrorRange(hBse, sigMin, sigMax, eBse);
+        const Double_t iBme = aME * histIntegralAndErrorRange(hBme, sigMin, sigMax, eBme);
+        const Double_t iF = histIntegralAndErrorRange(hF, sigMin, sigMax, eF);
+        if (!(iBme > 0.0) || !(iBse > 0.0) || !(iF > 0.0)) continue;
+        const Double_t R = iBse / iBme;
+        kx.push_back(kstar);
+        r.push_back(R);
+        er.push_back(0.0);
+        const Double_t del = (iBme - iBse) / iF;
+        dlt.push_back(del);
+        ed.push_back(0.0);
+        if (TMath::Abs(R - 1.0) > maxR) {
+          maxR = TMath::Abs(R - 1.0);
+          kR = kstar;
+        }
+        if (TMath::Abs(del) > maxD) {
+          maxD = TMath::Abs(del);
+          kD = kstar;
+        }
+      }
+      std::cout << "[PWG P0-6] " << base << " " << tags[it] << " max|R_src,sig-1|=" << maxR << " at k*=" << kR
+                << " max|delta_B|=" << maxD << " at k*=" << kD << std::endl;
+      if (!kx.empty()) {
+        gR[it] = new TGraphErrors((Int_t)kx.size(), &kx[0], &r[0], 0, &er[0]);
+        gD[it] = new TGraphErrors((Int_t)kx.size(), &kx[0], &dlt[0], 0, &ed[0]);
+        pwgStyleCfGraph(gR[it], colors[it], markers[it]);
+        pwgStyleCfGraph(gD[it], colors[it], markers[it]);
+      }
+      TLatex* n = new TLatex();
+      n->SetNDC(kTRUE);
+      n->SetTextSize(0.028);
+      canvas->cd(ib + 1);
+      n->DrawLatex(0.14, 0.84 - 0.06 * it, Form("%s max|R-1|=%.3f @ %.2f", tags[it], maxR, kR));
+      canvas->cd(ib + 3);
+      n->DrawLatex(0.14, 0.84 - 0.06 * it, Form("%s max|#delta_B|=%.3f @ %.2f", tags[it], maxD, kD));
+      kmfDelete2s(0, 0, h2Bse, h2Bme);
+    }
+    canvas->cd(ib + 1);
+    if (gR[0] || gR[1]) {
+      TGraphErrors* g0 = gR[0] ? gR[0] : gR[1];
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(0.85, 1.15);
+        g0->GetHistogram()->SetTitle(Form("%s R_{src,sig}(k*);k*;ratio", base.c_str()));
+      }
+      if (gR[1] && gR[0]) gR[1]->Draw("P SAME");
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      TLegend* leg = new TLegend(0.55, 0.70, 0.88, 0.88);
+      leg->SetBorderSize(0);
+      leg->SetFillStyle(0);
+      if (gR[0]) leg->AddEntry(gR[0], "ROT", "p");
+      if (gR[1]) leg->AddEntry(gR[1], "MIX", "p");
+      leg->Draw();
+    }
+    canvas->cd(ib + 3);
+    if (gD[0] || gD[1]) {
+      TGraphErrors* g0 = gD[0] ? gD[0] : gD[1];
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(-0.15, 0.15);
+        g0->GetHistogram()->SetTitle(Form("%s #delta_B (B_{ME}-B_{SE})/F_{SE} in sig;k*;#delta_B", base.c_str()));
+      }
+      if (gD[1] && gD[0]) gD[1]->Draw("P SAME");
+      pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+    }
+    delete h2Fse;
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97,
+                 "P0-6  R_{src,sig} and #delta_B  (central-value diagnostic; #alpha correlated, no covariance)");
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfYseBkgSourcePage(TCanvas* canvas, const TString& pdfPath,
+                                    std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const std::string suf = kmfCacheSuffix(getKstarMassFitCfKstarBinTarget());
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1100);
+    canvas->Divide(3, 2);
+    for (Int_t it = 0; tags[it]; ++it) {
+      TGraphErrors* gYse = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_") + tags[it] + "_" + base + suf);
+      TGraphErrors* gYme = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_") + tags[it] + "_" + base + suf);
+      TGraphErrors* gSt = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitstatus_") + tags[it] + "_" + base + suf);
+      TGraphErrors* gStMe =
+          kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitstatus_SE_mebkg_") + tags[it] + "_" + base + suf);
+      TGraphErrors* gCn = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_") + tags[it] + "_" + base + suf + "_norm");
+      TGraphErrors* gCme =
+          kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_") + tags[it] + "_" + base + suf + "_mebkg_norm");
+      const Int_t col = (it == 0) ? kBlack : kRed + 1;
+      const Int_t mk = (it == 0) ? 20 : 21;
+      canvas->cd(1);
+      if (gYse || gYme) {
+        if (it == 0) {
+          TGraphErrors* g0 = gYse ? gYse : gYme;
+          pwgStyleCfGraph(g0, col, mk);
+          g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g0->Draw("AP");
+          gPad->SetLogy();
+          if (g0->GetHistogram()) g0->GetHistogram()->SetTitle(Form("%s Y_{SE};k*;Y", base.c_str()));
+        }
+        if (gYse) {
+          pwgStyleCfGraph(gYse, it == 0 ? kBlack : kGray + 2, 20);
+          gYse->Draw("P SAME");
+        }
+        if (gYme) {
+          pwgStyleCfGraph(gYme, col, 24);
+          gYme->Draw("P SAME");
+        }
+      } else if (it == 0) {
+        TLatex* z = new TLatex();
+        z->SetNDC(kTRUE);
+        z->DrawLatex(0.12, 0.5, "missing Y_SE graphs");
+      }
+      canvas->cd(2);
+      TGraphErrors* gRel = pwgRelDiffGraph(gYse, gYme, Form("(Y^{B_{ME}}-Y^{B_{SE}})/Y^{B_{SE}} %s", tags[it]));
+      if (gRel) {
+        pwgStyleCfGraph(gRel, col, mk);
+        if (it == 0) {
+          gRel->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          gRel->Draw("AP");
+          if (gRel->GetHistogram()) {
+            gRel->GetHistogram()->GetYaxis()->SetRangeUser(-0.4, 0.4);
+            gRel->GetHistogram()->SetTitle(Form("%s relative Y_{SE} source diff;k*;(Y_{ME}-Y_{SE})/Y_{SE}",
+                                                base.c_str()));
+          }
+          pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+        } else {
+          gRel->Draw("P SAME");
+        }
+        Double_t mx = 0, kx = -1;
+        pwgMaxAbsOnGraph(gRel, mx, kx);
+        std::cout << "[PWG P0-7] " << base << " " << tags[it] << " max|(Yme-Yse)/Yse|=" << mx << " at k*=" << kx
+                  << std::endl;
+      }
+      canvas->cd(3);
+      TGraphErrors* geSe = pwgRelErrGraph(gYse);
+      TGraphErrors* geMe = pwgRelErrGraph(gYme);
+      if (geSe) {
+        pwgStyleCfGraph(geSe, col, mk);
+        if (it == 0) {
+          geSe->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          geSe->Draw("AP");
+          if (geSe->GetHistogram()) {
+            geSe->GetHistogram()->GetYaxis()->SetRangeUser(0.0, 1.2);
+            geSe->GetHistogram()->SetTitle("#sigma_Y/Y;k*;rel. err.");
+          }
+          TLine* th = new TLine(kCfKstarXMin, 0.30, kCfKstarXMax, 0.30);
+          th->SetLineColor(kRed + 1);
+          th->SetLineStyle(3);
+          th->Draw("same");
+        } else {
+          geSe->Draw("P SAME");
+        }
+      }
+      if (geMe) {
+        pwgStyleCfGraph(geMe, col, 24);
+        geMe->Draw("P SAME");
+      }
+      canvas->cd(4);
+      if (gSt) {
+        pwgStyleCfGraph(gSt, col, mk);
+        if (it == 0) {
+          gSt->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          gSt->Draw("AP");
+          if (gSt->GetHistogram()) {
+            gSt->GetHistogram()->GetYaxis()->SetRangeUser(-0.5, 5.5);
+            gSt->GetHistogram()->SetTitle("fit status B_{SE} (0=OK);k*;status");
+          }
+        } else {
+          gSt->Draw("P SAME");
+        }
+      }
+      canvas->cd(5);
+      if (gStMe) {
+        pwgStyleCfGraph(gStMe, col, mk);
+        if (it == 0) {
+          gStMe->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          gStMe->Draw("AP");
+          if (gStMe->GetHistogram()) {
+            gStMe->GetHistogram()->GetYaxis()->SetRangeUser(-0.5, 5.5);
+            gStMe->GetHistogram()->SetTitle("fit status B_{ME} (0=OK);k*;status");
+          }
+        } else {
+          gStMe->Draw("P SAME");
+        }
+      }
+      canvas->cd(6);
+      TGraphErrors* gDC = pwgMakeGraphDiff(gCn, gCme, Form("#Delta C %s", tags[it]));
+      if (gDC) {
+        pwgStyleCfGraph(gDC, col, mk);
+        if (it == 0) {
+          gDC->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          gDC->Draw("AP");
+          if (gDC->GetHistogram()) {
+            gDC->GetHistogram()->GetYaxis()->SetRangeUser(-0.12, 0.12);
+            gDC->GetHistogram()->SetTitle(Form("%s C^{B_{ME}}-C^{B_{SE}};k*;#Delta C", base.c_str()));
+          }
+          pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+        } else {
+          gDC->Draw("P SAME");
+        }
+      }
+    }
+    canvas->cd(1);
+    TLatex* note = new TLatex();
+    note->SetNDC(kTRUE);
+    note->SetTextSize(0.035);
+    note->DrawLatex(0.14, 0.88, "filled Y^{B_{SE}}  open Y^{B_{ME}}  black ROT / red MIX");
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97,
+                   Form("P0-7  Y_{SE} source dependence  %s  (central-value diagnostic, not #chi^{2})", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static TGraphErrors* kmfSbWindowCf(TH2* h2SE, TH2* h2ME, Double_t mLo, Double_t mHi, Double_t qMin, Double_t qMax,
+                                   const char* stem, std::vector<TH1*>& keepAlive) {
+  TH1* hSE = kmfProjectKstarMassWindow(h2SE, mLo, mHi, stem, keepAlive);
+  TH1* hME = kmfProjectKstarMassWindow(h2ME, mLo, mHi, stem, keepAlive);
+  if (!hSE || !hME) return 0;
+  return computeCfGraphFromSeMe(hSE, hME, qMin, qMax, Form("CF %s", stem));
+}
+
+static void drawKmfSidebandCfClosurePages(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                          std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-8 sideband CF", "pct_0_60 missing");
+    return;
+  }
+  const Double_t widths[2] = {getKstarMassFitCfKstarBinTarget(), 2.0 * getKstarMassFitCfKstarBinTarget()};
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t iw = 0; iw < 2; ++iw) {
+    const Double_t kW = widths[iw];
+    for (Int_t ib = 0; bases[ib]; ++ib) {
+      const std::string base(bases[ib]);
+      Double_t lMin = 0.99, lMax = 1.005, rMin = 1.035, rMax = 1.060;
+      getChannelSidebandWindows(base, lMin, lMax, rMin, rMax);
+      const Double_t qMin = channelNormQMin(channelSignal(base));
+      const Double_t qMax = channelNormQMax(channelSignal(base));
+      TH2 *h2Fse = 0, *h2Fme = 0, *h2Rse = 0, *h2Rme = 0, *h2Mse = 0, *h2Mme = 0, *tmpA = 0, *tmpB = 0;
+      if (!kmfLoadFAndB(fin, sl, base, "rot", kW, h2Fse, h2Fme, h2Rse, h2Rme)) {
+        drawPwgMissingPage(canvas, pdfPath, Form("P0-8 %s ROT missing", base.c_str()), "wide TH3");
+        kmfDelete2s(h2Fse, h2Fme, h2Rse, h2Rme);
+        continue;
+      }
+      kmfLoadFAndB(fin, sl, base, "mix", kW, tmpA, tmpB, h2Mse, h2Mme);
+      delete tmpA;
+      delete tmpB;
+      canvas->Clear();
+      canvas->SetCanvasSize(1800, 1000);
+      canvas->Divide(3, 2);
+      const Double_t mLoW[3] = {lMin, rMin, lMin};
+      const Double_t mHiW[3] = {lMax, rMax, rMax};
+      const char* wlab[3] = {"LSB", "RSB", "SBLR"};
+      for (Int_t iwnd = 0; iwnd < 3; ++iwnd) {
+        TGraphErrors *gF = 0, *gRot = 0, *gMix = 0;
+        if (iwnd < 2) {
+          gF = kmfSbWindowCf(h2Fse, h2Fme, mLoW[iwnd], mHiW[iwnd], qMin, qMax, Form("F%s", wlab[iwnd]), keepAlive);
+          gRot = kmfSbWindowCf(h2Rse, h2Rme, mLoW[iwnd], mHiW[iwnd], qMin, qMax, Form("R%s", wlab[iwnd]), keepAlive);
+          gMix = kmfSbWindowCf(h2Mse, h2Mme, mLoW[iwnd], mHiW[iwnd], qMin, qMax, Form("M%s", wlab[iwnd]), keepAlive);
+        } else {
+          TH1* fL = kmfProjectKstarMassWindow(h2Fse, lMin, lMax, "Fl", keepAlive);
+          TH1* fR = kmfProjectKstarMassWindow(h2Fse, rMin, rMax, "Fr", keepAlive);
+          TH1* mL = kmfProjectKstarMassWindow(h2Fme, lMin, lMax, "Ml", keepAlive);
+          TH1* mR = kmfProjectKstarMassWindow(h2Fme, rMin, rMax, "Mr", keepAlive);
+          TH1* fS = combineSidebandLR(fL, fR);
+          TH1* mS = combineSidebandLR(mL, mR);
+          if (fS) {
+            fS->SetName(pwgUniq("sblrF"));
+            keepAlive.push_back(fS);
+          }
+          if (mS) {
+            mS->SetName(pwgUniq("sblrM"));
+            keepAlive.push_back(mS);
+          }
+          gF = computeCfGraphFromSeMe(fS, mS, qMin, qMax, "CF F SBLR");
+          TH1* rL = kmfProjectKstarMassWindow(h2Rse, lMin, lMax, "Rl", keepAlive);
+          TH1* rR = kmfProjectKstarMassWindow(h2Rse, rMin, rMax, "Rr", keepAlive);
+          TH1* rmL = kmfProjectKstarMassWindow(h2Rme, lMin, lMax, "Rml", keepAlive);
+          TH1* rmR = kmfProjectKstarMassWindow(h2Rme, rMin, rMax, "Rmr", keepAlive);
+          TH1* rS = combineSidebandLR(rL, rR);
+          TH1* rmS = combineSidebandLR(rmL, rmR);
+          if (rS) {
+            rS->SetName(pwgUniq("sblrR"));
+            keepAlive.push_back(rS);
+          }
+          if (rmS) {
+            rmS->SetName(pwgUniq("sblrRm"));
+            keepAlive.push_back(rmS);
+          }
+          gRot = computeCfGraphFromSeMe(rS, rmS, qMin, qMax, "CF ROT SBLR");
+          TH1* xL = kmfProjectKstarMassWindow(h2Mse, lMin, lMax, "Xl", keepAlive);
+          TH1* xR = kmfProjectKstarMassWindow(h2Mse, rMin, rMax, "Xr", keepAlive);
+          TH1* xmL = kmfProjectKstarMassWindow(h2Mme, lMin, lMax, "Xml", keepAlive);
+          TH1* xmR = kmfProjectKstarMassWindow(h2Mme, rMin, rMax, "Xmr", keepAlive);
+          TH1* xS = combineSidebandLR(xL, xR);
+          TH1* xmS = combineSidebandLR(xmL, xmR);
+          if (xS) {
+            xS->SetName(pwgUniq("sblrX"));
+            keepAlive.push_back(xS);
+          }
+          if (xmS) {
+            xmS->SetName(pwgUniq("sblrXm"));
+            keepAlive.push_back(xmS);
+          }
+          gMix = computeCfGraphFromSeMe(xS, xmS, qMin, qMax, "CF MIX SBLR");
+        }
+        canvas->cd(iwnd + 1);
+        kmfDrawThreeCf(gF, gRot, gMix, Form("%s %s  dk=%.0f MeV/c;k*;C", wlab[iwnd], base.c_str(), kW * 1000.0));
+        canvas->cd(iwnd + 4);
+        TGraphErrors* dR = pwgMakeGraphDiff(gF, gRot, "ROT-F");
+        TGraphErrors* dM = pwgMakeGraphDiff(gF, gMix, "MIX-F");
+        TGraphErrors* g0 = dR ? dR : dM;
+        if (!g0) {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.12, 0.5, "no #Delta C");
+        } else {
+          pwgStyleCfGraph(dR, kBlack, 21);
+          pwgStyleCfGraph(dM, kRed + 1, 22);
+          g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g0->Draw("AP");
+          if (g0->GetHistogram()) {
+            g0->GetHistogram()->GetYaxis()->SetRangeUser(-0.20, 0.20);
+            g0->GetHistogram()->SetTitle(Form("%s C_B-C_F;k*;#Delta C", wlab[iwnd]));
+          }
+          if (dM && dM != g0) dM->Draw("P SAME");
+          if (dR && dR != g0) dR->Draw("P SAME");
+          pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+          Double_t mx = 0, kx = -1;
+          pwgMaxAbsOnGraph(dR, mx, kx);
+          std::cout << "[PWG P0-8] " << base << " " << wlab[iwnd] << " dk=" << kW << " max|C_ROT-C_F|=" << mx
+                    << " at k*=" << kx << std::endl;
+          pwgMaxAbsOnGraph(dM, mx, kx);
+          std::cout << "[PWG P0-8] " << base << " " << wlab[iwnd] << " dk=" << kW << " max|C_MIX-C_F|=" << mx
+                    << " at k*=" << kx << std::endl;
+        }
+      }
+      canvas->cd();
+      TLatex* cap = new TLatex();
+      cap->SetNDC(kTRUE);
+      cap->SetTextSize(0.018);
+      cap->DrawLatex(0.02, 0.97,
+                     Form("P0-8 sideband CF closure  %s  #Delta k*=%.3f  (NOT kstarMassFitCF)  central-value diagnostic",
+                          base.c_str(), kW));
+      canvas->Print(pdfPath);
+      kmfDelete2s(h2Fse, h2Fme, h2Rse, h2Rme);
+      delete h2Mse;
+      delete h2Mme;
+    }
+  }
+}
+
+static void drawKmfBinningStabilityFullPage(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                            std::map<std::string, TGraphErrors*>& cfCache, std::vector<TH1*>& keepAlive) {
+  if (!canvas) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P0-9 40/80", "pct_0_60 missing");
+    return;
+  }
+  const Double_t w40 = getKstarMassFitCfKstarBinTarget();
+  const Double_t w80 = 2.0 * w40;
+  const std::string s40 = kmfCacheSuffix(w40);
+  const std::string s80 = kmfCacheSuffix(w80);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t it = 0; tags[it]; ++it)
+    for (Int_t ib = 0; bases[ib]; ++ib)
+      kmfEnsureYieldsCached(fin, sl, bases[ib], tags[it], w80, keepAlive, cfCache, kKmfAlphaYamlSingle);
+
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1100);
+    canvas->Divide(3, 2);
+    TGraphErrors* gR40 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + s40 + "_mebkg_norm");
+    TGraphErrors* gR80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + s80 + "_mebkg_norm");
+    TGraphErrors* gM40 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_mix_") + base + s40 + "_mebkg_norm");
+    TGraphErrors* gM80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_mix_") + base + s80 + "_mebkg_norm");
+    canvas->cd(1);
+    kmfDrawThreeCf(gR40, gR80, 0, Form("%s ROT C_{mebkg} 40 vs 80;k*;C", base.c_str()), "40 MeV/c", "80 MeV/c", 0);
+    canvas->cd(2);
+    kmfDrawThreeCf(gM40, gM80, 0, Form("%s MIX C_{mebkg} 40 vs 80;k*;C", base.c_str()), "40 MeV/c", "80 MeV/c", 0);
+    canvas->cd(3);
+    kmfDrawThreeCf(0, gR80, gM80, Form("%s 80 MeV/c ROT vs MIX;k*;C", base.c_str()), 0, "ROT", "MIX");
+    if (gR80 && gM80) {
+      TGraphErrors* gD = pwgMakeGraphDiff(gR80, gM80, "MIX-ROT 80");
+      Double_t mx = 0, kx = -1;
+      pwgMaxAbsOnGraph(gD, mx, kx);
+      std::cout << "[PWG P0-9] " << base << " 80 MeV/c max|C_MIX-C_ROT|=" << mx << " at k*=" << kx << std::endl;
+    }
+    canvas->cd(4);
+    TGraphErrors* ge40 = pwgRelErrGraph(kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mix_") + base + s40));
+    TGraphErrors* ge80 = pwgRelErrGraph(kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mix_") + base + s80));
+    if (ge40 || ge80) {
+      TGraphErrors* g0 = ge40 ? ge40 : ge80;
+      pwgStyleCfGraph(ge40, kBlack, 20);
+      pwgStyleCfGraph(ge80, kBlue + 1, 21);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(0.0, 1.2);
+        g0->GetHistogram()->SetTitle(Form("%s MIX Y_{SE} #sigma_Y/Y;k*;rel. err.", base.c_str()));
+      }
+      if (ge80 && ge40) ge80->Draw("P SAME");
+      TLine* th = new TLine(kCfKstarXMin, 0.30, kCfKstarXMax, 0.30);
+      th->SetLineColor(kRed + 1);
+      th->SetLineStyle(3);
+      th->Draw("same");
+      if (ge80) {
+        for (Int_t i = 0; i < ge80->GetN(); ++i) {
+          Double_t x = 0, y = 0;
+          ge80->GetPoint(i, x, y);
+          std::cout << "[PWG P0-9] " << base << " MIX 80 MeV/c relErr=" << y << " at k*=" << x << std::endl;
+        }
+      }
+    }
+    canvas->cd(5);
+    TGraphErrors* gSt40 = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitstatus_mix_") + base + s40);
+    TGraphErrors* gSt80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitstatus_mix_") + base + s80);
+    if (gSt40 || gSt80) {
+      TGraphErrors* g0 = gSt40 ? gSt40 : gSt80;
+      pwgStyleCfGraph(gSt40, kBlack, 20);
+      pwgStyleCfGraph(gSt80, kBlue + 1, 21);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(-0.5, 5.5);
+        g0->GetHistogram()->SetTitle("MIX fit status 40 vs 80;k*;status");
+      }
+      if (gSt80 && gSt40) gSt80->Draw("P SAME");
+    }
+    canvas->cd(6);
+    TGraphErrors* gN80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + s80 + "_norm");
+    TGraphErrors* gMe80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + s80 + "_mebkg_norm");
+    TGraphErrors* gDsrc = pwgMakeGraphDiff(gN80, gMe80, "BME-BSE 80");
+    if (gDsrc) {
+      pwgStyleCfGraph(gDsrc, kBlack, 20);
+      gDsrc->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gDsrc->Draw("AP");
+      if (gDsrc->GetHistogram()) {
+        gDsrc->GetHistogram()->GetYaxis()->SetRangeUser(-0.12, 0.12);
+        gDsrc->GetHistogram()->SetTitle(Form("%s 80 MeV/c C_{mebkg}-C_{norm};k*;#Delta C", base.c_str()));
+      }
+      pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+      Double_t mx = 0, kx = -1;
+      pwgMaxAbsOnGraph(gDsrc, mx, kx);
+      std::cout << "[PWG P0-9] " << base << " 80 MeV/c max|C_mebkg-C_norm|=" << mx << " at k*=" << kx << std::endl;
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97,
+                   Form("P0-9  40 vs 80 MeV/c full  %s  (independent _dk80 keys; yield comparison uses #sigma_Y/Y not raw Y)",
+                        base.c_str()));
+    canvas->Print(pdfPath);
+  }
+
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 900);
+  canvas->Divide(2, 1);
+  const Double_t kProb = 2.5 * w40;
+  TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+  if (kmfLoadFAndB(fin, sl, "phi_deuteron", "mix", w80, h2Fse, h2Fme, h2Bse, h2Bme) && h2Fse) {
+    Int_t iy = h2Fse->GetYaxis()->FindBin(kProb);
+    const Double_t kLo = h2Fse->GetYaxis()->GetBinLowEdge(iy);
+    const Double_t kHi = h2Fse->GetYaxis()->GetBinUpEdge(iy);
+    Double_t aMin = 1.05, aMax = 1.105;
+    getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+    TH1* hF = kmfProjectMassKstar(h2Fse, kLo, kHi, "p9F", keepAlive);
+    TH1* hB = kmfProjectMassKstar(h2Bse, kLo, kHi, "p9B", keepAlive);
+    Double_t eA = 0;
+    const Double_t a = kmfAlphaFromSingleWindow(hF, hB, aMin, aMax, eA);
+    TH1* hBsc = kmfScaleClone(hB, a, "p9Bsc", keepAlive);
+    canvas->cd(1);
+    if (hF && hBsc) {
+      hF->SetLineColor(kBlue + 1);
+      hBsc->SetLineColor(kBlack);
+      hF->GetXaxis()->SetRangeUser(hF->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+      hF->SetTitle(Form("phi_deuteron MIX 80 MeV/c  %.3f<k*<%.3f;M_{KK};Counts", kLo, kHi));
+      hF->Draw("HIST");
+      hBsc->Draw("HIST SAME");
+    }
+    canvas->cd(2);
+    if (hF && hBsc) {
+      TH1* hS = (TH1*)hF->Clone(pwgUniq("p9S").Data());
+      hS->SetDirectory(0);
+      keepAlive.push_back(hS);
+      hS->Add(hBsc, -1.0);
+      hS->GetXaxis()->SetRangeUser(hS->GetXaxis()->GetXmin(), kKmfMassXMaxDisplay);
+      hS->SetTitle("S=F-#alpha B_{SE} MIX 80;M_{KK};S");
+      hS->Draw("E");
+    }
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.022);
+    canvas->cd();
+    cap->DrawLatex(0.02, 0.97, "P0-9  #phi-d MIX 80 MeV/c mass projection for the bin containing k*=0.10  (fit constraint check)");
+  } else {
+    drawPwgMissingPage(canvas, pdfPath, "P0-9 phi-d MIX 80 mass", "missing TH3");
+  }
+  kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfAlphaWindowVariationPage(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                            std::map<std::string, TGraphErrors*>& cfCache, std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) {
+    drawPwgMissingPage(canvas, pdfPath, "P1-1 alpha variation", "pct_0_60 missing");
+    return;
+  }
+  const Double_t w40 = getKstarMassFitCfKstarBinTarget();
+  const Int_t modes[4] = {kKmfAlphaYamlSingle, kKmfAlphaLsb, kKmfAlphaRsb, kKmfAlphaSblr};
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  Int_t cols[4] = {kBlack, kRed + 1, kBlue + 1, kGreen + 2};
+  Int_t mks[4] = {20, 21, 22, 33};
+  for (Int_t it = 0; tags[it]; ++it)
+    for (Int_t ib = 0; bases[ib]; ++ib)
+      for (Int_t im = 1; im < 4; ++im)
+        kmfEnsureYieldsCached(fin, sl, bases[ib], tags[it], w40, keepAlive, cfCache, modes[im]);
+
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1100);
+    canvas->Divide(3, 2);
+    const std::string sNom = kmfCacheSuffix(w40);
+    TGraphErrors* gNomN =
+        kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + sNom + "_norm");
+    TGraphErrors* gNomM =
+        kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + sNom + "_mebkg_norm");
+    TGraphErrors* gNomY = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_rot_") + base + sNom);
+    canvas->cd(1);
+    if (gNomN) {
+      pwgStyleCfGraph(gNomN, cols[0], mks[0]);
+      gNomN->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gNomN->Draw("AP");
+      if (gNomN->GetHistogram()) {
+        gNomN->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        gNomN->GetHistogram()->SetTitle(Form("%s ROT C_{norm} vs #alpha window;k*;C", base.c_str()));
+      }
+    }
+    canvas->cd(2);
+    if (gNomM) {
+      pwgStyleCfGraph(gNomM, cols[0], mks[0]);
+      gNomM->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      gNomM->Draw("AP");
+      if (gNomM->GetHistogram()) {
+        gNomM->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        gNomM->GetHistogram()->SetTitle(Form("%s ROT C_{mebkg,norm} vs #alpha window;k*;C", base.c_str()));
+      }
+    }
+    for (Int_t im = 1; im < 4; ++im) {
+      const std::string suf = kmfCacheSuffix(w40) + kmfAlphaCacheExtra(modes[im]);
+      TGraphErrors* gN = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + suf + "_norm");
+      TGraphErrors* gM = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + suf + "_mebkg_norm");
+      TGraphErrors* gY = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_rot_") + base + suf);
+      canvas->cd(1);
+      if (gN) {
+        pwgStyleCfGraph(gN, cols[im], mks[im]);
+        gN->Draw("P SAME");
+      }
+      canvas->cd(2);
+      if (gM) {
+        pwgStyleCfGraph(gM, cols[im], mks[im]);
+        gM->Draw("P SAME");
+      }
+      TGraphErrors* dN = pwgMakeGraphDiff(gNomN, gN, kmfAlphaModeLabel(modes[im]));
+      TGraphErrors* dM = pwgMakeGraphDiff(gNomM, gM, kmfAlphaModeLabel(modes[im]));
+      TGraphErrors* dY = pwgRelDiffGraph(gNomY, gY, kmfAlphaModeLabel(modes[im]));
+      canvas->cd(3);
+      if (dN) {
+        pwgStyleCfGraph(dN, cols[im], mks[im]);
+        if (im == 1) {
+          dN->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          dN->Draw("AP");
+          if (dN->GetHistogram()) {
+            dN->GetHistogram()->GetYaxis()->SetRangeUser(-0.12, 0.12);
+            dN->GetHistogram()->SetTitle("C_{norm}(#alpha)-C_{norm}(nominal);k*;#Delta C");
+          }
+          pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+        } else {
+          dN->Draw("P SAME");
+        }
+        Double_t mx = 0, kx = -1;
+        pwgMaxAbsOnGraph(dN, mx, kx);
+        std::cout << "[PWG P1-1] " << base << " ROT " << kmfAlphaModeLabel(modes[im]) << " max|#Delta C_norm|=" << mx
+                  << " at k*=" << kx << std::endl;
+      }
+      canvas->cd(4);
+      if (dM) {
+        pwgStyleCfGraph(dM, cols[im], mks[im]);
+        if (im == 1) {
+          dM->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          dM->Draw("AP");
+          if (dM->GetHistogram()) {
+            dM->GetHistogram()->GetYaxis()->SetRangeUser(-0.12, 0.12);
+            dM->GetHistogram()->SetTitle("C_{mebkg}(#alpha)-C_{mebkg}(nominal);k*;#Delta C");
+          }
+          pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+        } else {
+          dM->Draw("P SAME");
+        }
+      }
+      canvas->cd(5);
+      if (dY) {
+        pwgStyleCfGraph(dY, cols[im], mks[im]);
+        if (im == 1) {
+          dY->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          dY->Draw("AP");
+          if (dY->GetHistogram()) {
+            dY->GetHistogram()->GetYaxis()->SetRangeUser(-0.4, 0.4);
+            dY->GetHistogram()->SetTitle("relative Y_{SE} vs nominal #alpha;k*;#Delta Y/Y");
+          }
+          pwgDrawZero(kCfKstarXMin, kCfKstarXMax);
+        } else {
+          dY->Draw("P SAME");
+        }
+      }
+      canvas->cd(6);
+      TGraphErrors* ge = pwgRelErrGraph(gY);
+      if (ge) {
+        pwgStyleCfGraph(ge, cols[im], mks[im]);
+        if (im == 1) {
+          ge->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          ge->Draw("AP");
+          if (ge->GetHistogram()) {
+            ge->GetHistogram()->GetYaxis()->SetRangeUser(0.0, 1.2);
+            ge->GetHistogram()->SetTitle("#sigma_Y/Y vs #alpha window;k*;rel. err.");
+          }
+        } else {
+          ge->Draw("P SAME");
+        }
+      }
+    }
+    canvas->cd(1);
+    pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    TLegend* leg = new TLegend(0.50, 0.62, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    TGraphErrors* gLeg[4] = {gNomN, 0, 0, 0};
+    for (Int_t im = 1; im < 4; ++im) {
+      const std::string sufL = kmfCacheSuffix(w40) + kmfAlphaCacheExtra(modes[im]);
+      gLeg[im] = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + sufL + "_norm");
+    }
+    for (Int_t im = 0; im < 4; ++im) {
+      if (gLeg[im]) {
+        pwgStyleCfGraph(gLeg[im], cols[im], mks[im]);
+        leg->AddEntry(gLeg[im], kmfAlphaModeLabel(modes[im]), "p");
+      }
+    }
+    leg->Draw();
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97,
+                   Form("P1-1  #alpha-window variation  %s ROT  (same TH3; extra cache suffix; not #chi^{2})",
+                        base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static void drawKmfNormWindowVariationPage(TCanvas* canvas, const TString& pdfPath,
+                                           std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const Double_t dk = getKstarMassFitCfKstarBinTarget();
+  const std::string suf = kmfCacheSuffix(dk);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1000);
+  canvas->Divide(2, 2);
+  Int_t pad = 1;
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    const Double_t qMin = channelNormQMin(channelSignal(base));
+    const Double_t qMax = channelNormQMax(channelSignal(base));
+    const Double_t qMinLo = qMin - dk;
+    const Double_t qMaxLo = qMax - dk;
+    const Double_t qMinHi = qMin + dk;
+    const Double_t qMaxHi = qMax + dk;
+    for (Int_t it = 0; tags[it]; ++it) {
+      canvas->cd(pad++);
+      TGraphErrors* gRaw =
+          kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_") + tags[it] + "_" + base + suf + "_mebkg_raw");
+      if (!gRaw) {
+        TLatex* z = new TLatex();
+        z->SetNDC(kTRUE);
+        z->DrawLatex(0.12, 0.5, Form("missing raw CF %s %s", tags[it], base.c_str()));
+        continue;
+      }
+      Double_t sN = 0, sL = 0, sU = 0;
+      TGraphErrors* gN = pwgRenormCf(gRaw, qMin, qMax, sN);
+      TGraphErrors* gL = pwgRenormCf(gRaw, qMinLo, qMaxLo, sL);
+      TGraphErrors* gU = pwgRenormCf(gRaw, qMinHi, qMaxHi, sU);
+      if (gN) {
+        pwgStyleCfGraph(gN, kBlack, 20);
+        gN->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        gN->Draw("AP");
+        if (gN->GetHistogram()) {
+          gN->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+          gN->GetHistogram()->SetTitle(Form("%s %s C_norm window scan;k*;C", tags[it], base.c_str()));
+        }
+      }
+      if (gL) {
+        pwgStyleCfGraph(gL, kRed + 1, 21);
+        gL->Draw("P SAME");
+      }
+      if (gU) {
+        pwgStyleCfGraph(gU, kBlue + 1, 22);
+        gU->Draw("P SAME");
+      }
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      TLine* l0 = new TLine(qMin, kCfYMin, qMin, kCfYMax);
+      TLine* l1 = new TLine(qMax, kCfYMin, qMax, kCfYMax);
+      l0->SetLineStyle(3);
+      l1->SetLineStyle(3);
+      l0->Draw("same");
+      l1->Draw("same");
+      TLegend* leg = new TLegend(0.40, 0.62, 0.88, 0.88);
+      leg->SetBorderSize(0);
+      leg->SetFillStyle(0);
+      if (gN) leg->AddEntry(gN, Form("nom [%.2f,%.2f] s=%.3f", qMin, qMax, sN), "p");
+      if (gL) leg->AddEntry(gL, Form("low [%.2f,%.2f] s=%.3f", qMinLo, qMaxLo, sL), "p");
+      if (gU) leg->AddEntry(gU, Form("up  [%.2f,%.2f] s=%.3f", qMinHi, qMaxHi, sU), "p");
+      leg->Draw();
+      TGraphErrors* dL = pwgMakeGraphDiff(gN, gL, "low-nom");
+      TGraphErrors* dU = pwgMakeGraphDiff(gN, gU, "up-nom");
+      Double_t mx = 0, kx = -1;
+      pwgMaxAbsOnGraph(dL, mx, kx);
+      std::cout << "[PWG P1-2] " << base << " " << tags[it] << " max|#Delta C_low|=" << mx << " at k*=" << kx
+                << " scale nom/low/up=" << sN << "/" << sL << "/" << sU << std::endl;
+      pwgMaxAbsOnGraph(dU, mx, kx);
+      std::cout << "[PWG P1-2] " << base << " " << tags[it] << " max|#Delta C_up|=" << mx << " at k*=" << kx << std::endl;
+      (void)dU;
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97,
+                 "P1-2  CF normalization-window variation from existing raw CF (no refit).  Dotted = nominal window.  Not #chi^{2}.");
+  canvas->Print(pdfPath);
+}
+
+// ---------------------------------------------------------------------------
+// Fit-free window-counting CF (additive; does not replace Gaussian-fit CF).
+// Analytic errors: independent-count approximation; common-alpha term included.
+// fit-free does not mean background-model-free.
+// ---------------------------------------------------------------------------
+
+static const Double_t kKmcLargeRelErr = 0.30;
+static const Int_t kKmcStatOk = 0;
+static const Int_t kKmcStatMissing = 1;
+static const Int_t kKmcStatBadAlpha = 2;
+static const Int_t kKmcStatNonPosYield = 3;
+static const Int_t kKmcStatNonPosME = 4;
+static const Int_t kKmcStatNonFinite = 5;
+static const Int_t kKmcStatLargeRelErr = 6;
+static const Int_t kKmcStatNormFail = 7;
+
+struct KmfWindowCountResult {
+  Bool_t valid;
+  Int_t status;
+  Double_t fWindow;
+  Double_t errFWindow;
+  Double_t bWindow;
+  Double_t errBWindow;
+  Double_t alpha;
+  Double_t errAlpha;
+  Double_t yield;
+  Double_t errYield;
+  KmfWindowCountResult()
+      : valid(kFALSE),
+        status(kKmcStatMissing),
+        fWindow(0.0),
+        errFWindow(0.0),
+        bWindow(0.0),
+        errBWindow(0.0),
+        alpha(0.0),
+        errAlpha(0.0),
+        yield(0.0),
+        errYield(0.0) {}
+};
+
+static Double_t histIntegralOverlapAndError(TH1* h, Double_t xMin, Double_t xMax, Double_t& err) {
+  err = 0.0;
+  if (!h || !(xMax > xMin)) return 0.0;
+  Double_t sum = 0.0;
+  Double_t err2 = 0.0;
+  const TAxis* ax = h->GetXaxis();
+  for (Int_t b = 1; b <= h->GetNbinsX(); ++b) {
+    const Double_t lo = ax->GetBinLowEdge(b);
+    const Double_t hi = ax->GetBinUpEdge(b);
+    const Double_t bw = hi - lo;
+    if (bw <= 0.0) continue;
+    const Double_t ov = TMath::Min(hi, xMax) - TMath::Max(lo, xMin);
+    if (ov <= 0.0) continue;
+    const Double_t w = ov / bw;
+    sum += w * h->GetBinContent(b);
+    const Double_t e = w * h->GetBinError(b);
+    err2 += e * e;
+  }
+  err = TMath::Sqrt(err2);
+  return sum;
+}
+
+static Int_t kmcCountNegativeS(TH1* hF, TH1* hB, Double_t alpha, Double_t wMin, Double_t wMax) {
+  if (!hF || !hB) return 0;
+  Int_t n = 0;
+  const TAxis* ax = hF->GetXaxis();
+  for (Int_t b = 1; b <= hF->GetNbinsX(); ++b) {
+    const Double_t lo = ax->GetBinLowEdge(b);
+    const Double_t hi = ax->GetBinUpEdge(b);
+    if (TMath::Min(hi, wMax) - TMath::Max(lo, wMin) <= 0.0) continue;
+    if ((hF->GetBinContent(b) - alpha * hB->GetBinContent(b)) < 0.0) ++n;
+  }
+  return n;
+}
+
+static KmfWindowCountResult computeKmfWindowCountYield(TH1* hF, TH1* hB, Double_t sigMin, Double_t sigMax,
+                                                       Double_t aMin, Double_t aMax) {
+  KmfWindowCountResult r;
+  if (!hF || !hB) {
+    r.status = kKmcStatMissing;
+    return r;
+  }
+  Double_t eFA = 0.0, eBA = 0.0;
+  const Double_t fA = histIntegralOverlapAndError(hF, aMin, aMax, eFA);
+  const Double_t bA = histIntegralOverlapAndError(hB, aMin, aMax, eBA);
+  if (!(bA > 0.0) || !TMath::Finite(fA) || !TMath::Finite(bA)) {
+    r.status = kKmcStatBadAlpha;
+    return r;
+  }
+  r.alpha = fA / bA;
+  r.errAlpha = TMath::Abs(r.alpha) * TMath::Sqrt(TMath::Power(eFA / (fA + 1e-12), 2) + TMath::Power(eBA / bA, 2));
+  r.fWindow = histIntegralOverlapAndError(hF, sigMin, sigMax, r.errFWindow);
+  r.bWindow = histIntegralOverlapAndError(hB, sigMin, sigMax, r.errBWindow);
+  r.yield = r.fWindow - r.alpha * r.bWindow;
+  r.errYield = TMath::Sqrt(r.errFWindow * r.errFWindow + TMath::Power(r.alpha * r.errBWindow, 2) +
+                           TMath::Power(r.bWindow * r.errAlpha, 2));
+  if (!TMath::Finite(r.yield) || !TMath::Finite(r.errYield) || !TMath::Finite(r.alpha)) {
+    r.status = kKmcStatNonFinite;
+    return r;
+  }
+  r.valid = kTRUE;
+  if (r.yield <= 0.0) r.status = kKmcStatNonPosYield;
+  else if (r.yield > 0.0 && r.errYield / r.yield > kKmcLargeRelErr) r.status = kKmcStatLargeRelErr;
+  else r.status = kKmcStatOk;
+  return r;
+}
+
+static const char* kmcWindowTag(Int_t iWin) {
+  if (iWin == 0) return "wm1";
+  if (iWin == 1) return "w0";
+  if (iWin == 2) return "wp1";
+  return "wp2";
+}
+
+static Bool_t kmcWindowFromShift(Double_t sigMin0, Double_t sigMax0, Double_t dM, Int_t iWin, Double_t aMin,
+                                 Double_t aMax, Double_t& wMin, Double_t& wMax, Bool_t& overlapAlpha) {
+  Int_t shift = 0;
+  if (iWin == 0) shift = -1;
+  else if (iWin == 2) shift = 1;
+  else if (iWin == 3) shift = 2;
+  wMin = sigMin0 - (Double_t)shift * dM;
+  wMax = sigMax0 + (Double_t)shift * dM;
+  overlapAlpha = (wMax > aMin && wMin < aMax);
+  if (!(wMax > wMin)) return kFALSE;
+  return !overlapAlpha;
+}
+
+static TH1* kmcProjectMassNative(TH2* h2, Int_t iyFirst, Int_t iyLast, const char* stem,
+                                 std::vector<TH1*>& keepAlive) {
+  if (!h2) return 0;
+  TH1* h = h2->ProjectionX(pwgUniq(stem).Data(), iyFirst, iyLast);
+  if (!h) return 0;
+  h->SetDirectory(0);
+  if (!h->GetSumw2N()) h->Sumw2();
+  keepAlive.push_back(h);
+  return h;
+}
+
+static TGraphErrors* kmcMakeGraph(const std::vector<Double_t>& x, const std::vector<Double_t>& y,
+                                  const std::vector<Double_t>& e, const char* title) {
+  if (x.empty()) return 0;
+  TGraphErrors* g = new TGraphErrors((Int_t)x.size(), &x[0], &y[0], 0, e.empty() ? 0 : &e[0]);
+  if (title) g->SetTitle(title);
+  return g;
+}
+
+static TGraphErrors* kmcRatioGraph(TGraphErrors* gNum, TGraphErrors* gDen, const char* title) {
+  if (!gNum || !gDen) return 0;
+  std::vector<Double_t> x, y, e;
+  for (Int_t i = 0; i < gNum->GetN(); ++i) {
+    Double_t xa = 0.0, ya = 0.0;
+    gNum->GetPoint(i, xa, ya);
+    const Double_t ea = gNum->GetErrorY(i);
+    Int_t jBest = -1;
+    Double_t dBest = 1e9;
+    for (Int_t j = 0; j < gDen->GetN(); ++j) {
+      Double_t xb = 0.0, yb = 0.0;
+      gDen->GetPoint(j, xb, yb);
+      const Double_t d = TMath::Abs(xb - xa);
+      if (d < dBest) {
+        dBest = d;
+        jBest = j;
+      }
+    }
+    if (jBest < 0 || dBest > 0.021) continue;
+    Double_t xb = 0.0, yb = 0.0;
+    gDen->GetPoint(jBest, xb, yb);
+    if (!(TMath::Abs(yb) > 0.0) || !TMath::Finite(ya) || !TMath::Finite(yb)) continue;
+    const Double_t eb = gDen->GetErrorY(jBest);
+    const Double_t r = ya / yb;
+    const Double_t er = r * TMath::Sqrt(TMath::Power(ea / (ya + 1e-12), 2) + TMath::Power(eb / (yb + 1e-12), 2));
+    x.push_back(xa);
+    y.push_back(r);
+    e.push_back(er);
+  }
+  return kmcMakeGraph(x, y, e, title);
+}
+
+static TGraphErrors* kmcCfFromYields(TGraphErrors* gSE, TGraphErrors* gME, const char* title) {
+  if (!gSE || !gME) return 0;
+  std::vector<Double_t> x, y, e;
+  for (Int_t i = 0; i < gSE->GetN(); ++i) {
+    Double_t xs = 0.0, ys = 0.0;
+    gSE->GetPoint(i, xs, ys);
+    const Double_t es = gSE->GetErrorY(i);
+    Int_t jBest = -1;
+    Double_t dBest = 1e9;
+    for (Int_t j = 0; j < gME->GetN(); ++j) {
+      Double_t xm = 0.0, ym = 0.0;
+      gME->GetPoint(j, xm, ym);
+      const Double_t d = TMath::Abs(xm - xs);
+      if (d < dBest) {
+        dBest = d;
+        jBest = j;
+      }
+    }
+    if (jBest < 0 || dBest > 0.021) continue;
+    Double_t xm = 0.0, ym = 0.0;
+    gME->GetPoint(jBest, xm, ym);
+    if (!(ym > 0.0) || !TMath::Finite(ys) || !TMath::Finite(ym)) continue;
+    const Double_t em = gME->GetErrorY(jBest);
+    const Double_t cf = ys / ym;
+    const Double_t ecf = cf * TMath::Sqrt(TMath::Power(es / (ys + 1e-12), 2) + TMath::Power(em / (ym + 1e-12), 2));
+    if (!TMath::Finite(cf) || !TMath::Finite(ecf)) continue;
+    x.push_back(xs);
+    y.push_back(cf);
+    e.push_back(ecf);
+  }
+  return kmcMakeGraph(x, y, e, title);
+}
+
+static Bool_t kmcNormalizeOnce(const std::vector<Double_t>& cfx, const std::vector<Double_t>& cfy,
+                               const std::vector<Double_t>& cfe, Double_t nQMin, Double_t nQMax,
+                               std::vector<Double_t>& ny, std::vector<Double_t>& ne, Double_t& scale,
+                               Double_t& errScale) {
+  scale = 0.0;
+  errScale = 0.0;
+  ny.clear();
+  ne.clear();
+  Double_t sumC = 0.0, sumE2 = 0.0;
+  Int_t nNorm = 0;
+  for (size_t i = 0; i < cfx.size(); ++i) {
+    if (cfx[i] < nQMin || cfx[i] > nQMax) continue;
+    if (!TMath::Finite(cfy[i]) || !TMath::Finite(cfe[i])) continue;
+    sumC += cfy[i];
+    sumE2 += cfe[i] * cfe[i];
+    ++nNorm;
+  }
+  if (nNorm <= 0 || !(sumC > 0.0) || !TMath::Finite(sumC)) return kFALSE;
+  const Double_t mean = sumC / (Double_t)nNorm;
+  const Double_t errMean = TMath::Sqrt(sumE2) / (Double_t)nNorm;
+  scale = 1.0 / mean;
+  errScale = errMean / (mean * mean);
+  for (size_t i = 0; i < cfy.size(); ++i) {
+    ny.push_back(cfy[i] * scale);
+    ne.push_back(TMath::Sqrt(TMath::Power(cfe[i] * scale, 2) + TMath::Power(cfy[i] * errScale, 2)));
+  }
+  return kTRUE;
+}
+
+static void kmcDiagnoseClipFallback(TH1* hS, Double_t fitMin, Double_t fitMax, Double_t sigMin, Double_t sigMax,
+                                    Double_t sigmaMin, Double_t sigmaMax, KstarMassFitCfFitResult& diag) {
+  diag.usedNegativeClipFallback = kFALSE;
+  diag.fallbackFitStatus = -1;
+  if (!hS) return;
+  TH1* hClip = (TH1*)hS->Clone(pwgUniq("clipS").Data());
+  hClip->SetDirectory(0);
+  Int_t nNeg = 0;
+  for (Int_t b = 1; b <= hClip->GetNbinsX(); ++b) {
+    if (hClip->GetBinContent(b) < 0.0) {
+      hClip->SetBinContent(b, 0.0);
+      hClip->SetBinError(b, 0.0);
+      ++nNeg;
+    }
+  }
+  if (nNeg <= 0) {
+    delete hClip;
+    return;
+  }
+  KstarMassFitCfFitResult fr;
+  const Bool_t ok = fitPurityGausOnly(hClip, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, fr);
+  diag.usedNegativeClipFallback = kTRUE;
+  diag.fallbackFitStatus = ok ? 0 : fr.originalFitStatus;
+  diag.amp = fr.amp;
+  diag.mean = fr.mean;
+  diag.sigma = fr.sigma;
+  diag.nSig = fr.nSig;
+  diag.errNSig = fr.errNSig;
+  delete hClip;
+}
+
+struct KmcSeries {
+  TGraphErrors* gYseBse;
+  TGraphErrors* gYseBme;
+  TGraphErrors* gYme;
+  TGraphErrors* gStBse;
+  TGraphErrors* gStBme;
+  TGraphErrors* gAlphaSE;
+  TGraphErrors* gAlphaME;
+  TGraphErrors* gCFraw;
+  TGraphErrors* gCFn;
+  TGraphErrors* gCFmeRaw;
+  TGraphErrors* gCFmeN;
+  Double_t normScale;
+  Double_t normScaleErr;
+  Int_t normStatus;
+  KmcSeries()
+      : gYseBse(0),
+        gYseBme(0),
+        gYme(0),
+        gStBse(0),
+        gStBme(0),
+        gAlphaSE(0),
+        gAlphaME(0),
+        gCFraw(0),
+        gCFn(0),
+        gCFmeRaw(0),
+        gCFmeN(0),
+        normScale(0.0),
+        normScaleErr(0.0),
+        normStatus(kKmcStatNormFail) {}
+};
+
+static void computeKmcSeries(TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bme, const std::string& channelBase,
+                             Int_t iWin, std::vector<TH1*>& keepAlive, KmcSeries& out) {
+  out = KmcSeries();
+  if (!h2Fse || !h2Fme || !h2Bse || !h2Bme) return;
+  Double_t purityMinK = 0.0, purityMaxK = 0.65, fitMin = 0.99, fitMax = 1.06, sigmaMin = 0.002, sigmaMax = 0.020;
+  Double_t clampMin = 0.05, clampMax = 1.0;
+  Int_t minEntries = 20;
+  Bool_t preferPol2 = kTRUE;
+  getKstarMassFitCfFitConfig(fitMin, fitMax, sigmaMin, sigmaMax, purityMinK, purityMaxK, minEntries, clampMin, clampMax,
+                             preferPol2);
+  (void)fitMin;
+  (void)fitMax;
+  (void)sigmaMin;
+  (void)sigmaMax;
+  (void)preferPol2;
+  Double_t sigMin0 = 1.012, sigMax0 = 1.026;
+  getChannelSignalMassWindow(channelSignal(channelBase), sigMin0, sigMax0);
+  Double_t aMin = 1.05, aMax = 1.105;
+  getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+  const Double_t dM = h2Fse->GetXaxis()->GetBinWidth(1);
+  Double_t wMin = sigMin0, wMax = sigMax0;
+  Bool_t overlapA = kFALSE;
+  const Bool_t winOk = kmcWindowFromShift(sigMin0, sigMax0, dM, iWin, aMin, aMax, wMin, wMax, overlapA);
+
+  std::vector<Double_t> kxSE, ySEbse, eSEbse, ySEbme, eSEbme, stBse, stBme, aSEx, aSEy, aSEe;
+  std::vector<Double_t> kxME, yME, eME, aMEx, aMEy, aMEe, stMEx, stMEy;
+  std::vector<Double_t> cfx, cfy, cfe, cfxMe, cfyMe, cfeMe;
+  const Int_t lowMerge = getKstarMassFitCfLowKstarMergeBins();
+  for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+    const Int_t iyFirst = iy;
+    const Int_t iyLast = (iyFirst == 1) ? TMath::Min(h2Fse->GetNbinsY(), lowMerge) : iyFirst;
+    iy = iyLast;
+    const Double_t kstar =
+        0.5 * (h2Fse->GetYaxis()->GetBinLowEdge(iyFirst) + h2Fse->GetYaxis()->GetBinUpEdge(iyLast));
+    if (kstar < purityMinK || kstar > purityMaxK) continue;
+    TH1* hFse = kmcProjectMassNative(h2Fse, iyFirst, iyLast, "kmcFse", keepAlive);
+    TH1* hFme = kmcProjectMassNative(h2Fme, iyFirst, iyLast, "kmcFme", keepAlive);
+    TH1* hBse = kmcProjectMassNative(h2Bse, iyFirst, iyLast, "kmcBse", keepAlive);
+    TH1* hBme = kmcProjectMassNative(h2Bme, iyFirst, iyLast, "kmcBme", keepAlive);
+    KmfWindowCountResult seBse, seBme, meBme;
+    if (!winOk) {
+      seBse.status = kKmcStatBadAlpha;
+      seBme.status = kKmcStatBadAlpha;
+      meBme.status = kKmcStatBadAlpha;
+    } else {
+      seBse = computeKmfWindowCountYield(hFse, hBse, wMin, wMax, aMin, aMax);
+      seBme = computeKmfWindowCountYield(hFse, hBme, wMin, wMax, aMin, aMax);
+      meBme = computeKmfWindowCountYield(hFme, hBme, wMin, wMax, aMin, aMax);
+    }
+    kxSE.push_back(kstar);
+    ySEbse.push_back(seBse.yield);
+    eSEbse.push_back(seBse.errYield);
+    ySEbme.push_back(seBme.yield);
+    eSEbme.push_back(seBme.errYield);
+    aSEx.push_back(kstar);
+    aSEy.push_back(seBse.alpha);
+    aSEe.push_back(seBse.errAlpha);
+    stBse.push_back((Double_t)seBse.status);
+    stBme.push_back((Double_t)seBme.status);
+    kxME.push_back(kstar);
+    yME.push_back(meBme.yield);
+    eME.push_back(meBme.errYield);
+    aMEx.push_back(kstar);
+    aMEy.push_back(meBme.alpha);
+    aMEe.push_back(meBme.errAlpha);
+    stMEx.push_back(kstar);
+    stMEy.push_back((Double_t)meBme.status);
+
+    const Bool_t meDenOk = (meBme.valid && meBme.yield > 0.0 && TMath::Finite(meBme.yield));
+    if (seBse.valid && meDenOk && TMath::Finite(seBse.yield)) {
+      const Double_t cf = seBse.yield / meBme.yield;
+      const Double_t ecf = cf * TMath::Sqrt(TMath::Power(seBse.errYield / (seBse.yield + 1e-12), 2) +
+                                            TMath::Power(meBme.errYield / (meBme.yield + 1e-12), 2));
+      if (TMath::Finite(cf) && TMath::Finite(ecf)) {
+        cfx.push_back(kstar);
+        cfy.push_back(cf);
+        cfe.push_back(ecf);
+      }
+    } else if (seBse.valid && !meDenOk) {
+      // status recorded on ME graph; do not insert a fake CF=0 point
+    }
+    if (seBme.valid && meDenOk && TMath::Finite(seBme.yield)) {
+      const Double_t cf = seBme.yield / meBme.yield;
+      const Double_t ecf = cf * TMath::Sqrt(TMath::Power(seBme.errYield / (seBme.yield + 1e-12), 2) +
+                                            TMath::Power(meBme.errYield / (meBme.yield + 1e-12), 2));
+      if (TMath::Finite(cf) && TMath::Finite(ecf)) {
+        cfxMe.push_back(kstar);
+        cfyMe.push_back(cf);
+        cfeMe.push_back(ecf);
+      }
+    }
+  }
+
+  out.gYseBse = kmcMakeGraph(kxSE, ySEbse, eSEbse, "Y_SE count B_SE");
+  out.gYseBme = kmcMakeGraph(kxSE, ySEbme, eSEbme, "Y_SE count B_ME");
+  out.gYme = kmcMakeGraph(kxME, yME, eME, "Y_ME count");
+  out.gStBse = kmcMakeGraph(kxSE, stBse, std::vector<Double_t>(), "kmc status BSE");
+  out.gStBme = kmcMakeGraph(kxSE, stBme, std::vector<Double_t>(), "kmc status BME");
+  out.gAlphaSE = kmcMakeGraph(aSEx, aSEy, aSEe, "alpha SE");
+  out.gAlphaME = kmcMakeGraph(aMEx, aMEy, aMEe, "alpha ME");
+  out.gCFraw = kmcMakeGraph(cfx, cfy, cfe, "C_raw count");
+  out.gCFmeRaw = kmcMakeGraph(cfxMe, cfyMe, cfeMe, "C_raw count mebkg");
+
+  const Double_t nQMin = channelNormQMin(channelSignal(channelBase));
+  const Double_t nQMax = channelNormQMax(channelSignal(channelBase));
+  std::vector<Double_t> ny, ne;
+  if (kmcNormalizeOnce(cfx, cfy, cfe, nQMin, nQMax, ny, ne, out.normScale, out.normScaleErr)) {
+    out.gCFn = kmcMakeGraph(cfx, ny, ne, "C_norm count");
+    out.normStatus = kKmcStatOk;
+  } else {
+    out.normStatus = kKmcStatNormFail;
+  }
+  Double_t scMe = 0.0, escMe = 0.0;
+  std::vector<Double_t> nyMe, neMe;
+  if (kmcNormalizeOnce(cfxMe, cfyMe, cfeMe, nQMin, nQMax, nyMe, neMe, scMe, escMe)) {
+    out.gCFmeN = kmcMakeGraph(cfxMe, nyMe, neMe, "C_norm count mebkg");
+  }
+}
+
+static void kmcStoreSeries(std::map<std::string, TGraphErrors*>& cfCache, std::map<std::string, Double_t>& metaCache,
+                           const std::string& sliceId, const std::string& tag, const std::string& base,
+                           const std::string& suf, const char* wTag, const KmcSeries& s) {
+  const std::string w(wTag);
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmc_Y_SE_") + tag + "_" + base + suf + "_" + w + "_bse")] = s.gYseBse;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmc_Y_SE_") + tag + "_" + base + suf + "_" + w + "_bme")] = s.gYseBme;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmc_Y_ME_") + tag + "_" + base + suf + "_" + w)] = s.gYme;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmc_status_") + tag + "_" + base + suf + "_" + w + "_bse")] = s.gStBse;
+  cfCache[cfSliceCacheKey(sliceId, std::string("kmc_status_") + tag + "_" + base + suf + "_" + w + "_bme")] = s.gStBme;
+  if (w == "w0") {
+    cfCache[cfSliceCacheKey(sliceId, std::string("kmc_alpha_") + tag + "_" + base + suf + "_SE")] = s.gAlphaSE;
+    cfCache[cfSliceCacheKey(sliceId, std::string("kmc_alpha_") + tag + "_" + base + suf + "_ME")] = s.gAlphaME;
+  }
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmc_") + tag + "_" + base + suf + "_" + w + "_raw")] = s.gCFraw;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmc_") + tag + "_" + base + suf + "_" + w + "_norm")] = s.gCFn;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmc_") + tag + "_" + base + suf + "_" + w + "_mebkg_raw")] = s.gCFmeRaw;
+  cfCache[cfSliceCacheKey(sliceId, std::string("CF_kmc_") + tag + "_" + base + suf + "_" + w + "_mebkg_norm")] = s.gCFmeN;
+  metaCache[cfSliceCacheKey(sliceId, std::string("kmc_normScale_") + tag + "_" + base + suf + "_" + w)] = s.normScale;
+  metaCache[cfSliceCacheKey(sliceId, std::string("kmc_normScaleErr_") + tag + "_" + base + suf + "_" + w)] =
+      s.normScaleErr;
+}
+
+static void kmcEnsureAll(TFile* fin, std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache,
+                         std::map<std::string, Double_t>& metaCache) {
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl || !fin) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  const Double_t dks[2] = {0.040, 0.080};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    for (Int_t it = 0; tags[it]; ++it) {
+      for (Int_t idk = 0; idk < 2; ++idk) {
+        TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+        if (!kmfLoadFAndB(fin, sl, base, tags[it], dks[idk], h2Fse, h2Fme, h2Bse, h2Bme)) {
+          std::cout << "[KMC] missing TH3 " << base << " " << tags[it] << " dk=" << dks[idk] << std::endl;
+          kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+          continue;
+        }
+        const std::string suf = kmfCacheSuffix(dks[idk]);
+        for (Int_t iw = 0; iw < 4; ++iw) {
+          KmcSeries ser;
+          computeKmcSeries(h2Fse, h2Fme, h2Bse, h2Bme, base, iw, keepAlive, ser);
+          kmcStoreSeries(cfCache, metaCache, sl->id, tags[it], base, suf, kmcWindowTag(iw), ser);
+        }
+        kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+      }
+    }
+  }
+}
+
+static void kmcFillFitAudit(TFile* fin, std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache) {
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl || !fin) return;
+  Double_t fitMin = 0.99, fitMax = 1.06, sigmaMin = 0.002, sigmaMax = 0.020;
+  Double_t purityMinK = 0.0, purityMaxK = 0.65, clampMin = 0.05, clampMax = 1.0;
+  Int_t minEntries = 20;
+  Bool_t preferPol2 = kTRUE;
+  getKstarMassFitCfFitConfig(fitMin, fitMax, sigmaMin, sigmaMax, purityMinK, purityMaxK, minEntries, clampMin, clampMax,
+                             preferPol2);
+  Double_t sigMin = 1.012, sigMax = 1.026;
+  getChannelSignalMassWindow("phi_proton_signal", sigMin, sigMax);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  const Double_t dks[2] = {0.040, 0.080};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    getChannelSignalMassWindow(channelSignal(base), sigMin, sigMax);
+    for (Int_t it = 0; tags[it]; ++it) {
+      for (Int_t idk = 0; idk < 2; ++idk) {
+        TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+        if (!kmfLoadFAndB(fin, sl, base, tags[it], dks[idk], h2Fse, h2Fme, h2Bse, h2Bme)) {
+          kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+          continue;
+        }
+        std::vector<Double_t> kx, fb, chi, mean, sig, nneg;
+        const Int_t lowMerge = getKstarMassFitCfLowKstarMergeBins();
+        for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+          const Int_t iyFirst = iy;
+          const Int_t iyLast = (iyFirst == 1) ? TMath::Min(h2Fse->GetNbinsY(), lowMerge) : iyFirst;
+          iy = iyLast;
+          const Double_t kstar =
+              0.5 * (h2Fse->GetYaxis()->GetBinLowEdge(iyFirst) + h2Fse->GetYaxis()->GetBinUpEdge(iyLast));
+          if (kstar < purityMinK || kstar > purityMaxK) continue;
+          TH1* hF = h2Fse->ProjectionX(pwgUniq("audF").Data(), iyFirst, iyLast);
+          TH1* hB = h2Bse->ProjectionX(pwgUniq("audB").Data(), iyFirst, iyLast);
+          if (!hF || !hB) continue;
+          hF->SetDirectory(0);
+          hB->SetDirectory(0);
+          if (kKmfMassRebin > 1) {
+            hF->Rebin(kKmfMassRebin);
+            hB->Rebin(kKmfMassRebin);
+          }
+          keepAlive.push_back(hF);
+          keepAlive.push_back(hB);
+          Double_t aErr = 0.0;
+          const Double_t a = kmfAlphaByMode(hF, hB, base, 0, aErr);
+          TH1* hS = (TH1*)hF->Clone(pwgUniq("audS").Data());
+          hS->SetDirectory(0);
+          hS->Add(hB, -a);
+          keepAlive.push_back(hS);
+          KstarMassFitCfFitResult fr;
+          fitPurityGausOnly(hS, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, fr);
+          KstarMassFitCfFitResult clip;
+          kmcDiagnoseClipFallback(hS, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, clip);
+          kx.push_back(kstar);
+          fb.push_back(clip.usedNegativeClipFallback ? 1.0 : 0.0);
+          chi.push_back(fr.chi2NdfOnOriginalHistogram);
+          mean.push_back(fr.mean);
+          sig.push_back(fr.sigma);
+          nneg.push_back((Double_t)fr.nNegativeBins);
+          if (clip.usedNegativeClipFallback) {
+            std::cout << "[KMC fit-audit] fallback-probe " << base << " " << tags[it] << " dk=" << dks[idk]
+                      << " k*=" << kstar << " nNeg=" << fr.nNegativeBins << " fbStat=" << clip.fallbackFitStatus
+                      << std::endl;
+          }
+        }
+        const std::string suf = kmfCacheSuffix(dks[idk]);
+        const std::string pre = std::string("kmf_fit");
+        cfCache[cfSliceCacheKey(sl->id, pre + "fallback_" + tags[it] + "_" + base + suf)] =
+            kmcMakeGraph(kx, fb, std::vector<Double_t>(), "clip-fallback probe");
+        cfCache[cfSliceCacheKey(sl->id, pre + "_chi2ndf_" + tags[it] + "_" + base + suf)] =
+            kmcMakeGraph(kx, chi, std::vector<Double_t>(), "chi2/ndf original S");
+        cfCache[cfSliceCacheKey(sl->id, pre + "_mean_" + tags[it] + "_" + base + suf)] =
+            kmcMakeGraph(kx, mean, std::vector<Double_t>(), "gaus mean");
+        cfCache[cfSliceCacheKey(sl->id, pre + "_sigma_" + tags[it] + "_" + base + suf)] =
+            kmcMakeGraph(kx, sig, std::vector<Double_t>(), "gaus sigma");
+        cfCache[cfSliceCacheKey(sl->id, pre + "_nNegativeBins_" + tags[it] + "_" + base + suf)] =
+            kmcMakeGraph(kx, nneg, std::vector<Double_t>(), "n negative S bins");
+        kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+      }
+    }
+  }
+}
+
+static void kmcDrawGraphOrMissing(TGraphErrors* g, const char* title, Double_t y0, Double_t y1, Int_t col, Int_t mk,
+                                  Bool_t unity) {
+  if (!g) {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.12, 0.5, "missing");
+    return;
+  }
+  pwgStyleCfGraph(g, col, mk);
+  g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+  g->Draw("AP");
+  if (g->GetHistogram()) {
+    g->GetHistogram()->SetTitle(title);
+    if (y1 > y0) g->GetHistogram()->GetYaxis()->SetRangeUser(y0, y1);
+  }
+  if (unity) pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+}
+
+static void drawKmcGuidePage(TCanvas* canvas, const TString& pdfPath) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->cd();
+  canvas->SetCanvasSize(1400, 900);
+  TLatex* t = new TLatex();
+  t->SetNDC(kTRUE);
+  t->SetTextFont(62);
+  t->SetTextSize(0.038);
+  t->DrawLatex(0.07, 0.93, "Fit-free window-counting CF  (additive QA)");
+  t->SetTextFont(42);
+  t->SetTextSize(0.026);
+  Double_t y = 0.86;
+  const Double_t dy = 0.045;
+  t->DrawLatex(0.07, y, "fit-free does not mean background-model-free");
+  y -= dy;
+  t->DrawLatex(0.07, y, "CF here uses Y_{SE} from F_{SE} - #alpha B_{ME} (SE#leftarrow ME).  B_{SE} is kept only as a method check.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Y_count = #int_{M_sig} (F - #alpha B) dM on native mass bins.  No Gaussian fit.  No negative-S clip.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "#alpha from YAML #alpha-window; signal window from channel config.  Errors: analytic independent-count");
+  y -= dy;
+  t->DrawLatex(0.07, y, "approximation; common-alpha term included  (#sigma_Y^{2} = #sigma_{F_W}^{2} + #alpha^{2}#sigma_{B_W}^{2} + B_W^{2}#sigma_#alpha^{2}).");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Not for significance.  ROT/MIX, B_SE/B_ME, #alpha, and mass-window dependence remain.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "CF norm: same high-k* mean as mass-fit (channelNormQMin/Max), applied once.  Raw and norm both stored.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Counting status is separate from fit status.  Negative yield kept on QA; non-positive ME omitted from CF.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Gaussian clip-fallback is diagnosed only; primary fit yields are not replaced.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Do not promote counting to nominal from this PDF alone.  No interaction-parameter claim from C(k*).");
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfWindowCountMassPages(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                        std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) return;
+  Double_t fitMin = 0.99, fitMax = 1.06, sigmaMin = 0.002, sigmaMax = 0.020, pMin = 0, pMax = 0.65, c0 = 0, c1 = 1;
+  Int_t minE = 20;
+  Bool_t pol = kTRUE;
+  getKstarMassFitCfFitConfig(fitMin, fitMax, sigmaMin, sigmaMax, pMin, pMax, minE, c0, c1, pol);
+  const Double_t kLo[4] = {0.00, 0.04, 0.08, 0.40};
+  const Double_t kHi[4] = {0.04, 0.08, 0.12, 0.44};
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    Double_t sigMin = 1.012, sigMax = 1.026;
+    getChannelSignalMassWindow(channelSignal(base), sigMin, sigMax);
+    Double_t aMin = 1.05, aMax = 1.105;
+    getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+    for (Int_t it = 0; tags[it]; ++it) {
+      TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+      if (!kmfLoadFAndB(fin, sl, base, tags[it], 0.040, h2Fse, h2Fme, h2Bse, h2Bme)) {
+        drawPwgMissingPage(canvas, pdfPath, Form("count mass %s %s", base.c_str(), tags[it]), "missing wide TH3");
+        kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+        continue;
+      }
+      TGraphErrors* gYfit = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_") + tags[it] + "_" + base + "_dk40");
+      TGraphErrors* gYcnt = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_SE_") + tags[it] + "_" + base + "_dk40_w0_bme");
+      for (Int_t ik = 0; ik < 4; ++ik) {
+        const Int_t iy0 = h2Fse->GetYaxis()->FindBin(kLo[ik] + 1e-9);
+        const Int_t iy1 = h2Fse->GetYaxis()->FindBin(kHi[ik] - 1e-9);
+        TH1* hFn = kmcProjectMassNative(h2Fse, iy0, iy1, "cmpFn", keepAlive);
+        TH1* hBn = kmcProjectMassNative(h2Bme, iy0, iy1, "cmpBn", keepAlive);
+        if (!hFn || !hBn) {
+          drawPwgMissingPage(canvas, pdfPath, Form("%s %s mass", base.c_str(), tags[it]), "missing projection");
+          continue;
+        }
+        const KmfWindowCountResult cnt = computeKmfWindowCountYield(hFn, hBn, sigMin, sigMax, aMin, aMax);
+        const Int_t nNeg = kmcCountNegativeS(hFn, hBn, cnt.alpha, sigMin, sigMax);
+        TH1* hF = (TH1*)hFn->Clone(pwgUniq("cmpF").Data());
+        TH1* hB = (TH1*)hBn->Clone(pwgUniq("cmpB").Data());
+        hF->SetDirectory(0);
+        hB->SetDirectory(0);
+        if (kKmfMassRebin > 1) {
+          hF->Rebin(kKmfMassRebin);
+          hB->Rebin(kKmfMassRebin);
+        }
+        keepAlive.push_back(hF);
+        keepAlive.push_back(hB);
+        Double_t aDisp = 0.0, aE = 0.0;
+        aDisp = kmfAlphaFromSingleWindow(hF, hB, aMin, aMax, aE);
+        TH1* hS = (TH1*)hF->Clone(pwgUniq("cmpS").Data());
+        hS->SetDirectory(0);
+        hS->Add(hB, -aDisp);
+        keepAlive.push_back(hS);
+        KstarMassFitCfFitResult fr;
+        fitPurityGausOnly(hS, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, fr);
+        KstarMassFitCfFitResult clip;
+        kmcDiagnoseClipFallback(hS, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, clip);
+        Double_t yFit = 0.0, yCnt = cnt.yield;
+        if (gYfit) {
+          for (Int_t ip = 0; ip < gYfit->GetN(); ++ip) {
+            Double_t xx = 0, yy = 0;
+            gYfit->GetPoint(ip, xx, yy);
+            if (xx >= kLo[ik] && xx < kHi[ik]) yFit = yy;
+          }
+        }
+        if (gYcnt) {
+          for (Int_t ip = 0; ip < gYcnt->GetN(); ++ip) {
+            Double_t xx = 0, yy = 0;
+            gYcnt->GetPoint(ip, xx, yy);
+            if (xx >= kLo[ik] && xx < kHi[ik]) yCnt = yy;
+          }
+        }
+        canvas->Clear();
+        canvas->SetCanvasSize(1800, 900);
+        canvas->Divide(3, 1);
+        canvas->cd(1);
+        hF->SetLineColor(kBlue + 1);
+        hF->SetTitle(Form("%s %s  %.2f<k*<%.2f;#it{M}_{KK};F", base.c_str(), tags[it], kLo[ik], kHi[ik]));
+        hF->Draw("E");
+        TLine* ls0 = new TLine(sigMin, hF->GetMinimum(), sigMin, hF->GetMaximum());
+        TLine* ls1 = new TLine(sigMax, hF->GetMinimum(), sigMax, hF->GetMaximum());
+        TLine* la0 = new TLine(aMin, hF->GetMinimum(), aMin, hF->GetMaximum());
+        TLine* la1 = new TLine(aMax, hF->GetMinimum(), aMax, hF->GetMaximum());
+        ls0->SetLineColor(kRed);
+        ls1->SetLineColor(kRed);
+        la0->SetLineColor(kGreen + 2);
+        la1->SetLineColor(kGreen + 2);
+        ls0->Draw("same");
+        ls1->Draw("same");
+        la0->Draw("same");
+        la1->Draw("same");
+        canvas->cd(2);
+        TH1* hBa = (TH1*)hB->Clone(pwgUniq("aB").Data());
+        hBa->SetDirectory(0);
+        hBa->Scale(aDisp);
+        keepAlive.push_back(hBa);
+        hBa->SetLineColor(kBlack);
+        hBa->SetTitle("#alpha B (display rebin);#it{M}_{KK};#alpha B");
+        hBa->Draw("HIST");
+        canvas->cd(3);
+        hS->SetLineColor(kRed + 1);
+        hS->SetTitle("S=F_{SE}-#alpha B_{ME} (display rebin; count uses native);#it{M}_{KK};S");
+        hS->Draw("E");
+        if (fr.ok) {
+          TF1* fPri = new TF1(pwgUniq("fpri").Data(), "gaus", fitMin, fitMax);
+          fPri->SetParameters(fr.amp, fr.mean, fr.sigma);
+          fPri->SetLineColor(kMagenta + 1);
+          fPri->Draw("SAME");
+        }
+        if (clip.usedNegativeClipFallback && clip.sigma > 0.0) {
+          TF1* fFb = new TF1(pwgUniq("ffb").Data(), "gaus", fitMin, fitMax);
+          fFb->SetParameters(clip.amp, clip.mean, clip.sigma);
+          fFb->SetLineColor(kOrange + 7);
+          fFb->SetLineStyle(2);
+          fFb->Draw("SAME");
+        }
+        canvas->cd();
+        TLatex* lat = new TLatex();
+        lat->SetNDC(kTRUE);
+        lat->SetTextSize(0.018);
+        lat->DrawLatex(0.02, 0.97,
+                       Form("count Y=%.3g#pm%.3g  fit Y=%.3g  fit/count=%.3g  nNeg(native W)=%d  #alpha=%.4f#pm%.4f  "
+                            "clip-probe=%d",
+                            cnt.yield, cnt.errYield, yFit, (yCnt != 0.0) ? yFit / yCnt : 0.0, nNeg, cnt.alpha,
+                            cnt.errAlpha, clip.usedNegativeClipFallback ? 1 : 0));
+        lat->DrawLatex(0.02, 0.94, "SE#leftarrow ME  (F_{SE}-#alpha B_{ME})   analytic independent-count approximation; common-alpha term included");
+        canvas->Print(pdfPath);
+        if (base == "phi_deuteron" && kLo[ik] > 0.07 && kLo[ik] < 0.09) {
+          std::cout << "[KMC] phi-d 0.08<k*<0.12 " << tags[it] << " Y_count=" << cnt.yield << " +/- " << cnt.errYield
+                    << " relErr=" << ((cnt.yield != 0.0) ? cnt.errYield / TMath::Abs(cnt.yield) : -1) << " status="
+                    << cnt.status << std::endl;
+        }
+      }
+      kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+    }
+  }
+}
+
+static void drawKmcYieldSummaryPage(TCanvas* canvas, const TString& pdfPath,
+                                    std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1000);
+    canvas->Divide(3, 2);
+    Int_t pad = 1;
+    for (Int_t it = 0; tags[it]; ++it) {
+      TGraphErrors* gSE = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_SE_") + tags[it] + "_" + base + "_dk40_w0_bme");
+      TGraphErrors* gME = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_ME_") + tags[it] + "_" + base + "_dk40_w0");
+      TGraphErrors* gSt = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_status_") + tags[it] + "_" + base + "_dk40_w0_bme");
+      canvas->cd(pad++);
+      kmcDrawGraphOrMissing(gSE, Form("%s %s Y_{SE,count}^{B_{ME}};k*;Y", base.c_str(), tags[it]), 0.0, 0.0, kBlue + 1, 20,
+                            kFALSE);
+      canvas->cd(pad++);
+      kmcDrawGraphOrMissing(gME, Form("%s %s Y_{ME,count};k*;Y", base.c_str(), tags[it]), 0.0, 0.0, kRed + 1, 21, kFALSE);
+      canvas->cd(pad++);
+      kmcDrawGraphOrMissing(gSt, Form("%s %s kmc status;k*;status", base.c_str(), tags[it]), -0.5, 7.5, kBlack, 21,
+                            kFALSE);
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97, Form("counting yield summary  %s  40 MeV/c  SE#leftarrow ME  (negative Y kept)", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static void drawKmfFitVsCountYieldPage(TCanvas* canvas, const TString& pdfPath,
+                                       std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  const char* dks[] = {"_dk40", "_dk80", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1000);
+    canvas->Divide(2, 2);
+    Int_t pad = 1;
+    for (Int_t it = 0; tags[it]; ++it) {
+      for (Int_t id = 0; dks[id]; ++id) {
+        TGraphErrors* gFse = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_") + tags[it] + "_" + base + dks[id]);
+        TGraphErrors* gCse = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_SE_") + tags[it] + "_" + base + dks[id] + "_w0_bme");
+        TGraphErrors* gFme = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_ME_") + tags[it] + "_" + base + dks[id]);
+        TGraphErrors* gCme = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_ME_") + tags[it] + "_" + base + dks[id] + "_w0");
+        TGraphErrors* rSE = kmcRatioGraph(gFse, gCse, Form("R_SE %s %s%s", base.c_str(), tags[it], dks[id]));
+        TGraphErrors* rME = kmcRatioGraph(gFme, gCme, Form("R_ME %s %s%s", base.c_str(), tags[it], dks[id]));
+        canvas->cd(pad++);
+        if (rSE) {
+          pwgStyleCfGraph(rSE, kBlue + 1, 20);
+          rSE->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          rSE->Draw("AP");
+          if (rSE->GetHistogram()) {
+            rSE->GetHistogram()->SetTitle(Form("%s %s%s R_{SE}=Y_{fit}/Y_{count};k*;R", base.c_str(), tags[it], dks[id]));
+            rSE->GetHistogram()->GetYaxis()->SetRangeUser(0.5, 1.5);
+          }
+          pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+          if (rME) {
+            pwgStyleCfGraph(rME, kRed + 1, 21);
+            rME->Draw("P SAME");
+          }
+        } else {
+          TLatex* z = new TLatex();
+          z->SetNDC(kTRUE);
+          z->DrawLatex(0.12, 0.5, "missing fit or count yield");
+        }
+      }
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97, Form("fit vs count yield  %s  SE#leftarrow ME  (same data; no independent #chi^{2})", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static void drawKmfFitVsCountCfPage(TCanvas* canvas, const TString& pdfPath,
+                                    std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1000);
+    canvas->Divide(2, 2);
+    Int_t pad = 1;
+    for (Int_t it = 0; tags[it]; ++it) {
+      TGraphErrors* gFr = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_") + tags[it] + "_" + base + "_dk40_mebkg_raw");
+      TGraphErrors* gCr = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tags[it] + "_" + base + "_dk40_w0_mebkg_raw");
+      TGraphErrors* gFn = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_") + tags[it] + "_" + base + "_dk40_mebkg_norm");
+      TGraphErrors* gCn = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tags[it] + "_" + base + "_dk40_w0_mebkg_norm");
+      canvas->cd(pad++);
+      if (gFr || gCr) {
+        TGraphErrors* g0 = gFr ? gFr : gCr;
+        pwgStyleCfGraph(g0, kBlack, 20);
+        g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        g0->Draw("AP");
+        if (g0->GetHistogram()) {
+          g0->GetHistogram()->SetTitle(Form("%s %s C_{raw} fit vs count;k*;C", base.c_str(), tags[it]));
+          g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        }
+        if (gCr && gCr != g0) {
+          pwgStyleCfGraph(gCr, kRed + 1, 21);
+          gCr->Draw("P SAME");
+        }
+        if (gFr && gFr != g0) {
+          pwgStyleCfGraph(gFr, kBlack, 20);
+          gFr->Draw("P SAME");
+        }
+        pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      } else {
+        TLatex* z = new TLatex();
+        z->SetNDC(kTRUE);
+        z->DrawLatex(0.12, 0.5, "missing raw CF");
+      }
+      canvas->cd(pad++);
+      if (gFn || gCn) {
+        TGraphErrors* g0 = gFn ? gFn : gCn;
+        pwgStyleCfGraph(g0, kBlack, 20);
+        g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        g0->Draw("AP");
+        if (g0->GetHistogram()) {
+          g0->GetHistogram()->SetTitle(Form("%s %s C_{norm} fit vs count;k*;C", base.c_str(), tags[it]));
+          g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+        }
+        if (gCn && gCn != g0) {
+          pwgStyleCfGraph(gCn, kRed + 1, 21);
+          gCn->Draw("P SAME");
+        }
+        pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      }
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97, Form("fit vs count CF  %s  40 MeV/c  SE#leftarrow ME   black=fit  red=count", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static void drawKmfFitCountDoubleRatioPage(TCanvas* canvas, const TString& pdfPath,
+                                           std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  const char* kinds[] = {"_w0_raw", "w0_mebkg_raw", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1000);
+    canvas->Divide(2, 2);
+    Int_t pad = 1;
+    Double_t maxD = 0.0, kAt = 0.0;
+    for (Int_t it = 0; tags[it]; ++it) {
+      for (Int_t ik = 0; ik < 2; ++ik) {
+        const char* sufC = (ik == 0) ? "_dk40_w0_raw" : "_dk40_w0_mebkg_raw";
+        TGraphErrors* gF = 0;
+        if (ik == 0) {
+          gF = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_") + tags[it] + "_" + base + "_dk40_raw");
+        } else {
+          TGraphErrors* ySeMe =
+              kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_SE_mebkg_") + tags[it] + "_" + base + "_dk40");
+          TGraphErrors* yMe =
+              kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_Y_ME_") + tags[it] + "_" + base + "_dk40");
+          gF = kmcCfFromYields(ySeMe, yMe, "C_raw fit mebkg");
+        }
+        TGraphErrors* gC = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tags[it] + "_" + base + sufC);
+        TGraphErrors* gD = kmcRatioGraph(gF, gC, Form("D %s %s", base.c_str(), tags[it]));
+        canvas->cd(pad++);
+        kmcDrawGraphOrMissing(gD, Form("%s %s D_{fit/count}=C_{raw}^{fit}/C_{raw}^{count};k*;D", base.c_str(), tags[it]),
+                              0.7, 1.3, kBlue + 1, 20, kTRUE);
+        if (gD) {
+          Double_t mx = 0, kx = 0;
+          pwgMaxAbsOnGraph(gD, mx, kx);
+          // max |D-1|
+          for (Int_t ip = 0; ip < gD->GetN(); ++ip) {
+            Double_t xx = 0, yy = 0;
+            gD->GetPoint(ip, xx, yy);
+            const Double_t ad = TMath::Abs(yy - 1.0);
+            if (ad > maxD) {
+              maxD = ad;
+              kAt = xx;
+            }
+          }
+        }
+        (void)kinds;
+      }
+    }
+    std::cout << "[KMC] " << base << " max|D_fit/count-1|=" << maxD << " at k*=" << kAt << std::endl;
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97, Form("fit/count double ratio  %s   same data; D~1 if Gaussian bias cancels", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static void drawKmcMassWindowScanPages(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                       std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache) {
+  (void)fin;
+  (void)keepAlive;
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  const char* wtags[] = {"wm1", "w0", "wp1", "wp2"};
+  const Int_t cols[4] = {kGray + 2, kBlack, kBlue + 1, kRed + 1};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    for (Int_t it = 0; tags[it]; ++it) {
+      canvas->Clear();
+      canvas->SetCanvasSize(1800, 1000);
+      canvas->Divide(2, 2);
+      TGraphErrors* gNom = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tags[it] + "_" + base + "_dk40_w0_mebkg_norm");
+      canvas->cd(1);
+      Bool_t first = kTRUE;
+      Double_t maxDC = 0.0, kAt = 0.0;
+      for (Int_t iw = 0; iw < 4; ++iw) {
+        TGraphErrors* g = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tags[it] + "_" + base + "_dk40_" +
+                                                                 wtags[iw] + "_mebkg_norm");
+        if (!g) continue;
+        pwgStyleCfGraph(g, cols[iw], 20 + iw);
+        if (first) {
+          g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g->Draw("AP");
+          if (g->GetHistogram()) {
+            g->GetHistogram()->SetTitle(Form("%s %s C_{norm,count} vs mass window;k*;C", base.c_str(), tags[it]));
+            g->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+          }
+          first = kFALSE;
+        } else {
+          g->Draw("P SAME");
+        }
+        if (gNom && iw != 1) {
+          TGraphErrors* d = pwgMakeGraphDiff(g, gNom, "dC");
+          if (d) {
+            Double_t mx = 0, kx = 0;
+            pwgMaxAbsOnGraph(d, mx, kx);
+            if (mx > maxDC) {
+              maxDC = mx;
+              kAt = kx;
+            }
+          }
+        }
+      }
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      canvas->cd(2);
+      first = kTRUE;
+      for (Int_t iw = 0; iw < 4; ++iw) {
+        TGraphErrors* g = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tags[it] + "_" + base + "_dk40_" +
+                                                                 wtags[iw] + "_mebkg_raw");
+        if (!g) continue;
+        pwgStyleCfGraph(g, cols[iw], 20 + iw);
+        if (first) {
+          g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g->Draw("AP");
+          if (g->GetHistogram()) {
+            g->GetHistogram()->SetTitle("C_{raw,count} vs window;k*;C");
+            g->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+          }
+          first = kFALSE;
+        } else {
+          g->Draw("P SAME");
+        }
+      }
+      canvas->cd(3);
+      first = kTRUE;
+      for (Int_t iw = 0; iw < 4; ++iw) {
+        TGraphErrors* g = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_SE_") + tags[it] + "_" + base + "_dk40_" +
+                                                                 wtags[iw] + "_bme");
+        if (!g) continue;
+        pwgStyleCfGraph(g, cols[iw], 20 + iw);
+        if (first) {
+          g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g->Draw("AP");
+          if (g->GetHistogram()) g->GetHistogram()->SetTitle("Y_{SE,count} vs window;k*;Y");
+          first = kFALSE;
+        } else {
+          g->Draw("P SAME");
+        }
+      }
+      canvas->cd(4);
+      first = kTRUE;
+      for (Int_t iw = 0; iw < 4; ++iw) {
+        TGraphErrors* g = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_ME_") + tags[it] + "_" + base + "_dk40_" +
+                                                                 wtags[iw]);
+        if (!g) continue;
+        pwgStyleCfGraph(g, cols[iw], 20 + iw);
+        if (first) {
+          g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+          g->Draw("AP");
+          if (g->GetHistogram()) g->GetHistogram()->SetTitle("Y_{ME,count} vs window;k*;Y");
+          first = kFALSE;
+        } else {
+          g->Draw("P SAME");
+        }
+      }
+      std::cout << "[KMC] " << base << " " << tags[it] << " max|#Delta C_norm| vs W0=" << maxDC << " at k*=" << kAt
+                << std::endl;
+      canvas->cd();
+      TLatex* cap = new TLatex();
+      cap->SetNDC(kTRUE);
+      cap->SetTextSize(0.018);
+      cap->DrawLatex(0.02, 0.97, Form("mass-window scan  %s %s  gray W-1  black W0  blue W+1  red W+2", base.c_str(),
+                                     tags[it]));
+      canvas->Print(pdfPath);
+    }
+  }
+}
+
+static void drawKmcRotMixBkgSourcePage(TCanvas* canvas, const TString& pdfPath,
+                                       std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1000);
+    canvas->Divide(2, 2);
+    TGraphErrors* gR = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk40_w0_mebkg_norm");
+    TGraphErrors* gM = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_mix_") + base + "_dk40_w0_mebkg_norm");
+    TGraphErrors* gBse = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk40_w0_norm");
+    TGraphErrors* gBme = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk40_w0_mebkg_norm");
+    canvas->cd(1);
+    if (gR || gM) {
+      TGraphErrors* g0 = gR ? gR : gM;
+      pwgStyleCfGraph(g0, (g0 == gR) ? kCfColRot : kCfColMix, 20);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->SetTitle(Form("%s count C_{norm} ROT vs MIX;k*;C", base.c_str()));
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+      }
+      if (gM && gM != g0) {
+        pwgStyleCfGraph(gM, kCfColMix, 21);
+        gM->Draw("P SAME");
+      }
+      if (gR && gR != g0) {
+        pwgStyleCfGraph(gR, kCfColRot, 20);
+        gR->Draw("P SAME");
+      }
+      TLegend* leg = new TLegend(0.55, 0.72, 0.88, 0.88);
+      leg->SetBorderSize(0);
+      leg->SetFillStyle(0);
+      if (gR) leg->AddEntry(gR, "ROT", "p");
+      if (gM) leg->AddEntry(gM, "MIX", "p");
+      leg->Draw();
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    }
+    canvas->cd(2);
+    TGraphErrors* dRM = pwgMakeGraphDiff(gR, gM, "MIX-ROT");
+    kmcDrawGraphOrMissing(dRM, Form("%s C_{MIX}-C_{ROT};k*;#Delta C", base.c_str()), -0.15, 0.15, kBlue + 1, 20, kFALSE);
+    if (dRM) {
+      Double_t mx = 0, kx = 0;
+      pwgMaxAbsOnGraph(dRM, mx, kx);
+      std::cout << "[KMC] " << base << " count max|C_MIX-C_ROT|=" << mx << " at k*=" << kx << std::endl;
+    }
+    canvas->cd(3);
+    if (gBse || gBme) {
+      TGraphErrors* g0 = gBse ? gBse : gBme;
+      pwgStyleCfGraph(g0, kBlack, 20);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->SetTitle(Form("%s count B_{SE} vs B_{ME};k*;C", base.c_str()));
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+      }
+      if (gBme && gBme != g0) {
+        pwgStyleCfGraph(gBme, kMagenta + 1, 22);
+        gBme->Draw("P SAME");
+      }
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    }
+    canvas->cd(4);
+    TGraphErrors* dSrc = pwgMakeGraphDiff(gBse, gBme, "BME-BSE");
+    kmcDrawGraphOrMissing(dSrc, Form("%s C_{mebkg}-C_{BSE};k*;#Delta C", base.c_str()), -0.15, 0.15, kMagenta + 1, 21,
+                          kFALSE);
+    if (dSrc) {
+      Double_t mx = 0, kx = 0;
+      pwgMaxAbsOnGraph(dSrc, mx, kx);
+      std::cout << "[KMC] " << base << " count max|C_mebkg-C_BSE|=" << mx << " at k*=" << kx << std::endl;
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97, Form("count ROT/MIX and B_{SE}/B_{ME}  %s  40 MeV/c", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static TGraphErrors* kmcYieldPerDk(TGraphErrors* g, Double_t dk, const char* title) {
+  if (!g || dk <= 0.0) return 0;
+  std::vector<Double_t> x, y, e;
+  for (Int_t i = 0; i < g->GetN(); ++i) {
+    Double_t xx = 0, yy = 0;
+    g->GetPoint(i, xx, yy);
+    x.push_back(xx);
+    y.push_back(yy / dk);
+    e.push_back(g->GetErrorY(i) / dk);
+  }
+  return kmcMakeGraph(x, y, e, title);
+}
+
+static void drawKmcBinningComparePage(TCanvas* canvas, const TString& pdfPath,
+                                      std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1100);
+    canvas->Divide(3, 2);
+    TGraphErrors* c40 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk40_w0_mebkg_norm");
+    TGraphErrors* c80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk80_w0_mebkg_norm");
+    TGraphErrors* m80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_mix_") + base + "_dk80_w0_mebkg_norm");
+    TGraphErrors* bme80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk80_w0_mebkg_norm");
+    TGraphErrors* y40 = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_SE_rot_") + base + "_dk40_w0_bme");
+    TGraphErrors* y80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_Y_SE_rot_") + base + "_dk80_w0_bme");
+    TGraphErrors* st80 = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmc_status_mix_") + base + "_dk80_w0_bme");
+    TGraphErrors* gFr = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmf_rot_") + base + "_dk80_mebkg_raw");
+    TGraphErrors* gCr = kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk80_w0_mebkg_raw");
+    canvas->cd(1);
+    if (c40 || c80) {
+      TGraphErrors* g0 = c40 ? c40 : c80;
+      pwgStyleCfGraph(g0, kBlack, 20);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->SetTitle(Form("%s count C_{norm} 40 vs 80;k*;C", base.c_str()));
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+      }
+      if (c80 && c80 != g0) {
+        pwgStyleCfGraph(c80, kRed + 1, 21);
+        c80->Draw("P SAME");
+      }
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    }
+    canvas->cd(2);
+    if (c80 || m80) {
+      TGraphErrors* g0 = c80 ? c80 : m80;
+      pwgStyleCfGraph(g0, (g0 == c80) ? kCfColRot : kCfColMix, 21);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->SetTitle(Form("%s 80 MeV/c ROT vs MIX;k*;C", base.c_str()));
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+      }
+      if (m80 && m80 != g0) {
+        pwgStyleCfGraph(m80, kCfColMix, 22);
+        m80->Draw("P SAME");
+      }
+      if (c80 && c80 != g0) {
+        pwgStyleCfGraph(c80, kCfColRot, 21);
+        c80->Draw("P SAME");
+      }
+      TLegend* legRM = new TLegend(0.55, 0.72, 0.88, 0.88);
+      legRM->SetBorderSize(0);
+      legRM->SetFillStyle(0);
+      if (c80) legRM->AddEntry(c80, "ROT", "p");
+      if (m80) legRM->AddEntry(m80, "MIX", "p");
+      legRM->Draw();
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    }
+    canvas->cd(3);
+    if (c80 || bme80) {
+      TGraphErrors* g0 = c80 ? c80 : bme80;
+      pwgStyleCfGraph(g0, kBlack, 21);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) {
+        g0->GetHistogram()->SetTitle(Form("%s 80 MeV/c B_{SE} vs B_{ME};k*;C", base.c_str()));
+        g0->GetHistogram()->GetYaxis()->SetRangeUser(kCfYMin, kCfYMax);
+      }
+      if (bme80 && bme80 != g0) {
+        pwgStyleCfGraph(bme80, kMagenta + 1, 22);
+        bme80->Draw("P SAME");
+      }
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    }
+    canvas->cd(4);
+    TGraphErrors* y40n = kmcYieldPerDk(y40, 0.040, "Y/#Deltak* 40");
+    TGraphErrors* y80n = kmcYieldPerDk(y80, 0.080, "Y/#Deltak* 80");
+    if (y40n || y80n) {
+      TGraphErrors* g0 = y40n ? y40n : y80n;
+      pwgStyleCfGraph(g0, kBlue + 1, 20);
+      g0->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+      g0->Draw("AP");
+      if (g0->GetHistogram()) g0->GetHistogram()->SetTitle("Y_{SE,count}/#Delta k*;k*;Y/#Deltak*");
+      if (y80n && y80n != g0) {
+        pwgStyleCfGraph(y80n, kRed + 1, 21);
+        y80n->Draw("P SAME");
+      }
+    }
+    canvas->cd(5);
+    TGraphErrors* ge = pwgRelErrGraph(y80);
+    kmcDrawGraphOrMissing(ge, Form("%s 80 MeV/c #sigma_Y/Y;k*;rel", base.c_str()), 0.0, 1.2, kBlack, 21, kFALSE);
+    canvas->cd(6);
+    TGraphErrors* gD = kmcRatioGraph(gFr, gCr, "D80");
+    kmcDrawGraphOrMissing(gD, Form("%s 80 MeV/c D_{fit/count};k*;D", base.c_str()), 0.7, 1.3, kBlue + 1, 20, kTRUE);
+    if (st80) {
+      for (Int_t i = 0; i < st80->GetN(); ++i) {
+        Double_t xx = 0, yy = 0;
+        st80->GetPoint(i, xx, yy);
+        if (xx > 0.07 && xx < 0.13) {
+          std::cout << "[KMC] " << base << " MIX 80 MeV/c status at k*=" << xx << " status=" << yy << std::endl;
+        }
+      }
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.018);
+    cap->DrawLatex(0.02, 0.97, Form("40 vs 80 MeV/c counting  %s   yield compared as Y/#Delta k*", base.c_str()));
+    canvas->Print(pdfPath);
+  }
+}
+
+static void drawKmfFitQualityAuditPages(TCanvas* canvas, const TString& pdfPath,
+                                        std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* dks[] = {"_dk40", "_dk80", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    for (Int_t id = 0; dks[id]; ++id) {
+      canvas->Clear();
+      canvas->SetCanvasSize(1800, 1000);
+      canvas->Divide(3, 2);
+      TGraphErrors* gFbR = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitfallback_rot_") + base + dks[id]);
+      TGraphErrors* gFbM = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fitfallback_mix_") + base + dks[id]);
+      TGraphErrors* gChi = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fit_chi2ndf_rot_") + base + dks[id]);
+      TGraphErrors* gMn = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fit_mean_rot_") + base + dks[id]);
+      TGraphErrors* gSg = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fit_sigma_rot_") + base + dks[id]);
+      TGraphErrors* gNn = kmfLookupGraph(cfCache, "pct_0_60", std::string("kmf_fit_nNegativeBins_rot_") + base + dks[id]);
+      canvas->cd(1);
+      kmcDrawGraphOrMissing(gFbR, Form("%s ROT clip-fallback probe;k*;flag", base.c_str()), -0.2, 1.4, kRed + 1, 21,
+                            kFALSE);
+      canvas->cd(2);
+      kmcDrawGraphOrMissing(gFbM, Form("%s MIX clip-fallback probe;k*;flag", base.c_str()), -0.2, 1.4, kRed + 1, 22,
+                            kFALSE);
+      canvas->cd(3);
+      kmcDrawGraphOrMissing(gChi, Form("%s ROT #chi^{2}/ndf on original S;k*;#chi^{2}/ndf", base.c_str()), 0.0, 8.0,
+                            kBlack, 20, kFALSE);
+      canvas->cd(4);
+      kmcDrawGraphOrMissing(gMn, Form("%s ROT gaus mean;k*;mean", base.c_str()), 1.010, 1.030, kBlue + 1, 20, kFALSE);
+      canvas->cd(5);
+      kmcDrawGraphOrMissing(gSg, Form("%s ROT gaus #sigma;k*;#sigma", base.c_str()), 0.0, 0.02, kBlue + 1, 21, kFALSE);
+      canvas->cd(6);
+      kmcDrawGraphOrMissing(gNn, Form("%s ROT n negative S bins;k*;N", base.c_str()), -0.5, 20.0, kOrange + 7, 21,
+                            kFALSE);
+      canvas->cd();
+      TLatex* cap = new TLatex();
+      cap->SetNDC(kTRUE);
+      cap->SetTextSize(0.018);
+      cap->DrawLatex(0.02, 0.97,
+                     Form("Gaussian fit quality / clip-fallback probe  %s%s  (yields unchanged; probe only)",
+                          base.c_str(), dks[id]));
+      canvas->Print(pdfPath);
+    }
+  }
+}
+
+static void drawKmcIntegratedResidualPage(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                          std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl) return;
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    Double_t sigMin = 1.012, sigMax = 1.026;
+    getChannelSignalMassWindow(channelSignal(base), sigMin, sigMax);
+    Double_t aMin = 1.05, aMax = 1.105;
+    getKstarMassFitCfAlphaSingleWindow(aMin, aMax);
+    TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+    if (!kmfLoadFAndB(fin, sl, base, "rot", 0.040, h2Fse, h2Fme, h2Bse, h2Bme)) {
+      drawPwgMissingPage(canvas, pdfPath, Form("residual %s", base.c_str()), "missing TH3");
+      kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+      continue;
+    }
+    TH1* hF = kmcProjectMassNative(h2Fse, 1, h2Fse->GetNbinsY(), "intF", keepAlive);
+    TH1* hB = kmcProjectMassNative(h2Bse, 1, h2Bse->GetNbinsY(), "intB", keepAlive);
+    if (!hF || !hB) {
+      kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+      continue;
+    }
+    Double_t aErr = 0.0;
+    const Double_t a = kmfAlphaFromSingleWindow(hF, hB, aMin, aMax, aErr);
+    TH1* hS = (TH1*)hF->Clone(pwgUniq("intS").Data());
+    hS->SetDirectory(0);
+    hS->Add(hB, -a);
+    keepAlive.push_back(hS);
+    Double_t eOut = 0.0;
+    const Double_t yL = histIntegralOverlapAndError(hS, hS->GetXaxis()->GetXmin(), sigMin, eOut);
+    Double_t eR = 0.0;
+    const Double_t yR = histIntegralOverlapAndError(hS, sigMax, aMin, eR);
+    canvas->Clear();
+    canvas->SetCanvasSize(1400, 800);
+    canvas->Divide(2, 1);
+    canvas->cd(1);
+    TH1* hFd = (TH1*)hF->Clone(pwgUniq("intFd").Data());
+    TH1* hBd = (TH1*)hB->Clone(pwgUniq("intBd").Data());
+    hFd->SetDirectory(0);
+    hBd->SetDirectory(0);
+    if (kKmfMassRebin > 1) {
+      hFd->Rebin(kKmfMassRebin);
+      hBd->Rebin(kKmfMassRebin);
+    }
+    keepAlive.push_back(hFd);
+    keepAlive.push_back(hBd);
+    hFd->SetLineColor(kBlue + 1);
+    hFd->SetTitle(Form("%s 0-60%% integrated F and #alpha B;#it{M}_{KK};counts", base.c_str()));
+    hFd->Draw("E");
+    hBd->Scale(a);
+    hBd->SetLineColor(kBlack);
+    hBd->Draw("HIST SAME");
+    canvas->cd(2);
+    TH1* hSd = (TH1*)hS->Clone(pwgUniq("intSd").Data());
+    hSd->SetDirectory(0);
+    if (kKmfMassRebin > 1) hSd->Rebin(kKmfMassRebin);
+    keepAlive.push_back(hSd);
+    hSd->SetLineColor(kRed + 1);
+    hSd->SetTitle("S=F-#alpha B  (outside-signal residual);#it{M}_{KK};S");
+    hSd->Draw("E");
+    canvas->cd();
+    TLatex* lat = new TLatex();
+    lat->SetNDC(kTRUE);
+    lat->SetTextSize(0.022);
+    lat->DrawLatex(0.02, 0.96,
+                   Form("outside-W residual  left=%.3g  mid(sigMax,#alphaMin)=%.3g#pm%.3g   #alpha=%.4f", yL, yR, eR, a));
+    canvas->Print(pdfPath);
+    std::cout << "[KMC] " << base << " integrated residual left=" << yL << " mid=" << yR << " +/- " << eR << std::endl;
+    kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+  }
+}
+
+static const Int_t kSbleakOk = 0;
+static const Int_t kSbleakInvalidT = 1;
+static const Int_t kSbleakNonPosSE = 2;
+static const Int_t kSbleakNonPosME = 3;
+static const Int_t kSbleakLargeRel = 4;
+static const Int_t kSbleakNormFail = 5;
+static const Int_t kSbleakNonFinite = 6;
+
+static std::string sbleakKey(const char* kind, const char* tag, const std::string& base, const char* dkTag,
+                             const char* sb, const char* extra) {
+  std::string s("kmf_sbleak_");
+  s += kind ? kind : "";
+  if (tag && tag[0]) {
+    s += "_";
+    s += tag;
+  }
+  s += "_";
+  s += base;
+  if (dkTag && dkTag[0]) {
+    s += "_";
+    s += dkTag;
+  }
+  if (sb && sb[0]) {
+    s += "_";
+    s += sb;
+  }
+  if (extra && extra[0]) {
+    s += "_";
+    s += extra;
+  }
+  return s;
+}
+
+static void sbleakStore(std::map<std::string, TGraphErrors*>& cfCache, const std::string& key, TGraphErrors* g) {
+  cfCache[cfSliceCacheKey("pct_0_60", key)] = g;
+}
+
+static TGraphErrors* sbleakLoad(std::map<std::string, TGraphErrors*>& cfCache, const std::string& key) {
+  return kmfLookupGraph(cfCache, "pct_0_60", key);
+}
+
+static void sbleakTransferYield(Double_t fw, Double_t efw, Double_t fsb, Double_t efsb, Double_t bw, Double_t ebw,
+                               Double_t bsb, Double_t ebsb, Double_t& t, Double_t& et, Double_t& y, Double_t& ey,
+                               Int_t& st) {
+  t = 0.0;
+  et = 0.0;
+  y = 0.0;
+  ey = 0.0;
+  st = kSbleakInvalidT;
+  if (!(bsb > 0.0) || !TMath::Finite(bw) || !TMath::Finite(bsb) || !TMath::Finite(fw) || !TMath::Finite(fsb)) return;
+  t = bw / bsb;
+  Double_t rel2 = TMath::Power(ebsb / bsb, 2);
+  if (TMath::Abs(bw) > 0.0) rel2 += TMath::Power(ebw / bw, 2);
+  et = TMath::Abs(t) * TMath::Sqrt(rel2);
+  if (!TMath::Finite(t) || !TMath::Finite(et)) {
+    t = 0.0;
+    et = 0.0;
+    st = kSbleakNonFinite;
+    return;
+  }
+  const Double_t bhat = t * fsb;
+  const Double_t ebhat = TMath::Sqrt(TMath::Power(t * efsb, 2) + TMath::Power(fsb * et, 2));
+  y = fw - bhat;
+  ey = TMath::Sqrt(efw * efw + ebhat * ebhat);
+  if (!TMath::Finite(y) || !TMath::Finite(ey)) {
+    st = kSbleakNonFinite;
+    return;
+  }
+  st = kSbleakOk;
+}
+
+static Bool_t sbleakSplitHalves(TAxis* ax, Double_t lo, Double_t hi, Int_t& o0, Int_t& o1, Int_t& i0, Int_t& i1,
+                               Bool_t lowIsOuter) {
+  if (!ax) return kFALSE;
+  const Int_t b0 = ax->FindBin(lo + 1e-9);
+  const Int_t b1 = ax->FindBin(hi - 1e-9);
+  if (b1 < b0) return kFALSE;
+  const Int_t n = b1 - b0 + 1;
+  if (n < 2) return kFALSE;
+  const Int_t n0 = n / 2;
+  if (lowIsOuter) {
+    o0 = b0;
+    o1 = b0 + n0 - 1;
+    i0 = o1 + 1;
+    i1 = b1;
+  } else {
+    i0 = b0;
+    i1 = b0 + n0 - 1;
+    o0 = i1 + 1;
+    o1 = b1;
+  }
+  return (o0 <= o1 && i0 <= i1);
+}
+
+static Bool_t sbleakSplitThree(TAxis* ax, Double_t lo, Double_t hi, Int_t& o0, Int_t& o1, Int_t& m0, Int_t& m1,
+                              Int_t& i0, Int_t& i1, Bool_t lowIsOuter) {
+  if (!ax) return kFALSE;
+  const Int_t b0 = ax->FindBin(lo + 1e-9);
+  const Int_t b1 = ax->FindBin(hi - 1e-9);
+  if (b1 < b0) return kFALSE;
+  const Int_t n = b1 - b0 + 1;
+  if (n < 3) return kFALSE;
+  const Int_t n0 = n / 3;
+  const Int_t n1 = n / 3;
+  if (lowIsOuter) {
+    o0 = b0;
+    o1 = b0 + n0 - 1;
+    m0 = o1 + 1;
+    m1 = m0 + n1 - 1;
+    i0 = m1 + 1;
+    i1 = b1;
+  } else {
+    i0 = b0;
+    i1 = b0 + n0 - 1;
+    m0 = i1 + 1;
+    m1 = m0 + n1 - 1;
+    o0 = m1 + 1;
+    o1 = b1;
+  }
+  return (o0 <= o1 && m0 <= m1 && i0 <= i1);
+}
+
+static void sbleakFillWindow(TH1* hF, TH1* hB, Double_t wMin, Double_t wMax, Double_t lMin, Double_t lMax, Double_t rMin,
+                            Double_t rMax, const char* sb, Double_t& fw, Double_t& efw, Double_t& fsb, Double_t& efsb,
+                            Double_t& bw, Double_t& ebw, Double_t& bsb, Double_t& ebsb) {
+  fw = histIntegralAndErrorRange(hF, wMin, wMax, efw);
+  bw = histIntegralAndErrorRange(hB, wMin, wMax, ebw);
+  fsb = 0.0;
+  efsb = 0.0;
+  bsb = 0.0;
+  ebsb = 0.0;
+  Double_t e1 = 0.0, e2 = 0.0;
+  if (std::strcmp(sb, "lsb") == 0) {
+    fsb = histIntegralAndErrorRange(hF, lMin, lMax, efsb);
+    bsb = histIntegralAndErrorRange(hB, lMin, lMax, ebsb);
+  } else if (std::strcmp(sb, "rsb") == 0) {
+    fsb = histIntegralAndErrorRange(hF, rMin, rMax, efsb);
+    bsb = histIntegralAndErrorRange(hB, rMin, rMax, ebsb);
+  } else {
+    const Double_t fL = histIntegralAndErrorRange(hF, lMin, lMax, e1);
+    const Double_t fR = histIntegralAndErrorRange(hF, rMin, rMax, e2);
+    fsb = fL + fR;
+    efsb = TMath::Sqrt(e1 * e1 + e2 * e2);
+    const Double_t bL = histIntegralAndErrorRange(hB, lMin, lMax, e1);
+    const Double_t bR = histIntegralAndErrorRange(hB, rMin, rMax, e2);
+    bsb = bL + bR;
+    ebsb = TMath::Sqrt(e1 * e1 + e2 * e2);
+  }
+}
+
+static void sbleakComputeCorrected(TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bme, const std::string& base,
+                                  const char* tag, const char* dkTag, const char* sb, std::vector<TH1*>& keepAlive,
+                                  std::map<std::string, TGraphErrors*>& cfCache, std::map<std::string, Double_t>& meta) {
+  if (!h2Fse || !h2Fme || !h2Bse || !h2Bme) return;
+  Double_t sigMin = 1.012, sigMax = 1.026;
+  getChannelSignalMassWindow(channelSignal(base), sigMin, sigMax);
+  Double_t lMin = 0.0, lMax = 0.0, rMin = 0.0, rMax = 0.0;
+  getChannelSidebandWindows(base, lMin, lMax, rMin, rMax);
+  Double_t pMin = 0.0, pMax = 0.65, fitMin = 0.0, fitMax = 0.0, s0 = 0.0, s1 = 0.0, c0 = 0.0, c1 = 0.0;
+  Int_t minE = 20;
+  Bool_t pol = kTRUE;
+  getKstarMassFitCfFitConfig(fitMin, fitMax, s0, s1, pMin, pMax, minE, c0, c1, pol);
+  const Double_t nQMin = channelNormQMin(channelSignal(base));
+  const Double_t nQMax = channelNormQMax(channelSignal(base));
+  const Int_t lowMerge = getKstarMassFitCfLowKstarMergeBins();
+
+  std::vector<Double_t> kx, tSE, etSE, tME, etME, ySE, eSE, yME, eME, cfx, cfy, cfe, stx, sty;
+  Int_t nNegSE = 0, nNegME = 0, nInv = 0;
+  for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+    const Int_t iyFirst = iy;
+    const Int_t iyLast = (iyFirst == 1) ? TMath::Min(h2Fse->GetNbinsY(), lowMerge) : iyFirst;
+    iy = iyLast;
+    const Double_t kstar =
+        0.5 * (h2Fse->GetYaxis()->GetBinLowEdge(iyFirst) + h2Fse->GetYaxis()->GetBinUpEdge(iyLast));
+    if (kstar < pMin || kstar > pMax) continue;
+    TH1* hFse = kmcProjectMassNative(h2Fse, iyFirst, iyLast, "slFse", keepAlive);
+    TH1* hFme = kmcProjectMassNative(h2Fme, iyFirst, iyLast, "slFme", keepAlive);
+    TH1* hBse = kmcProjectMassNative(h2Bse, iyFirst, iyLast, "slBse", keepAlive);
+    TH1* hBme = kmcProjectMassNative(h2Bme, iyFirst, iyLast, "slBme", keepAlive);
+    Double_t fwSE = 0, efwSE = 0, fsbSE = 0, efsbSE = 0, bwSE = 0, ebwSE = 0, bsbSE = 0, ebsbSE = 0;
+    Double_t fwME = 0, efwME = 0, fsbME = 0, efsbME = 0, bwME = 0, ebwME = 0, bsbME = 0, ebsbME = 0;
+    sbleakFillWindow(hFse, hBse, sigMin, sigMax, lMin, lMax, rMin, rMax, sb, fwSE, efwSE, fsbSE, efsbSE, bwSE, ebwSE,
+                     bsbSE, ebsbSE);
+    sbleakFillWindow(hFme, hBme, sigMin, sigMax, lMin, lMax, rMin, rMax, sb, fwME, efwME, fsbME, efsbME, bwME, ebwME,
+                     bsbME, ebsbME);
+    Double_t tse = 0, etse = 0, yse = 0, eyse = 0, tme = 0, etme = 0, yme = 0, eyme = 0;
+    Int_t stSE = kSbleakInvalidT, stME = kSbleakInvalidT;
+    sbleakTransferYield(fwSE, efwSE, fsbSE, efsbSE, bwSE, ebwSE, bsbSE, ebsbSE, tse, etse, yse, eyse, stSE);
+    sbleakTransferYield(fwME, efwME, fsbME, efsbME, bwME, ebwME, bsbME, ebsbME, tme, etme, yme, eyme, stME);
+    kx.push_back(kstar);
+    tSE.push_back(tse);
+    etSE.push_back(etse);
+    tME.push_back(tme);
+    etME.push_back(etme);
+    ySE.push_back(yse);
+    eSE.push_back(eyse);
+    yME.push_back(yme);
+    eME.push_back(eyme);
+    Int_t st = kSbleakOk;
+    if (stSE == kSbleakInvalidT || stME == kSbleakInvalidT) {
+      st = kSbleakInvalidT;
+      ++nInv;
+    } else if (stSE == kSbleakNonFinite || stME == kSbleakNonFinite) {
+      st = kSbleakNonFinite;
+      ++nInv;
+    } else if (!(yse > 0.0)) {
+      st = kSbleakNonPosSE;
+    } else if (!(yme > 0.0)) {
+      st = kSbleakNonPosME;
+    } else {
+      const Double_t relSE = eyse / (yse + 1e-12);
+      const Double_t relME = eyme / (yme + 1e-12);
+      if (relSE > kKmcLargeRelErr || relME > kKmcLargeRelErr) st = kSbleakLargeRel;
+      const Double_t cf = yse / yme;
+      const Double_t ecf =
+          cf * TMath::Sqrt(TMath::Power(eyse / (yse + 1e-12), 2) + TMath::Power(eyme / (yme + 1e-12), 2));
+      if (!TMath::Finite(cf) || !TMath::Finite(ecf)) {
+        st = kSbleakNonFinite;
+      } else {
+        cfx.push_back(kstar);
+        cfy.push_back(cf);
+        cfe.push_back(ecf);
+      }
+    }
+    if (yse < 0.0) ++nNegSE;
+    if (yme < 0.0) ++nNegME;
+    stx.push_back(kstar);
+    sty.push_back((Double_t)st);
+  }
+  sbleakStore(cfCache, sbleakKey("transfer", tag, base, dkTag, sb, "se"), kmcMakeGraph(kx, tSE, etSE, "t_SE"));
+  sbleakStore(cfCache, sbleakKey("transfer", tag, base, dkTag, sb, "me"), kmcMakeGraph(kx, tME, etME, "t_ME"));
+  sbleakStore(cfCache, sbleakKey("Y", tag, base, dkTag, sb, "se"), kmcMakeGraph(kx, ySE, eSE, "Y_SE SB"));
+  sbleakStore(cfCache, sbleakKey("Y", tag, base, dkTag, sb, "me"), kmcMakeGraph(kx, yME, eME, "Y_ME SB"));
+  sbleakStore(cfCache, sbleakKey("status", tag, base, dkTag, sb, 0), kmcMakeGraph(stx, sty, std::vector<Double_t>(), "st"));
+  TGraphErrors* gRaw = kmcMakeGraph(cfx, cfy, cfe, "C_raw SB");
+  sbleakStore(cfCache, sbleakKey("CF", tag, base, dkTag, sb, "raw"), gRaw);
+  std::vector<Double_t> ny, ne;
+  Double_t sc = 0.0, esc = 0.0;
+  TGraphErrors* gN = 0;
+  if (kmcNormalizeOnce(cfx, cfy, cfe, nQMin, nQMax, ny, ne, sc, esc)) {
+    gN = kmcMakeGraph(cfx, ny, ne, "C_norm SB");
+    sbleakStore(cfCache, sbleakKey("CF", tag, base, dkTag, sb, "norm"), gN);
+  } else {
+    sbleakStore(cfCache, sbleakKey("CF", tag, base, dkTag, sb, "norm"), 0);
+    for (size_t i = 0; i < sty.size(); ++i) {
+      if (sty[i] == (Double_t)kSbleakOk || sty[i] == (Double_t)kSbleakLargeRel) sty[i] = (Double_t)kSbleakNormFail;
+    }
+    sbleakStore(cfCache, sbleakKey("status", tag, base, dkTag, sb, 0),
+                kmcMakeGraph(stx, sty, std::vector<Double_t>(), "st"));
+  }
+  TGraphErrors* gCur =
+      kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_") + tag + "_" + base + "_" + dkTag + "_w0_mebkg_norm");
+  TGraphErrors* gD = pwgMakeGraphDiff(gN, gCur, "dC leak");
+  sbleakStore(cfCache, sbleakKey("delta", tag, base, dkTag, sb, 0), gD);
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("nNegSE", tag, base, dkTag, sb, 0))] = (Double_t)nNegSE;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("nNegME", tag, base, dkTag, sb, 0))] = (Double_t)nNegME;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("nInvalid", tag, base, dkTag, sb, 0))] = (Double_t)nInv;
+  Double_t mxAll = 0.0, kAll = -1.0, mxLo = 0.0, kLo = -1.0;
+  const Double_t lowK = 5.0 * getKstarMassFitCfKstarBinTarget();
+  if (gD) {
+    pwgMaxAbsOnGraph(gD, mxAll, kAll);
+    for (Int_t i = 0; i < gD->GetN(); ++i) {
+      Double_t x = 0.0, y = 0.0;
+      gD->GetPoint(i, x, y);
+      if (x >= lowK) continue;
+      if (TMath::Abs(y) > mxLo) {
+        mxLo = TMath::Abs(y);
+        kLo = x;
+      }
+    }
+  }
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("maxAbsDeltaAll", tag, base, dkTag, sb, 0))] = mxAll;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("maxAbsDeltaAllAt", tag, base, dkTag, sb, 0))] = kAll;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("maxAbsDeltaLowK", tag, base, dkTag, sb, 0))] = mxLo;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("maxAbsDeltaLowKAt", tag, base, dkTag, sb, 0))] = kLo;
+  const Double_t dkPrint = (dkTag && std::strcmp(dkTag, "dk80") == 0) ? (2.0 * getKstarMassFitCfKstarBinTarget())
+                                                                     : getKstarMassFitCfKstarBinTarget();
+  std::cout << "[SBLEAK] channel=" << base << " template=" << tag << " sideband=" << sb << " dk=" << Form("%.3f", dkPrint)
+            << std::endl;
+  std::cout << "[SBLEAK] maxAbsDeltaLowK=" << mxLo << " at k*=" << kLo << std::endl;
+  std::cout << "[SBLEAK] maxAbsDeltaAll=" << mxAll << " at k*=" << kAll << std::endl;
+  std::cout << "[SBLEAK] negativeSE=" << nNegSE << " negativeME=" << nNegME << " invalid=" << nInv << std::endl;
+}
+
+static void sbleakFakeResidualOne(TH1* hF, TH1* hB, Int_t o0, Int_t o1, Int_t m0, Int_t m1, Int_t i0, Int_t i1,
+                                  Double_t& r, Double_t& er) {
+  r = 0.0;
+  er = 0.0;
+  if (!hF || !hB) return;
+  Double_t eFf = 0.0, eFc0 = 0.0, eFc1 = 0.0, eBf = 0.0, eBc0 = 0.0, eBc1 = 0.0;
+  const Double_t ff = hF->IntegralAndError(m0, m1, eFf);
+  const Double_t fc = hF->IntegralAndError(o0, o1, eFc0) + hF->IntegralAndError(i0, i1, eFc1);
+  const Double_t eFc = TMath::Sqrt(eFc0 * eFc0 + eFc1 * eFc1);
+  const Double_t bf = hB->IntegralAndError(m0, m1, eBf);
+  const Double_t bc = hB->IntegralAndError(o0, o1, eBc0) + hB->IntegralAndError(i0, i1, eBc1);
+  const Double_t eBc = TMath::Sqrt(eBc0 * eBc0 + eBc1 * eBc1);
+  Double_t t = 0.0, et = 0.0, y = 0.0, ey = 0.0;
+  Int_t st = kSbleakInvalidT;
+  sbleakTransferYield(ff, eFf, fc, eFc, bf, eBf, bc, eBc, t, et, y, ey, st);
+  if (st != kSbleakOk || !(TMath::Abs(ff) > 0.0) || !TMath::Finite(ff)) return;
+  r = y / ff;
+  er = TMath::Sqrt(TMath::Power(ey / ff, 2) + TMath::Power(y * eFf / (ff * ff), 2));
+  if (!TMath::Finite(r) || !TMath::Finite(er)) {
+    r = 0.0;
+    er = 0.0;
+  }
+}
+
+static void sbleakComputeFake(TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bme, const std::string& base, const char* tag,
+                             const char* side, Bool_t lowIsOuter, std::vector<TH1*>& keepAlive,
+                             std::map<std::string, TGraphErrors*>& cfCache, std::map<std::string, Double_t>& meta) {
+  if (!h2Fse || !h2Fme || !h2Bse || !h2Bme) return;
+  Double_t lMin = 0.0, lMax = 0.0, rMin = 0.0, rMax = 0.0;
+  getChannelSidebandWindows(base, lMin, lMax, rMin, rMax);
+  const Double_t mLo = (std::strcmp(side, "lsb") == 0) ? lMin : rMin;
+  const Double_t mHi = (std::strcmp(side, "lsb") == 0) ? lMax : rMax;
+  Int_t o0 = 0, o1 = 0, m0 = 0, m1 = 0, i0 = 0, i1 = 0;
+  if (!sbleakSplitThree(h2Fse->GetXaxis(), mLo, mHi, o0, o1, m0, m1, i0, i1, lowIsOuter)) {
+    sbleakStore(cfCache, sbleakKey("fakeclosure", tag, base, 0, side, "se"), 0);
+    sbleakStore(cfCache, sbleakKey("fakeclosure", tag, base, 0, side, "me"), 0);
+    meta[cfSliceCacheKey("pct_0_60", sbleakKey("fakeChi2NdfSE", tag, base, 0, side, 0))] = -1.0;
+    meta[cfSliceCacheKey("pct_0_60", sbleakKey("fakeChi2NdfME", tag, base, 0, side, 0))] = -1.0;
+    std::cout << "[SBLEAK] fakeClosureChi2NdfSE=-1 fakeClosureChi2NdfME=-1 (split n<3) channel=" << base
+              << " template=" << tag << " sideband=" << side << std::endl;
+    return;
+  }
+  Double_t pMin = 0.0, pMax = 0.65, fitMin = 0.0, fitMax = 0.0, s0 = 0.0, s1 = 0.0, c0 = 0.0, c1 = 0.0;
+  Int_t minE = 20;
+  Bool_t pol = kTRUE;
+  getKstarMassFitCfFitConfig(fitMin, fitMax, s0, s1, pMin, pMax, minE, c0, c1, pol);
+  const Int_t lowMerge = getKstarMassFitCfLowKstarMergeBins();
+  std::vector<Double_t> kx, rSE, eSE, rME, eME, pSE, pME;
+  Double_t chiSE = 0.0, chiME = 0.0;
+  Int_t nSE = 0, nME = 0;
+  Double_t mxSE = 0.0, kSE = -1.0, mxME = 0.0, kME = -1.0;
+  const Double_t lowK = 5.0 * getKstarMassFitCfKstarBinTarget();
+  for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
+    const Int_t iyFirst = iy;
+    const Int_t iyLast = (iyFirst == 1) ? TMath::Min(h2Fse->GetNbinsY(), lowMerge) : iyFirst;
+    iy = iyLast;
+    const Double_t kstar =
+        0.5 * (h2Fse->GetYaxis()->GetBinLowEdge(iyFirst) + h2Fse->GetYaxis()->GetBinUpEdge(iyLast));
+    if (kstar < pMin || kstar > pMax) continue;
+    TH1* hFse = kmcProjectMassNative(h2Fse, iyFirst, iyLast, "fkFse", keepAlive);
+    TH1* hFme = kmcProjectMassNative(h2Fme, iyFirst, iyLast, "fkFme", keepAlive);
+    TH1* hBse = kmcProjectMassNative(h2Bse, iyFirst, iyLast, "fkBse", keepAlive);
+    TH1* hBme = kmcProjectMassNative(h2Bme, iyFirst, iyLast, "fkBme", keepAlive);
+    Double_t rse = 0.0, erse = 0.0, rme = 0.0, erme = 0.0;
+    sbleakFakeResidualOne(hFse, hBse, o0, o1, m0, m1, i0, i1, rse, erse);
+    sbleakFakeResidualOne(hFme, hBme, o0, o1, m0, m1, i0, i1, rme, erme);
+    kx.push_back(kstar);
+    rSE.push_back(rse);
+    eSE.push_back(erse);
+    rME.push_back(rme);
+    eME.push_back(erme);
+    const Double_t pse = (erse > 0.0) ? rse / erse : 0.0;
+    const Double_t pme = (erme > 0.0) ? rme / erme : 0.0;
+    pSE.push_back(pse);
+    pME.push_back(pme);
+    if (erse > 0.0 && TMath::Finite(pse)) {
+      chiSE += pse * pse;
+      ++nSE;
+    }
+    if (erme > 0.0 && TMath::Finite(pme)) {
+      chiME += pme * pme;
+      ++nME;
+    }
+    if (kstar < lowK) {
+      if (TMath::Abs(rse) > mxSE) {
+        mxSE = TMath::Abs(rse);
+        kSE = kstar;
+      }
+      if (TMath::Abs(rme) > mxME) {
+        mxME = TMath::Abs(rme);
+        kME = kstar;
+      }
+    }
+  }
+  sbleakStore(cfCache, sbleakKey("fakeclosure", tag, base, 0, side, "se"), kmcMakeGraph(kx, rSE, eSE, "r_SE fake"));
+  sbleakStore(cfCache, sbleakKey("fakeclosure", tag, base, 0, side, "me"), kmcMakeGraph(kx, rME, eME, "r_ME fake"));
+  sbleakStore(cfCache, sbleakKey("fakepull", tag, base, 0, side, "se"),
+              kmcMakeGraph(kx, pSE, std::vector<Double_t>(), "pull SE"));
+  sbleakStore(cfCache, sbleakKey("fakepull", tag, base, 0, side, "me"),
+              kmcMakeGraph(kx, pME, std::vector<Double_t>(), "pull ME"));
+  const Double_t chi2se = (nSE > 0) ? chiSE / (Double_t)nSE : -1.0;
+  const Double_t chi2me = (nME > 0) ? chiME / (Double_t)nME : -1.0;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("fakeChi2NdfSE", tag, base, 0, side, 0))] = chi2se;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("fakeChi2NdfME", tag, base, 0, side, 0))] = chi2me;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("fakeMaxAbsSE", tag, base, 0, side, 0))] = mxSE;
+  meta[cfSliceCacheKey("pct_0_60", sbleakKey("fakeMaxAbsME", tag, base, 0, side, 0))] = mxME;
+  (void)kSE;
+  (void)kME;
+  std::cout << "[SBLEAK] channel=" << base << " template=" << tag << " sideband=" << side << " dk=fake"
+            << std::endl;
+  std::cout << "[SBLEAK] fakeClosureChi2NdfSE=" << chi2se << " fakeClosureChi2NdfME=" << chi2me << std::endl;
+}
+
+static TGraphErrors* sbleakEnvelope(std::map<std::string, TGraphErrors*>& cfCache, const std::string& base,
+                                   const char* dkTag) {
+  const char* tags[] = {"rot", "mix", 0};
+  const char* sbs[] = {"lsb", "rsb", "sblr", 0};
+  TGraphErrors* g0 = sbleakLoad(cfCache, sbleakKey("CF", "rot", base, dkTag, "sblr", "norm"));
+  if (!g0) g0 = sbleakLoad(cfCache, sbleakKey("CF", "mix", base, dkTag, "sblr", "norm"));
+  if (!g0) return 0;
+  std::vector<Double_t> x, y, e;
+  for (Int_t i = 0; i < g0->GetN(); ++i) {
+    Double_t xx = 0.0, yy0 = 0.0;
+    g0->GetPoint(i, xx, yy0);
+    Double_t ymin = yy0, ymax = yy0;
+    Bool_t any = kFALSE;
+    for (Int_t it = 0; tags[it]; ++it) {
+      for (Int_t is = 0; sbs[is]; ++is) {
+        TGraphErrors* g = sbleakLoad(cfCache, sbleakKey("CF", tags[it], base, dkTag, sbs[is], "norm"));
+        if (!g) continue;
+        for (Int_t j = 0; j < g->GetN(); ++j) {
+          Double_t xj = 0.0, yj = 0.0;
+          g->GetPoint(j, xj, yj);
+          if (TMath::Abs(xj - xx) > 0.021) continue;
+          if (!any) {
+            ymin = yj;
+            ymax = yj;
+            any = kTRUE;
+          } else {
+            if (yj < ymin) ymin = yj;
+            if (yj > ymax) ymax = yj;
+          }
+        }
+      }
+    }
+    if (!any) continue;
+    x.push_back(xx);
+    y.push_back(0.5 * (ymin + ymax));
+    e.push_back(0.5 * (ymax - ymin));
+  }
+  return kmcMakeGraph(x, y, e, "envelope");
+}
+
+static void sbleakOverlay(TGraphErrors* g0, TGraphErrors* g1, TGraphErrors* g2, const char* title, const char* n0,
+                          const char* n1, const char* n2, Double_t y0, Double_t y1) {
+  TGraphErrors* g = g0 ? g0 : (g1 ? g1 : g2);
+  if (!g) {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.12, 0.5, "missing");
+    return;
+  }
+  const Int_t col0 = g2 ? kBlack : kCfColRot;
+  const Int_t col1 = g2 ? kCfColRot : kCfColMix;
+  pwgStyleCfGraph(g, col0, 20);
+  g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+  g->Draw("AP");
+  if (g->GetHistogram()) {
+    g->GetHistogram()->SetTitle(title);
+    if (y1 > y0) g->GetHistogram()->GetYaxis()->SetRangeUser(y0, y1);
+  }
+  if (g1 && g1 != g) {
+    pwgStyleCfGraph(g1, col1, 21);
+    g1->Draw("P SAME");
+  }
+  if (g2 && g2 != g && g2 != g1) {
+    pwgStyleCfGraph(g2, kCfColMix, 22);
+    g2->Draw("P SAME");
+  }
+  pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+  TLegend* leg = new TLegend(0.50, 0.68, 0.88, 0.88);
+  leg->SetBorderSize(0);
+  leg->SetFillStyle(0);
+  if (g0) leg->AddEntry(g0, n0, "p");
+  if (g1) leg->AddEntry(g1, n1, "p");
+  if (g2) leg->AddEntry(g2, n2, "p");
+  leg->Draw();
+}
+
+static void drawSbleakGuidePage(TCanvas* canvas, const TString& pdfPath) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1400, 900);
+  canvas->cd();
+  TLatex* t = new TLatex();
+  t->SetNDC(kTRUE);
+  t->SetTextFont(62);
+  t->SetTextSize(0.036);
+  t->DrawLatex(0.07, 0.93, "P2: data-sideband leakage study  (diagnostic, not a physics claim)");
+  t->SetTextFont(42);
+  t->SetTextSize(0.022);
+  Double_t y = 0.87;
+  const Double_t dy = 0.038;
+  t->DrawLatex(0.07, y, "t^{SB}_{X,T}(k*) = B^{W}_{X,T}(k*) / B^{SB}_{X,T}(k*);   #hat{B}^{W,SB} = t F^{SB};   Y = F^{W} - #hat{B}.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "C_{T,SB}^{corr} = #mathcal{N} Y_{SE}^{SB} / Y_{ME}^{SB}.  Data sideband keeps data correlations; ROT/MIX transfer mass shape only.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Windows from YAML: signal, LSB, RSB.  SBLR = LSB+RSB counts (not a width average).  Templates ROT and MIX.  40 and 80 MeV/c.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Error model: diagonal analytic errors; common normalization and transfer-factor correlations are not included.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Negative yields are not clipped.  Status: invalid transfer / non-positive SE / non-positive ME / large rel. err. / norm fail.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "#Delta C_{leak} = C_{corr} - C_{current} with C_{current} = CF_kmc_*_dk40_w0_mebkg_norm.  Leakage is this difference, not raw SB CF.");
+  y -= dy;
+  t->DrawLatex(0.07, y, "Mass slices: LSB/RSB each split on native bin edges (outer/inner).  Fake closure: each SB split into 3 (outer / middle / inner).");
+  y -= dy;
+  t->DrawLatex(0.07, y, "No Gaussian fit.  No Maker/YAML change.  Do not infer attraction/repulsion/bound state from C(k*).");
+  canvas->Print(pdfPath);
+}
+
+static void drawSbleakMassSlicePage(TCanvas* canvas, TFile* fin, const TString& pdfPath, const std::string& base,
+                                   std::vector<TH1*>& keepAlive) {
+  if (!canvas) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  if (!sl || !fin) {
+    drawPwgMissingPage(canvas, pdfPath, Form("P2-1 %s mass-slice CF", base.c_str()), "slice or file missing");
+    return;
+  }
+  const Double_t dk = getKstarMassFitCfKstarBinTarget();
+  TH2 *fse = 0, *fme = 0, *rse = 0, *rme = 0, *mse = 0, *mme = 0, *d1 = 0, *d2 = 0;
+  const Bool_t haveRot = kmfLoadFAndB(fin, sl, base, "rot", dk, fse, fme, rse, rme);
+  const Bool_t haveMix = kmfLoadFAndB(fin, sl, base, "mix", dk, d1, d2, mse, mme);
+  if (!haveRot && haveMix) {
+    fse = d1;
+    fme = d2;
+    d1 = 0;
+    d2 = 0;
+  } else {
+    kmfDelete2s(d1, d2, 0, 0);
+    d1 = d2 = 0;
+  }
+  if (!fse || !fme) {
+    drawPwgMissingPage(canvas, pdfPath, Form("P2-1 %s mass-slice CF", base.c_str()), "missing wide TH3 F_SE/F_ME");
+    kmfDelete2s(fse, fme, rse, rme);
+    kmfDelete2s(0, 0, mse, mme);
+    return;
+  }
+  (void)haveRot;
+  (void)haveMix;
+  Double_t lMin = 0, lMax = 0, rMin = 0, rMax = 0;
+  getChannelSidebandWindows(base, lMin, lMax, rMin, rMax);
+  const Double_t qMin = channelNormQMin(channelSignal(base));
+  const Double_t qMax = channelNormQMax(channelSignal(base));
+  Int_t lo0 = 0, lo1 = 0, li0 = 0, li1 = 0, ri0 = 0, ri1 = 0, ro0 = 0, ro1 = 0;
+  const Bool_t okL = sbleakSplitHalves(fse->GetXaxis(), lMin, lMax, lo0, lo1, li0, li1, kTRUE);
+  const Bool_t okR = sbleakSplitHalves(fse->GetXaxis(), rMin, rMax, ro0, ro1, ri0, ri1, kFALSE);
+  if (!okL || !okR) {
+    drawPwgMissingPage(canvas, pdfPath, Form("P2-1 %s mass-slice CF", base.c_str()), "sideband n<2 native bins");
+    kmfDelete2s(fse, fme, rse, rme);
+    kmfDelete2s(0, 0, mse, mme);
+    return;
+  }
+  struct Sl {
+    const char* name;
+    Int_t a, b;
+  };
+  const Sl sls[4] = {{"LSB outer", lo0, lo1}, {"LSB inner", li0, li1}, {"RSB inner", ri0, ri1}, {"RSB outer", ro0, ro1}};
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1100);
+  canvas->Divide(3, 2);
+  TGraphErrors* dRot[4] = {0, 0, 0, 0};
+  TGraphErrors* dMix[4] = {0, 0, 0, 0};
+  Int_t cols[4] = {kBlack, kRed + 1, kBlue + 1, kGreen + 2};
+  for (Int_t is = 0; is < 4; ++is) {
+    const Double_t mLo = fse->GetXaxis()->GetBinLowEdge(sls[is].a);
+    const Double_t mHi = fse->GetXaxis()->GetBinUpEdge(sls[is].b);
+    TH1* hFse = kmfProjectKstarMassWindow(fse, mLo, mHi, "msFse", keepAlive);
+    TH1* hFme = kmfProjectKstarMassWindow(fme, mLo, mHi, "msFme", keepAlive);
+    TH1* hRse = kmfProjectKstarMassWindow(rse, mLo, mHi, "msRse", keepAlive);
+    TH1* hRme = kmfProjectKstarMassWindow(rme, mLo, mHi, "msRme", keepAlive);
+    TH1* hMse = kmfProjectKstarMassWindow(mse, mLo, mHi, "msMse", keepAlive);
+    TH1* hMme = kmfProjectKstarMassWindow(mme, mLo, mHi, "msMme", keepAlive);
+    TGraphErrors* gF = computeCfGraphFromSeMe(hFse, hFme, qMin, qMax, Form("F %s", sls[is].name));
+    TGraphErrors* gR = computeCfGraphFromSeMe(hRse, hRme, qMin, qMax, Form("ROT %s", sls[is].name));
+    TGraphErrors* gM = computeCfGraphFromSeMe(hMse, hMme, qMin, qMax, Form("MIX %s", sls[is].name));
+    if (is < 4) {
+      canvas->cd(is + 1);
+      sbleakOverlay(gF, gR, gM, Form("%s %s;k*;C", base.c_str(), sls[is].name), "data F", "ROT", "MIX", kCfYMin, kCfYMax);
+    }
+    dRot[is] = pwgMakeGraphDiff(gR, gF, Form("ROT-F %s", sls[is].name));
+    dMix[is] = pwgMakeGraphDiff(gM, gF, Form("MIX-F %s", sls[is].name));
+  }
+  canvas->cd(5);
+  {
+    Bool_t first = kTRUE;
+    for (Int_t is = 0; is < 4; ++is) {
+      if (!dRot[is]) continue;
+      pwgStyleCfGraph(dRot[is], cols[is], 20 + is);
+      if (first) {
+        dRot[is]->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        dRot[is]->Draw("AP");
+        if (dRot[is]->GetHistogram()) {
+          dRot[is]->GetHistogram()->SetTitle(Form("%s C_{ROT}-C_{F};k*;#Delta C", base.c_str()));
+          dRot[is]->GetHistogram()->GetYaxis()->SetRangeUser(-0.3, 0.3);
+        }
+        first = kFALSE;
+      } else {
+        dRot[is]->Draw("P SAME");
+      }
+    }
+    if (first) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, "missing");
+    } else {
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+    }
+  }
+  canvas->cd(6);
+  {
+    Bool_t first = kTRUE;
+    TLegend* leg = new TLegend(0.55, 0.62, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    for (Int_t is = 0; is < 4; ++is) {
+      if (!dMix[is]) continue;
+      pwgStyleCfGraph(dMix[is], cols[is], 20 + is);
+      if (first) {
+        dMix[is]->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        dMix[is]->Draw("AP");
+        if (dMix[is]->GetHistogram()) {
+          dMix[is]->GetHistogram()->SetTitle(Form("%s C_{MIX}-C_{F};k*;#Delta C", base.c_str()));
+          dMix[is]->GetHistogram()->GetYaxis()->SetRangeUser(-0.3, 0.3);
+        }
+        first = kFALSE;
+      } else {
+        dMix[is]->Draw("P SAME");
+      }
+      leg->AddEntry(dMix[is], sls[is].name, "p");
+    }
+    if (first) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, "missing");
+    } else {
+      pwgDrawUnity(kCfKstarXMin, kCfKstarXMax);
+      leg->Draw();
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97, Form("P2-1  %s  mass-slice data / ROT / MIX CF   pct_0_60", base.c_str()));
+  canvas->Print(pdfPath);
+  kmfDelete2s(fse, fme, rse, rme);
+  kmfDelete2s(0, 0, mse, mme);
+}
+
+static void drawSbleakTransferPage(TCanvas* canvas, const TString& pdfPath, std::map<std::string, TGraphErrors*>& cfCache,
+                                  const std::string& base) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1000);
+  canvas->Divide(2, 2);
+  const char* sbs[] = {"lsb", "rsb", "sblr", 0};
+  const char* nms[] = {"LSB", "RSB", "SBLR", 0};
+  Int_t cols[3] = {kBlack, kRed + 1, kBlue + 1};
+  const char* pads[4][2] = {{"rot", "se"}, {"rot", "me"}, {"mix", "se"}, {"mix", "me"}};
+  const char* titles[4] = {"ROT SE", "ROT ME", "MIX SE", "MIX ME"};
+  for (Int_t ip = 0; ip < 4; ++ip) {
+    canvas->cd(ip + 1);
+    Bool_t first = kTRUE;
+    TLegend* leg = new TLegend(0.55, 0.68, 0.88, 0.88);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    for (Int_t is = 0; sbs[is]; ++is) {
+      TGraphErrors* g = sbleakLoad(cfCache, sbleakKey("transfer", pads[ip][0], base, "dk40", sbs[is], pads[ip][1]));
+      if (!g) continue;
+      pwgStyleCfGraph(g, cols[is], 20 + is);
+      if (first) {
+        g->GetXaxis()->SetLimits(kCfKstarXMin, kCfKstarXMax);
+        g->Draw("AP");
+        if (g->GetHistogram()) g->GetHistogram()->SetTitle(Form("%s t^{SB} %s;k*;t", base.c_str(), titles[ip]));
+        first = kFALSE;
+      } else {
+        g->Draw("P SAME");
+      }
+      leg->AddEntry(g, nms[is], "p");
+    }
+    if (first) {
+      TLatex* z = new TLatex();
+      z->SetNDC(kTRUE);
+      z->DrawLatex(0.12, 0.5, "missing");
+    } else {
+      leg->Draw();
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97, Form("P2-2  %s  transfer factors  LSB/RSB/SBLR  SE/ME  ROT/MIX  40 MeV/c", base.c_str()));
+  canvas->Print(pdfPath);
+}
+
+static void drawSbleakCorrectedPage(TCanvas* canvas, const TString& pdfPath, std::map<std::string, TGraphErrors*>& cfCache,
+                                   const std::string& base) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1100);
+  canvas->Divide(3, 2);
+  TGraphErrors* gCur =
+      kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk40_w0_mebkg_norm");
+  TGraphErrors* gR = sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk40", "sblr", "norm"));
+  TGraphErrors* gM = sbleakLoad(cfCache, sbleakKey("CF", "mix", base, "dk40", "sblr", "norm"));
+  canvas->cd(1);
+  sbleakOverlay(gCur, gR, gM, Form("%s current vs SBLR corr;k*;C", base.c_str()), "current", "ROT SBLR", "MIX SBLR",
+                kCfYMin, kCfYMax);
+  canvas->cd(2);
+  sbleakOverlay(sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk40", "lsb", "norm")),
+                sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk40", "rsb", "norm")),
+                sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk40", "sblr", "norm")),
+                Form("%s ROT LSB/RSB/SBLR;k*;C", base.c_str()), "LSB", "RSB", "SBLR", kCfYMin, kCfYMax);
+  canvas->cd(3);
+  sbleakOverlay(sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk40", "sblr", "norm")),
+                sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk80", "sblr", "norm")), 0,
+                Form("%s SBLR 40 vs 80;k*;C", base.c_str()), "40 MeV/c", "80 MeV/c", "", kCfYMin, kCfYMax);
+  canvas->cd(4);
+  TGraphErrors* dR = sbleakLoad(cfCache, sbleakKey("delta", "rot", base, "dk40", "sblr", 0));
+  TGraphErrors* dM = sbleakLoad(cfCache, sbleakKey("delta", "mix", base, "dk40", "sblr", 0));
+  kmcDrawGraphOrMissing(dR ? dR : dM, Form("%s #Delta C_{leak}=C_{corr}-C_{current};k*;#Delta C", base.c_str()), -0.25,
+                        0.25, kBlue + 1, 20, kTRUE);
+  if (dR && dM && dM != dR) {
+    pwgStyleCfGraph(dM, kRed + 1, 21);
+    dM->Draw("P SAME");
+  }
+  canvas->cd(5);
+  TGraphErrors* env = sbleakLoad(cfCache, sbleakKey("envelope", 0, base, "dk40", 0, 0));
+  kmcDrawGraphOrMissing(env, Form("%s variation envelope;k*;C", base.c_str()), kCfYMin, kCfYMax, kMagenta + 1, 21,
+                        kTRUE);
+  canvas->cd(6);
+  TGraphErrors* gSt = sbleakLoad(cfCache, sbleakKey("status", "rot", base, "dk40", "sblr", 0));
+  TGraphErrors* gY = sbleakLoad(cfCache, sbleakKey("Y", "rot", base, "dk40", "sblr", "se"));
+  if (gY) {
+    std::vector<Double_t> x, y, e;
+    for (Int_t i = 0; i < gY->GetN(); ++i) {
+      Double_t xx = 0, yy = 0;
+      gY->GetPoint(i, xx, yy);
+      const Double_t ey = gY->GetErrorY(i);
+      if (!(TMath::Abs(yy) > 0.0)) continue;
+      x.push_back(xx);
+      y.push_back(TMath::Abs(ey / yy));
+      e.push_back(0.0);
+    }
+    TGraphErrors* gre = kmcMakeGraph(x, y, e, "rel");
+    kmcDrawGraphOrMissing(gre, Form("%s |#sigma_Y/Y|_{SE} (SBLR ROT);k*;rel", base.c_str()), 0.0, 1.2, kBlack, 20,
+                          kFALSE);
+  } else {
+    kmcDrawGraphOrMissing(gSt, Form("%s status SBLR ROT;k*;status", base.c_str()), -0.5, 7.5, kBlack, 21, kFALSE);
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97, Form("P2-3  %s  data-sideband corrected CF vs current  pct_0_60", base.c_str()));
+  canvas->Print(pdfPath);
+}
+
+static void drawSbleakFakePage(TCanvas* canvas, const TString& pdfPath, std::map<std::string, TGraphErrors*>& cfCache,
+                              std::map<std::string, Double_t>& meta, const std::string& base) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1100);
+  canvas->Divide(3, 2);
+  canvas->cd(1);
+  sbleakOverlay(sbleakLoad(cfCache, sbleakKey("fakeclosure", "rot", base, 0, "lsb", "se")),
+                sbleakLoad(cfCache, sbleakKey("fakeclosure", "mix", base, 0, "lsb", "se")), 0,
+                Form("%s LSB r_{SE}^{fake};k*;r", base.c_str()), "ROT", "MIX", "", -0.4, 0.4);
+  canvas->cd(2);
+  sbleakOverlay(sbleakLoad(cfCache, sbleakKey("fakeclosure", "rot", base, 0, "lsb", "me")),
+                sbleakLoad(cfCache, sbleakKey("fakeclosure", "mix", base, 0, "lsb", "me")), 0,
+                Form("%s LSB r_{ME}^{fake};k*;r", base.c_str()), "ROT", "MIX", "", -0.4, 0.4);
+  canvas->cd(3);
+  kmcDrawGraphOrMissing(sbleakLoad(cfCache, sbleakKey("fakepull", "rot", base, 0, "lsb", "se")),
+                        Form("%s LSB pull SE ROT;k*;pull", base.c_str()), -5.0, 5.0, kBlack, 20, kTRUE);
+  canvas->cd(4);
+  sbleakOverlay(sbleakLoad(cfCache, sbleakKey("fakeclosure", "rot", base, 0, "rsb", "se")),
+                sbleakLoad(cfCache, sbleakKey("fakeclosure", "mix", base, 0, "rsb", "se")), 0,
+                Form("%s RSB r_{SE}^{fake};k*;r", base.c_str()), "ROT", "MIX", "", -0.4, 0.4);
+  canvas->cd(5);
+  sbleakOverlay(sbleakLoad(cfCache, sbleakKey("fakeclosure", "rot", base, 0, "rsb", "me")),
+                sbleakLoad(cfCache, sbleakKey("fakeclosure", "mix", base, 0, "rsb", "me")), 0,
+                Form("%s RSB r_{ME}^{fake};k*;r", base.c_str()), "ROT", "MIX", "", -0.4, 0.4);
+  canvas->cd(6);
+  TLatex* t = new TLatex();
+  t->SetNDC(kTRUE);
+  t->SetTextSize(0.040);
+  const char* keys[4][2] = {{"lsb", "SE"}, {"lsb", "ME"}, {"rsb", "SE"}, {"rsb", "ME"}};
+  Double_t yy = 0.80;
+  for (Int_t i = 0; i < 4; ++i) {
+    const std::string k = sbleakKey((std::strcmp(keys[i][1], "SE") == 0) ? "fakeChi2NdfSE" : "fakeChi2NdfME", "rot",
+                                   base, 0, keys[i][0], 0);
+    Double_t v = -1.0;
+    const std::string ck = cfSliceCacheKey("pct_0_60", k);
+    if (meta.find(ck) != meta.end()) v = meta[ck];
+    t->DrawLatex(0.12, yy, Form("ROT %s %s  #chi^{2}/ndf vs 0 = %.3g", keys[i][0], keys[i][1], v));
+    yy -= 0.10;
+  }
+  t->SetTextSize(0.032);
+  t->DrawLatex(0.12, 0.22, "closure: r^{fake} #simeq 0 (no #phi in sideband)");
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97, Form("P2-4  %s  pseudo-signal closure  (3-way native-bin split)", base.c_str()));
+  canvas->Print(pdfPath);
+}
+
+static void drawSbleakSummaryPage(TCanvas* canvas, const TString& pdfPath, std::map<std::string, TGraphErrors*>& cfCache,
+                                 std::map<std::string, Double_t>& meta) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1100);
+  canvas->Divide(2, 2);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    canvas->cd(ib + 1);
+    TGraphErrors* gCur =
+        kmfLookupGraph(cfCache, "pct_0_60", std::string("CF_kmc_rot_") + base + "_dk40_w0_mebkg_norm");
+    TGraphErrors* gC = sbleakLoad(cfCache, sbleakKey("CF", "rot", base, "dk40", "sblr", "norm"));
+    TGraphErrors* env = sbleakLoad(cfCache, sbleakKey("envelope", 0, base, "dk40", 0, 0));
+    sbleakOverlay(gCur, gC, env, Form("%s current / corr / envelope;k*;C", base.c_str()), "current", "ROT SBLR corr",
+                  "envelope", kCfYMin, kCfYMax);
+    canvas->cd(ib + 3);
+    TLatex* t = new TLatex();
+    t->SetNDC(kTRUE);
+    t->SetTextSize(0.038);
+    auto val = [&](const std::string& k) -> Double_t {
+      const std::string ck = cfSliceCacheKey("pct_0_60", k);
+      return (meta.find(ck) != meta.end()) ? meta[ck] : -1.0;
+    };
+    Double_t y = 0.82;
+    t->DrawLatex(0.10, y, Form("%s  pct_0_60", base.c_str()));
+    y -= 0.10;
+    t->DrawLatex(0.10, y,
+                 Form("max |#Delta C_{leak}| (k* < 5#Delta k*) = %.4g at k* = %.3g",
+                      val(sbleakKey("maxAbsDeltaLowK", "rot", base, "dk40", "sblr", 0)),
+                      val(sbleakKey("maxAbsDeltaLowKAt", "rot", base, "dk40", "sblr", 0))));
+    y -= 0.08;
+    t->DrawLatex(0.10, y,
+                 Form("max |#Delta C_{leak}| (all) = %.4g at k* = %.3g",
+                      val(sbleakKey("maxAbsDeltaAll", "rot", base, "dk40", "sblr", 0)),
+                      val(sbleakKey("maxAbsDeltaAllAt", "rot", base, "dk40", "sblr", 0))));
+    y -= 0.08;
+    t->DrawLatex(0.10, y,
+                 Form("fake #chi^{2}/ndf SE/ME (LSB ROT) = %.3g / %.3g",
+                      val(sbleakKey("fakeChi2NdfSE", "rot", base, 0, "lsb", 0)),
+                      val(sbleakKey("fakeChi2NdfME", "rot", base, 0, "lsb", 0))));
+    y -= 0.08;
+    t->DrawLatex(0.10, y,
+                 Form("negative SE/ME = %.0f / %.0f    invalid = %.0f",
+                      val(sbleakKey("nNegSE", "rot", base, "dk40", "sblr", 0)),
+                      val(sbleakKey("nNegME", "rot", base, "dk40", "sblr", 0)),
+                      val(sbleakKey("nInvalid", "rot", base, "dk40", "sblr", 0))));
+    y -= 0.10;
+    t->SetTextSize(0.030);
+    t->DrawLatex(0.10, y, "diagonal analytic errors; common-norm / transfer correlations not included");
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97, "P2-5  leakage summary  #phi-p / #phi-d   (G-QM-A diagnostic only)");
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfSidebandLeakageSection(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                          std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache,
+                                          std::map<std::string, Double_t>& metaCache) {
+  if (!canvas) return;
+  const FemtoConfig::CfCentSlice* sl = findCfCentSliceById("pct_0_60");
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  const char* tags[] = {"rot", "mix", 0};
+  const char* sbs[] = {"lsb", "rsb", "sblr", 0};
+  const Double_t dks[2] = {getKstarMassFitCfKstarBinTarget(), 2.0 * getKstarMassFitCfKstarBinTarget()};
+  const char* dkTags[2] = {"dk40", "dk80"};
+  if (sl && fin) {
+    Double_t sigMin = 0, sigMax = 0, lMin = 0, lMax = 0, rMin = 0, rMax = 0;
+    getChannelSignalMassWindow(channelSignal("phi_proton"), sigMin, sigMax);
+    getChannelSidebandWindows("phi_proton", lMin, lMax, rMin, rMax);
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_sigMin_phi_proton")] = sigMin;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_sigMax_phi_proton")] = sigMax;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_lsbMin_phi_proton")] = lMin;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_lsbMax_phi_proton")] = lMax;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_rsbMin_phi_proton")] = rMin;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_rsbMax_phi_proton")] = rMax;
+    getChannelSignalMassWindow(channelSignal("phi_deuteron"), sigMin, sigMax);
+    getChannelSidebandWindows("phi_deuteron", lMin, lMax, rMin, rMax);
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_sigMin_phi_deuteron")] = sigMin;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_sigMax_phi_deuteron")] = sigMax;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_lsbMin_phi_deuteron")] = lMin;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_lsbMax_phi_deuteron")] = lMax;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_rsbMin_phi_deuteron")] = rMin;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_rsbMax_phi_deuteron")] = rMax;
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_normQMin")] = channelNormQMin(channelSignal("phi_proton"));
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_normQMax")] = channelNormQMax(channelSignal("phi_proton"));
+    metaCache[cfSliceCacheKey("pct_0_60", "kmf_sbleak_dk")] = dks[0];
+    for (Int_t ib = 0; bases[ib]; ++ib) {
+      const std::string base(bases[ib]);
+      for (Int_t it = 0; tags[it]; ++it) {
+        for (Int_t id = 0; id < 2; ++id) {
+          TH2 *h2Fse = 0, *h2Fme = 0, *h2Bse = 0, *h2Bme = 0;
+          if (!kmfLoadFAndB(fin, sl, base, tags[it], dks[id], h2Fse, h2Fme, h2Bse, h2Bme)) {
+            std::cout << "[SBLEAK] missing TH3 " << base << " " << tags[it] << " " << dkTags[id] << std::endl;
+            kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+            continue;
+          }
+          for (Int_t is = 0; sbs[is]; ++is)
+            sbleakComputeCorrected(h2Fse, h2Fme, h2Bse, h2Bme, base, tags[it], dkTags[id], sbs[is], keepAlive, cfCache,
+                                   metaCache);
+          if (id == 0) {
+            sbleakComputeFake(h2Fse, h2Fme, h2Bse, h2Bme, base, tags[it], "lsb", kTRUE, keepAlive, cfCache, metaCache);
+            sbleakComputeFake(h2Fse, h2Fme, h2Bse, h2Bme, base, tags[it], "rsb", kFALSE, keepAlive, cfCache, metaCache);
+          }
+          kmfDelete2s(h2Fse, h2Fme, h2Bse, h2Bme);
+        }
+      }
+      TGraphErrors* env = sbleakEnvelope(cfCache, base, "dk40");
+      sbleakStore(cfCache, sbleakKey("envelope", 0, base, "dk40", 0, 0), env);
+    }
+  }
+  drawSbleakGuidePage(canvas, pdfPath);
+  drawSbleakMassSlicePage(canvas, fin, pdfPath, "phi_proton", keepAlive);
+  drawSbleakMassSlicePage(canvas, fin, pdfPath, "phi_deuteron", keepAlive);
+  if (!sl || !fin) {
+    drawPwgMissingPage(canvas, pdfPath, "P2-2 phi_proton transfer", "pct_0_60 or file missing");
+    drawPwgMissingPage(canvas, pdfPath, "P2-2 phi_deuteron transfer", "pct_0_60 or file missing");
+    drawPwgMissingPage(canvas, pdfPath, "P2-3 phi_proton corrected CF", "pct_0_60 or file missing");
+    drawPwgMissingPage(canvas, pdfPath, "P2-3 phi_deuteron corrected CF", "pct_0_60 or file missing");
+    drawPwgMissingPage(canvas, pdfPath, "P2-4 phi_proton fake closure", "pct_0_60 or file missing");
+    drawPwgMissingPage(canvas, pdfPath, "P2-4 phi_deuteron fake closure", "pct_0_60 or file missing");
+    drawPwgMissingPage(canvas, pdfPath, "P2-5 leakage summary", "pct_0_60 or file missing");
+    return;
+  }
+  drawSbleakTransferPage(canvas, pdfPath, cfCache, "phi_proton");
+  drawSbleakTransferPage(canvas, pdfPath, cfCache, "phi_deuteron");
+  drawSbleakCorrectedPage(canvas, pdfPath, cfCache, "phi_proton");
+  drawSbleakCorrectedPage(canvas, pdfPath, cfCache, "phi_deuteron");
+  drawSbleakFakePage(canvas, pdfPath, cfCache, metaCache, "phi_proton");
+  drawSbleakFakePage(canvas, pdfPath, cfCache, metaCache, "phi_deuteron");
+  drawSbleakSummaryPage(canvas, pdfPath, cfCache, metaCache);
+}
+
+
+static void drawKmcSection(TCanvas* canvas, TFile* fin, const TString& pdfPath, std::vector<TH1*>& keepAlive,
+                           std::map<std::string, TGraphErrors*>& cfCache, std::map<std::string, Double_t>& metaCache) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* sl060 = findCfCentSliceById("pct_0_60");
+  if (sl060) {
+    const char* basesE[] = {"phi_proton", "phi_deuteron", 0};
+    const char* tagsE[] = {"rot", "mix", 0};
+    // The configured width belongs in this list. It used to hold only the two comparison widths,
+    // so the nominal point set never passed through kmfEnsureYieldsCached and was the one set
+    // with no fit diagnostics in the sidecar. Its yields already exist by this point, so the call
+    // only adds what is missing.
+    const Double_t dkNom = getKstarMassFitCfKstarBinTarget();
+    const Int_t nDk = (dkNom > 0.0 && TMath::Abs(dkNom - 0.040) > 1e-6 &&
+                       TMath::Abs(dkNom - 0.080) > 1e-6) ? 3 : 2;
+    Double_t dksE[3] = {0.040, 0.080, dkNom};
+    for (Int_t ib = 0; basesE[ib]; ++ib) {
+      for (Int_t it = 0; tagsE[it]; ++it) {
+        for (Int_t idk = 0; idk < nDk; ++idk) {
+          kmfEnsureYieldsCached(fin, sl060, basesE[ib], tagsE[it], dksE[idk], keepAlive, cfCache, 0);
+        }
+      }
+    }
+  }
+  kmcEnsureAll(fin, keepAlive, cfCache, metaCache);
+  kmcFillFitAudit(fin, keepAlive, cfCache);
+  drawKmcGuidePage(canvas, pdfPath);
+  drawKmfWindowCountMassPages(canvas, fin, pdfPath, keepAlive, cfCache);
+  drawKmcIntegratedResidualPage(canvas, fin, pdfPath, keepAlive);
+  drawKmcYieldSummaryPage(canvas, pdfPath, cfCache);
+  drawKmfFitVsCountYieldPage(canvas, pdfPath, cfCache);
+  drawKmfFitVsCountCfPage(canvas, pdfPath, cfCache);
+  drawKmfFitCountDoubleRatioPage(canvas, pdfPath, cfCache);
+  drawKmcMassWindowScanPages(canvas, fin, pdfPath, keepAlive, cfCache);
+  drawKmcRotMixBkgSourcePage(canvas, pdfPath, cfCache);
+  drawKmcBinningComparePage(canvas, pdfPath, cfCache);
+  drawKmfFitQualityAuditPages(canvas, pdfPath, cfCache);
+}
+
+
+static void drawKmcCountCf40vs80EndPage(TCanvas* canvas, const TString& pdfPath,
+                                       std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1800, 1100);
+  canvas->Divide(2, 2);
+  const char* bases[2] = {"phi_proton", "phi_deuteron"};
+  const char* labs[2] = {"#phi-p", "#phi-d"};
+  const char* dks[2] = {"dk40", "dk80"};
+  const char* dkLabs[2] = {"40 MeV/c", "80 MeV/c"};
+  Int_t pad = 1;
+  for (Int_t ib = 0; ib < 2; ++ib) {
+    for (Int_t id = 0; id < 2; ++id) {
+      canvas->cd(pad++);
+      const std::string key = std::string("CF_kmc_rot_") + bases[ib] + "_" + dks[id] + "_w0_mebkg_norm";
+      TGraphErrors* g = kmfLookupGraph(cfCache, "pct_0_60", key);
+      kmcDrawGraphOrMissing(g, Form("%s counting C_{norm} %s;k* [GeV/c];C", labs[ib], dkLabs[id]), kCfYMin, kCfYMax,
+                            kBlack, 20, kTRUE);
+    }
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.018);
+  cap->DrawLatex(0.02, 0.97,
+                 Form("counting CF  (ROT, SE#leftarrow ME, w0, pct_0_60)  #phi-p / #phi-d   40 / 80 MeV/c    "
+                      "norm #phi-p [%.2f,%.2f]  #phi-d [%.2f,%.2f]",
+                      channelNormQMin(channelSignal("phi_proton")), channelNormQMax(channelSignal("phi_proton")),
+                      channelNormQMin(channelSignal("phi_deuteron")), channelNormQMax(channelSignal("phi_deuteron"))));
+  canvas->Print(pdfPath);
+}
+
+static void drawKmfPwgComparisonSection(TCanvas* canvas, TFile* fin, const TString& pdfPath,
+                                        std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache,
+                                        std::map<std::string, Double_t>& metaCache) {
+  if (!canvas || !fin) return;
+  const FemtoConfig::CfCentSlice* slFill = findCfCentSliceById("pct_0_60");
+  if (slFill) {
+    const char* basesF[] = {"phi_proton", "phi_deuteron", 0};
+    const char* tagsF[] = {"rot", "mix", 0};
+    const Double_t dksF[2] = {0.040, 0.080};
+    for (Int_t ib = 0; basesF[ib]; ++ib) {
+      for (Int_t it = 0; tagsF[it]; ++it) {
+        for (Int_t idk = 0; idk < 2; ++idk) {
+          kmfEnsureYieldsCached(fin, slFill, basesF[ib], tagsF[it], dksF[idk], keepAlive, cfCache, 0);
+        }
+      }
+    }
+  }
+  drawPwgKmfGuidePage(canvas, pdfPath);
+  drawKmfRotMixMassClosurePages(canvas, fin, pdfPath, keepAlive);
+  drawKmfRotMixBackgroundRatioPage(canvas, fin, pdfPath, keepAlive);
+  drawKmfRotMixCfComparisonPage(canvas, pdfPath, cfCache);
+  drawKmfBkgSourceComparisonPage(canvas, pdfPath, cfCache);
+  drawKmfFitStabilityPage(canvas, fin, pdfPath, cfCache, keepAlive);
+  drawKmfBkgSourceMassClosurePages(canvas, fin, pdfPath, keepAlive);
+  drawKmfBkgSourceIntegralPage(canvas, fin, pdfPath, keepAlive);
+  drawKmfYseBkgSourcePage(canvas, pdfPath, cfCache);
+  drawKmfSidebandCfClosurePages(canvas, fin, pdfPath, keepAlive);
+  drawKmfBinningStabilityFullPage(canvas, fin, pdfPath, cfCache, keepAlive);
+  drawKmfAlphaWindowVariationPage(canvas, fin, pdfPath, cfCache, keepAlive);
+  drawKmfNormWindowVariationPage(canvas, pdfPath, cfCache);
+  drawKmcSection(canvas, fin, pdfPath, keepAlive, cfCache, metaCache);
+  drawKmfSidebandLeakageSection(canvas, fin, pdfPath, keepAlive, cfCache, metaCache);
+  drawKmcCountCf40vs80EndPage(canvas, pdfPath, cfCache);
+}
+
+static TH1* pwgTofMatchFraction(TH2* h2, std::vector<TH1*>& keepAlive) {
+  if (!h2) return 0;
+  TProfile* pr = h2->ProfileX(pwgUniq("tofFrac").Data());
+  if (!pr) return 0;
+  pr->SetDirectory(0);
+  pr->SetTitle("TOF match fraction vs p;p [GeV/c];<match>");
+  pr->SetLineColor(kBlack);
+  pr->SetMarkerStyle(20);
+  keepAlive.push_back(pr);
+  return pr;
+}
+
+static void drawDeuteronPidPwgSummaryPage(TCanvas* canvas, TFile* fin, const TString& pdfName,
+                                          std::vector<TH1*>& keepAlive) {
+  if (!canvas || !fin) return;
+  const BachelorQaSpec& spec = kBachelorQaSpecs[1];
+  BachelorCuts cuts;
+  if (gConfigLoaded) cuts = getBachelorCuts(ConfigManager::GetInstance().GetFemtoConfig(), spec.cutPrefix);
+
+  canvas->Clear();
+  canvas->SetCanvasSize(1600, 1000);
+  canvas->Divide(3, 2);
+  TH2* h2 = 0;
+
+  canvas->cd(1);
+  gPad->SetLogz();
+  h2 = (TH2*)fin->Get("hNSigmaDeuteronVsP_All");
+  if (h2) {
+    prepareBachelorHist(h2, "hNSigmaDeuteronVsP_All", spec);
+    h2->GetXaxis()->SetRangeUser(0.0, 5.0);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      drawCutLine2DH(h2, -cuts.maxAbsNSigma);
+      drawCutLine2DH(h2, cuts.maxAbsNSigma);
+    }
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.15, 0.5, "missing hNSigmaDeuteronVsP_All");
+  }
+
+  canvas->cd(2);
+  gPad->SetLogz();
+  h2 = (TH2*)fin->Get("hNSigmaDeuteronVsP");
+  if (h2) {
+    prepareBachelorHist(h2, "hNSigmaDeuteronVsP", spec);
+    h2->GetXaxis()->SetRangeUser(0.0, 5.0);
+    h2->Draw("colz");
+    if (gConfigLoaded) {
+      drawCutLine2DH(h2, -cuts.maxAbsNSigma);
+      drawCutLine2DH(h2, cuts.maxAbsNSigma);
+    }
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.15, 0.5, "missing hNSigmaDeuteronVsP");
+  }
+
+  canvas->cd(3);
+  gPad->SetLogz();
+  h2 = (TH2*)fin->Get("hDeuteron_Mass2VsP_wide");
+  if (!h2) h2 = (TH2*)fin->Get("hDeuteron_Mass2VsP");
+  if (h2) {
+    prepareBachelorHist(h2, h2->GetName(), spec);
+    h2->Draw("colz");
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.15, 0.5, "missing hDeuteron_Mass2VsP[_wide]");
+  }
+
+  canvas->cd(4);
+  h2 = (TH2*)fin->Get("hDeuteron_TofMatchVsP");
+  if (h2) {
+    TH1* frac = pwgTofMatchFraction(h2, keepAlive);
+    if (frac) {
+      frac->GetXaxis()->SetRangeUser(0.0, 5.0);
+      frac->GetYaxis()->SetRangeUser(0.0, 1.05);
+      frac->Draw("E");
+      if (gConfigLoaded) drawCutLine1D(frac, cuts.tofMomentumThreshold, kBlue, 2);
+    }
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.15, 0.5, "missing hDeuteron_TofMatchVsP");
+  }
+
+  canvas->cd(5);
+  gPad->SetLogz();
+  h2 = (TH2*)fin->Get("hDedxVsP_PhiSignalNear_k03");
+  if (h2) {
+    h2->SetTitle("dE/dx vs p (#phi-near, k*<0.3);p [GeV/c];dE/dx");
+    h2->Draw("colz");
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.15, 0.5, "missing hDedxVsP_PhiSignalNear_k03");
+  }
+
+  canvas->cd(6);
+  gPad->SetLogz();
+  h2 = (TH2*)fin->Get("hMass2ChargeVsP_PhiSignalNear_k03");
+  if (h2) {
+    h2->SetTitle("m^{2}q vs p (#phi-near, k*<0.3);p [GeV/c];m^{2}q");
+    h2->Draw("colz");
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.15, 0.5, "missing hMass2ChargeVsP_PhiSignalNear_k03");
+  }
+
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.022);
+  cap->DrawLatex(0.02, 0.97,
+                 "P0-5 deuteron PID QA (dE/dx-only sample).  Not a purity measurement.  TOF-tagged #phi-d CF needs a new production.");
+  canvas->Print(pdfName);
+}
+
+static void drawEventMixingSamplerPwgPage(TCanvas* canvas, TFile* fin, const TString& pdfName) {
+  if (!canvas || !fin) return;
+  canvas->Clear();
+  canvas->SetCanvasSize(1400, 900);
+  canvas->Divide(2, 1);
+  canvas->cd(1);
+  TH2* h2 = (TH2*)fin->Get("hMixSamplerQA");
+  if (h2) {
+    gPad->SetLogz();
+    h2->SetTitle("Event-mixing sampler QA (FillMixedEventPairs);status;channel index");
+    h2->Draw("colz");
+  } else {
+    TLatex* z = new TLatex();
+    z->SetNDC(kTRUE);
+    z->DrawLatex(0.12, 0.5, "missing hMixSamplerQA");
+  }
+  canvas->cd(2);
+  if (h2) {
+    TH1* hx = h2->ProjectionX("_mixSampX");
+    hx->SetDirectory(0);
+    hx->SetTitle("mixing sampler status (summed over channels);status;counts");
+    gPad->SetLogy();
+    hx->Draw("HIST");
+  }
+  canvas->cd();
+  TLatex* cap = new TLatex();
+  cap->SetNDC(kTRUE);
+  cap->SetTextSize(0.022);
+  cap->DrawLatex(0.02, 0.97, "P1 event-mixing sampler (hMixSamplerQA). Distinct from fully-mixed #phi (hPhiMix*).");
+  canvas->Print(pdfName);
+}
+
+static void drawSimpleSeMeCfPwgPages(TCanvas* canvas, TFile* fin, const TString& pdfName,
+                                     std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache) {
+  if (!canvas || !fin) return;
+  Int_t cmin = 2, cmax = 8;
+  getCfCent9Range(cmin, cmax);
+  const char* bases[] = {"phi_proton", "phi_deuteron", 0};
+  for (Int_t ib = 0; bases[ib]; ++ib) {
+    const std::string base(bases[ib]);
+    const char* bach = (base.find("deuteron") != std::string::npos) ? "deuteron" : "proton";
+    const std::string chs[5] = {channelSignal(base), channelLeftSb(base), channelRightSb(base),
+                                std::string("phi_rot_") + bach, std::string("phi_mix_") + bach};
+    const char* labs[5] = {"signal", "left SB", "right SB", "ROT bkg", "MIX bkg"};
+    canvas->Clear();
+    canvas->SetCanvasSize(1800, 1000);
+    canvas->Divide(5, 2);
+    for (Int_t ic = 0; ic < 5; ++ic) {
+      const std::string ch = chs[ic];
+      TH1* hSE = getProjectedSeMeFromCent(fin, ch, kTRUE, cmin, cmax);
+      TH1* hME = getProjectedSeMeFromCent(fin, ch, kFALSE, cmin, cmax);
+      if (hSE) keepAlive.push_back(hSE);
+      if (hME) keepAlive.push_back(hME);
+      canvas->cd(ic + 1);
+      if (!hSE && !hME) {
+        TLatex* z = new TLatex();
+        z->SetNDC(kTRUE);
+        z->SetTextSize(0.04);
+        z->DrawLatex(0.10, 0.5, Form("missing %s", ch.c_str()));
+      } else {
+        drawKstarSeMeOverlay(hSE, hME, channelNormQMin(ch), channelNormQMax(ch), keepAlive);
+      }
+      TLatex* lab = new TLatex();
+      lab->SetNDC(kTRUE);
+      lab->SetTextSize(0.04);
+      lab->DrawLatex(0.12, 0.92, labs[ic]);
+      canvas->cd(ic + 6);
+      if (!hSE && !hME) {
+        TLatex* z = new TLatex();
+        z->SetNDC(kTRUE);
+        z->DrawLatex(0.10, 0.5, "no CF");
+      } else {
+        TGraphErrors* gCF = getOrComputeCfCentSlice(fin, ch, channelNormQMin(ch), channelNormQMax(ch), cmin, cmax,
+                                                    cfCache);
+        if (gCF) drawCfGraph(gCF);
+      }
+    }
+    canvas->cd();
+    TLatex* cap = new TLatex();
+    cap->SetNDC(kTRUE);
+    cap->SetTextSize(0.020);
+    cap->DrawLatex(0.01, 0.97,
+                   Form("P1 simple SE/ME CF (NOT kstarMassFitCF)  %s  cent9 %d-%d  high-k* closure diagnostic",
+                        base.c_str(), cmin, cmax));
+    canvas->Print(pdfName);
+  }
+}
+
 
 static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString& pdfPath,
                                      std::vector<TH1*>& keepAlive, std::map<std::string, TGraphErrors*>& cfCache,
@@ -4268,7 +9449,7 @@ static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString
   const char* bases[] = {"phi_proton", "phi_deuteron", 0};
   std::vector<std::string> templates;
   getKstarMassFitCfTemplateOrder(templates);
-  const char* rebinSliceIds[] = {"pct_0_10", "pct_0_20", "pct_0_30", 0};
+  const char* rebinSliceIds[] = {"pct_0_10", "pct_0_20", "pct_0_30", "pct_0_60", 0};
   const std::vector<FemtoConfig::CfCentSlice> allSlices = getCfCentSliceList();
 
   for (size_t it = 0; it < templates.size(); ++it) {
@@ -4336,7 +9517,8 @@ static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString
         }
 
         std::vector<Double_t> kx, ySE, eSE, yME, eME, cfx, cfy, cfe, stx, sty;
-        canvas->SetCanvasSize(2400, 1000);
+        std::vector<Double_t> kxSEme, ySEme, eSEme, stxSEme, stySEme, cfxMe, cfyMe, cfeMe;
+        canvas->SetCanvasSize(2400, 1400);
         const Int_t lowKstarMergeBins = getKstarMassFitCfLowKstarMergeBins();
         for (Int_t iy = 1; iy <= h2Fse->GetNbinsY(); ++iy) {
           const Int_t iyFirst = iy;
@@ -4350,26 +9532,49 @@ static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString
                         h2Fme->Integral(1, h2Fme->GetNbinsX(), iyFirst, iyLast);
           Int_t stSE = kKmfStatusFitFail;
           Int_t stME = kKmfStatusFitFail;
-          Double_t nse = 0.0, ese = 0.0, nme = 0.0, eme = 0.0;
+          Int_t stSEme = kKmfStatusFitFail;
+          Double_t nse = 0.0, ese = 0.0, nme = 0.0, eme = 0.0, nseMe = 0.0, eseMe = 0.0;
           const Bool_t lowStat = (nF < (Double_t)minEntries);
           if (nF <= 0.0) {
             stSE = kKmfStatusLowStat;
             stME = kKmfStatusLowStat;
+            stSEme = kKmfStatusLowStat;
             stx.push_back(kstar);
             sty.push_back((Double_t)kKmfStatusLowStat);
+            stxSEme.push_back(kstar);
+            stySEme.push_back((Double_t)kKmfStatusLowStat);
             continue;
           }
           drawKstarMassFitCfKstarPage(canvas, fin, *slicePtr, base, tag.c_str(), iyFirst, iyLast, kstar, h2Fse,
                                       h2Fme, h2Bse, h2Bme, kstarBinTarget, keepAlive, &nse, &ese, &nme, &eme, &stSE,
-                                      &stME);
+                                      &stME, &nseMe, &eseMe, &stSEme);
           canvas->Print(pdfPath);
           if (lowStat) {
             stSE = kKmfStatusLowStat;
             stME = kKmfStatusLowStat;
+            stSEme = kKmfStatusLowStat;
           }
           stx.push_back(kstar);
           const Int_t stPair = (stSE != kKmfStatusOk) ? stSE : stME;
           sty.push_back((Double_t)stPair);
+          stxSEme.push_back(kstar);
+          stySEme.push_back((Double_t)stSEme);
+          if (stSEme == kKmfStatusOk && TMath::Finite(nseMe) && TMath::Finite(eseMe) && nseMe > 0.0) {
+            kxSEme.push_back(kstar);
+            ySEme.push_back(nseMe);
+            eSEme.push_back(eseMe);
+            if (stME == kKmfStatusOk && nme > 0.0 && TMath::Finite(nme) && TMath::Finite(eme)) {
+              const Double_t cfMe = nseMe / nme;
+              const Double_t ecfMe =
+                  cfMe * TMath::Sqrt(TMath::Power(eseMe / (nseMe + 1e-12), 2) +
+                                     TMath::Power(eme / (nme + 1e-12), 2));
+              if (TMath::Finite(cfMe) && TMath::Finite(ecfMe)) {
+                cfxMe.push_back(kstar);
+                cfyMe.push_back(cfMe);
+                cfeMe.push_back(ecfMe);
+              }
+            }
+          }
           if (stSE != kKmfStatusOk || stME != kKmfStatusOk) continue;
           if (!(nme > 0.0) || !TMath::Finite(nse) || !TMath::Finite(nme) || !TMath::Finite(ese) ||
               !TMath::Finite(eme)) {
@@ -4408,12 +9613,34 @@ static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString
         TGraphErrors* gNME = 0;
         TGraphErrors* gCF = 0;
         TGraphErrors* gCFn = 0;
+        TGraphErrors* gCFme = 0;
         if (!stx.empty()) {
           TGraphErrors* gSt = new TGraphErrors((Int_t)stx.size(), &stx[0], &sty[0], 0, 0);
           gSt->SetTitle(Form("kstarMassFitCF fit status %s %s %s", tag.c_str(), base.c_str(), slicePtr->id.c_str()));
           cfCache[stKey] = gSt;
         } else {
           cfCache[stKey] = 0;
+        }
+        {
+          const std::string nSeMeKey =
+              cfSliceCacheKey(slicePtr->id, std::string("kmf_Y_SE_mebkg_") + tag + "_" + base + suf);
+          const std::string stSeMeKey =
+              cfSliceCacheKey(slicePtr->id, std::string("kmf_fitstatus_SE_mebkg_") + tag + "_" + base + suf);
+          if (!kxSEme.empty()) {
+            TGraphErrors* gYseMe = new TGraphErrors((Int_t)kxSEme.size(), &kxSEme[0], &ySEme[0], 0, &eSEme[0]);
+            gYseMe->SetTitle(Form("Y_{SE}^{B_{ME}}(k*) kmf-%s %s %s", tag.c_str(), base.c_str(), slicePtr->id.c_str()));
+            cfCache[nSeMeKey] = gYseMe;
+          } else {
+            cfCache[nSeMeKey] = 0;
+          }
+          if (!stxSEme.empty()) {
+            TGraphErrors* gStSEme = new TGraphErrors((Int_t)stxSEme.size(), &stxSEme[0], &stySEme[0], 0, 0);
+            gStSEme->SetTitle(Form("SE#leftarrow ME BKG fit status %s %s %s", tag.c_str(), base.c_str(),
+                                  slicePtr->id.c_str()));
+            cfCache[stSeMeKey] = gStSEme;
+          } else {
+            cfCache[stSeMeKey] = 0;
+          }
         }
         if (!kx.empty()) {
           gNSE = new TGraphErrors((Int_t)kx.size(), &kx[0], &ySE[0], 0, &eSE[0]);
@@ -4469,7 +9696,54 @@ static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString
         metaCache[cfSliceCacheKey(slicePtr->id, std::string("kmf_nOk_") + tag + "_" + base + suf)] =
             (Double_t)cfx.size();
 
-        drawKstarMassFitCfPage(canvas, *slicePtr, base, tag.c_str(), gNSE, gNME, gCF, gCFn);
+        {
+          const std::string cfMeRawKey =
+              cfSliceCacheKey(slicePtr->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_raw");
+          const std::string cfMeKey =
+              cfSliceCacheKey(slicePtr->id, std::string("CF_kmf_") + tag + "_" + base + suf + "_mebkg_norm");
+          if (!cfxMe.empty()) {
+            TGraphErrors* gCFmeRaw =
+                new TGraphErrors((Int_t)cfxMe.size(), &cfxMe[0], &cfyMe[0], 0, &cfeMe[0]);
+            gCFmeRaw->SetTitle(Form("CF_{mebkg,raw} kmf-%s %s %s", tag.c_str(), base.c_str(),
+                                    slicePtr->id.c_str()));
+            cfCache[cfMeRawKey] = gCFmeRaw;
+            const std::string chSig = channelSignal(base);
+            const Double_t nQMin = channelNormQMin(chSig);
+            const Double_t nQMax = channelNormQMax(chSig);
+            Double_t sumC = 0.0;
+            Double_t sumE2 = 0.0;
+            Int_t nNorm = 0;
+            for (size_t i = 0; i < cfxMe.size(); ++i) {
+              if (cfxMe[i] < nQMin || cfxMe[i] > nQMax) continue;
+              if (!TMath::Finite(cfyMe[i]) || !TMath::Finite(cfeMe[i])) continue;
+              sumC += cfyMe[i];
+              sumE2 += cfeMe[i] * cfeMe[i];
+              ++nNorm;
+            }
+            if (nNorm > 0 && sumC > 0.0 && TMath::Finite(sumC)) {
+              const Double_t mean = sumC / (Double_t)nNorm;
+              const Double_t errMean = TMath::Sqrt(sumE2) / (Double_t)nNorm;
+              const Double_t scale = 1.0 / mean;
+              const Double_t errScale = errMean / (mean * mean);
+              std::vector<Double_t> ny, ne;
+              for (size_t i = 0; i < cfyMe.size(); ++i) {
+                ny.push_back(cfyMe[i] * scale);
+                ne.push_back(TMath::Sqrt(TMath::Power(cfeMe[i] * scale, 2) + TMath::Power(cfyMe[i] * errScale, 2)));
+              }
+              gCFme = new TGraphErrors((Int_t)cfxMe.size(), &cfxMe[0], &ny[0], 0, &ne[0]);
+              gCFme->SetTitle(Form("CF_{mebkg,norm} kmf-%s %s %s", tag.c_str(), base.c_str(),
+                                   slicePtr->id.c_str()));
+              cfCache[cfMeKey] = gCFme;
+            } else {
+              cfCache[cfMeKey] = 0;
+            }
+          } else {
+            if (cfCache.find(cfMeRawKey) == cfCache.end()) cfCache[cfMeRawKey] = 0;
+            if (cfCache.find(cfMeKey) == cfCache.end()) cfCache[cfMeKey] = 0;
+          }
+        }
+
+        drawKstarMassFitCfPage(canvas, *slicePtr, base, tag.c_str(), gNSE, gNME, gCF, gCFn, gCFme);
         canvas->Print(pdfPath);
 
         delete h2Fse;
@@ -4479,6 +9753,7 @@ static void drawKstarMassFitCfSection(TCanvas* canvas, TFile* fin, const TString
       }
     }
   }
+  drawKmfPwgComparisonSection(canvas, fin, pdfPath, keepAlive, cfCache, metaCache);
   canvas->SetCanvasSize(1200, 800);
   (void)minEntries;
   (void)preferPol2;
@@ -4504,7 +9779,9 @@ static void writeKstarMassFitCfSidecarRoot(const TString& outDir, const TString&
   for (std::map<std::string, TGraphErrors*>::iterator it = cfCache.begin(); it != cfCache.end(); ++it) {
     if (!it->second) continue;
     const std::string& key = it->first;
-    if (key.find("CF_kmf_") == std::string::npos && key.find("kmf_") == std::string::npos) continue;
+    if (key.find("CF_kmf_") == std::string::npos && key.find("kmf_") == std::string::npos &&
+        key.find("CF_kmc_") == std::string::npos && key.find("kmc_") == std::string::npos)
+      continue;
     TGraphErrors* clone = (TGraphErrors*)it->second->Clone(sanitizeGraphName(key));
     if (clone) {
       clone->Write();
@@ -4512,7 +9789,7 @@ static void writeKstarMassFitCfSidecarRoot(const TString& outDir, const TString&
     }
   }
   for (std::map<std::string, Double_t>::const_iterator it = metaCache.begin(); it != metaCache.end(); ++it) {
-    if (it->first.find("kmf_") == std::string::npos) continue;
+    if (it->first.find("kmf_") == std::string::npos && it->first.find("kmc_") == std::string::npos) continue;
     TParameter<Double_t> p(sanitizeGraphName(it->first), it->second);
     p.Write();
   }
@@ -4523,6 +9800,22 @@ static void writeKstarMassFitCfSidecarRoot(const TString& outDir, const TString&
   metaMain.Write();
   TNamed metaJob("meta_jobid", jobid.Data());
   metaJob.Write();
+  TNamed metaKmcErr("meta_kmc_error_model",
+                    "analytic independent-count approximation; common-alpha term included");
+  metaKmcErr.Write();
+  TNamed metaKmcNote("meta_kmc_note", "fit-free does not mean background-model-free");
+  metaKmcNote.Write();
+  TNamed metaSbleakMethod("meta_kmf_sbleak_method",
+                          "t=B_W/B_SB; Bhat=t*F_SB; Y=F_W-Bhat; C=N Y_SE/Y_ME; data-sideband transfer");
+  metaSbleakMethod.Write();
+  TNamed metaSbleakErr("meta_kmf_sbleak_error_model",
+                       "diagonal analytic errors; common normalization and transfer-factor correlations are not included");
+  metaSbleakErr.Write();
+  TNamed metaSbleakNeg("meta_kmf_sbleak_negative_yield_policy",
+                       "negative yields are not clipped; CF omitted when SE or ME yield is non-positive");
+  metaSbleakNeg.Write();
+  TNamed metaSbleakCent("meta_kmf_sbleak_centrality", "pct_0_60");
+  metaSbleakCent.Write();
   if (gConfigLoaded) {
     const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
     TNamed metaEn("meta_kstarMassFitCfEnabled", fc.kstarMassFitCfEnabled ? "true" : "false");
@@ -5206,8 +10499,9 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   }
 
   gConfigLoaded = kFALSE;
-  const char* pwd = gSystem->Getenv("PWD");
-  if (!pwd) pwd = ".";
+  // The process's real working directory, not $PWD (see results/pilot-farm-20260915.md).
+  TString cwd = gSystem->WorkingDirectory();
+  const char* pwd = cwd.Data();
   if (gSystem->Load(TString(pwd) + "/lib/libStarAnaConfig.so") >= 0) {
     TString mainconf;
     if (mainconfPath && strlen(mainconfPath) > 0) {
@@ -5290,7 +10584,7 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   note += Form("CF cent slice: cent9 [%d, %d] projected from hKstarSEVsCent/hKstarMEVsCent (0-60%% for default 2-8); "
                "layout nCols x 2 (rows SE+ME overlay / CF, cols signal/leftSB/rightSB/rot).\n",
                cfCent9MinNote, cfCent9MaxNote);
-  note += "k* count histograms display 0-3.0 GeV/c; CF graphs remain 0-0.65 GeV/c.\n";
+  note += "k* count histograms display 0-3.0 GeV/c; CF graphs remain 0-0.61 GeV/c.\n";
   note += "hPhi_MKK_vs_BetaGamma: both K daughters must have TOF match (beta from btofBeta).\n";
   note += "hPhiPairMomAngle_*: #phi-bachelor 3-momentum angle QA only (not used in CF). "
           "_signal = m_phiQaLoose + signal mass window; _tofStrict = betaGamma>0 + same window; "
@@ -5316,6 +10610,9 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
           "C_raw = Y_SE/Y_ME, C_norm in channel normQMin-normQMax. "
           "QA PDF: ..._kstarMassFitCf[_jobid].pdf; sidecar ..._CFkmf[_jobid].root. "
           "Simple SE/ME ratio in this PDF is diagnostic only.\n";
+  note += "PWG comparison pages (0-60%): ROT/MIX mass-shape closure, R_B/D_B, C method spread, "
+          "fit stability + 40 vs 80 MeV/c (independent cache), deuteron PID QA, hMixSamplerQA, "
+          "and simple SE/ME CF (explicitly not kstarMassFitCF).\n";
   note += "legacyCfPagesEnabled=false omits Topic 3, direct mass-fit, and Method 5 pages.\n";
   if (gConfigLoaded) {
     const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
@@ -5933,6 +11230,7 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
     h2->Draw("colz");
   }
   c1->Print(pdfName);
+  drawEventMixingSamplerPwgPage(c1, fin, pdfName);
 
   // Page 10b: K- femto candidate QA (used when kaon-minus species is enabled)
   c1->Clear();
@@ -5971,6 +11269,7 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
   for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
     drawBachelorFemtoQaPages(c1, fin, pdfName, kBachelorQaSpecs[ib]);
   }
+  drawDeuteronPidPwgSummaryPage(c1, fin, pdfName, centProjKeepAlive);
 
   // Two-body h-K+/- CFs (phi-daughter kaon selection): one page per bachelor x kaon charge.
   if (isHKaonTwoBodyEnabled()) {
@@ -6198,6 +11497,7 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
       c1->Print(pdfName);
     }
   }
+  drawSimpleSeMeCfPwgPages(c1, fin, pdfName, centProjKeepAlive, cfCache);
 
   // Phi-bachelor pair momentum angle QA (one page per bachelor; CF unchanged)
   for (Int_t ib = 0; ib < kNBachelorQaSpecs; ++ib) {
