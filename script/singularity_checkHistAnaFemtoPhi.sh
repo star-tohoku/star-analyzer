@@ -1,6 +1,13 @@
 #!/bin/bash
 # Run checkHistAnaFemtoPhi.C inside singularity.
-# Usage: ./script/singularity_checkHistAnaFemtoPhi.sh <root_file> <mainconf_path>
+# Usage: ./script/singularity_checkHistAnaFemtoPhi.sh <root_file> <mainconf_path> [name_suffix]
+#
+# The optional name_suffix is appended to the analysis name, which is what the macro builds every
+# output path from: the figure directory, the QA PDF, the kstarMassFitCF PDF and the sidecar ROOT.
+# Without it, two runs over the same analysis -- a nominal and a systematic variation, say -- write
+# the same filenames and the second silently replaces the first. That happened on 2026-09-16: the
+# nominal PDFs were overwritten by a TOF variation and had to be regenerated. Give every run that
+# is not the nominal a suffix.
 
 set -euo pipefail
 
@@ -11,9 +18,14 @@ PYTHON="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
 
 ROOT_FILE="${1:-}"
 MAINCONF="${2:-}"
+NAME_SUFFIX="${3:-}"
 
 if [[ -z "$ROOT_FILE" || -z "$MAINCONF" ]]; then
-  echo "Usage: $0 <root_file> <mainconf_path>" >&2
+  echo "Usage: $0 <root_file> <mainconf_path> [name_suffix]" >&2
+  exit 1
+fi
+if [[ -n "$NAME_SUFFIX" && ! "$NAME_SUFFIX" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  echo "ERROR: name_suffix may only contain letters, digits, '_', '.' and '-': $NAME_SUFFIX" >&2
   exit 1
 fi
 
@@ -35,6 +47,11 @@ ANA_NAME=$(cd "$PROJECT_ROOT_REAL" && "$PYTHON" script/analysis_info_helper.py -
 ANA_NAME="$(echo "$ANA_NAME" | xargs)"
 LIBRARY_TAG=$(cd "$PROJECT_ROOT_REAL" && "$PYTHON" script/analysis_info_helper.py --library-tag --mainconf "$MAINCONF_REAL") || exit 1
 LIBRARY_TAG="$(echo "$LIBRARY_TAG" | xargs)"
+
+if [[ -n "$NAME_SUFFIX" ]]; then
+  ANA_NAME="${ANA_NAME}${NAME_SUFFIX}"
+fi
+echo "[checkHistAnaFemtoPhi] writing under analysis name: $ANA_NAME"
 
 source "$SCRIPT_DIR/setup.sh" "$MAINCONF_REAL"
 export LD_LIBRARY_PATH="$PROJECT_ROOT_REAL/lib:$LD_LIBRARY_PATH"

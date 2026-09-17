@@ -6,7 +6,7 @@
   __MAINCONF__, __MAX_EVENTS__, __WORK_DIR__, __LOG_DIR__, __ERR_DIR__, __CATALOG_URL__, __N_FILES__, __ANA_SO_PREFIX__
 -->
 
-<job name="__JOB_NAME__" simulateSubmission="false" maxFilesPerProcess="1" fileListSyntax="xrootd" copyInputLocally="true">
+<job name="__JOB_NAME__" simulateSubmission="false" maxFilesPerProcess="__FILES_PER_JOB__" fileListSyntax="xrootd" copyInputLocally="true">
 
   <command>
     starver __STARVER__

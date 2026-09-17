@@ -227,6 +227,17 @@ Int_t MixBinOf(Double_t vz, Int_t cent9, Double_t psi2) {
 //   kmRequireTof              0/1, phiDaughterKaonMinusRequireTof
 //   dNSigma  dDca  dNHitsDedx deuteron
 //   pNSigma  pDca             proton
+//   dTofPThr  pTofPThr        bachelor TofMomentumThreshold [GeV/c]: TOF is required at and above
+//                             this momentum, so RAISING it loosens. 99 reproduces a dE/dx-only
+//                             selection, which is what maker_auau3p85fxt_anaFemtoPhi_dedxOnly.yaml
+//                             uses (deuteron 99.0, proton 2.0) against production's 0.0.
+//                             Proton is the harder of the two: the maker folded the TOF rule into
+//                             kSelNominalPid itself (PassTofProtonPid && |nSigma| <= cut), so a
+//                             TOF-unmatched proton carries no nominal PID bit and this variation
+//                             has to rebuild the PID as well as the femto cut. Both inputs are
+//                             stored, so that is exact rather than approximate. The deuteron
+//                             needs no such care: its kSelNominalPid is StNuclearIdHelper's
+//                             dE/dx identification, which never looked at the TOF.
 // ---------------------------------------------------------------------------
 struct Var {
   Double_t nHitsFit, trkDca, trkPt, chi2;
@@ -235,11 +246,13 @@ struct Var {
   Double_t dNSigma, dDca;
   Int_t dNHitsDedx;
   Double_t pNSigma, pDca;
+  Double_t dTofPThr, pTofPThr;
   Bool_t anyTrack, anyKaon, anyPid;
   TString spec;
   Var()
       : nHitsFit(-1), trkDca(-1), trkPt(-1), chi2(-1), kNSigma(-1), kM2Lo(-1), kM2Hi(-1),
         kmRequireTof(-1), dNSigma(-1), dDca(-1), dNHitsDedx(-1), pNSigma(-1), pDca(-1),
+        dTofPThr(-1), pTofPThr(-1),
         anyTrack(kFALSE), anyKaon(kFALSE), anyPid(kFALSE), spec("nominal") {}
 };
 
@@ -269,6 +282,8 @@ Bool_t ParseVariation(const Char_t* text, Var& v) {
     else if (k == "dNHitsDedx") v.dNHitsDedx = (Int_t)val;
     else if (k == "pNSigma") v.pNSigma = val;
     else if (k == "pDca") v.pDca = val;
+    else if (k == "dTofPThr") v.dTofPThr = val;
+    else if (k == "pTofPThr") v.pTofPThr = val;
     else { std::cerr << "ERROR: unknown variation key '" << k << "'" << std::endl; ok = kFALSE; }
   }
   delete items;
@@ -416,7 +431,7 @@ Bool_t PassDeuteronNominal(const femto_phi_tree::TrackRowV2& t, const Var& v) {
 // nominal 240,995, a factor 2.8 that looked like a working variation. Every field this needs is
 // stored, so there is no reason to approximate it.
 Bool_t PassFemtoSpeciesRebuild(const femto_phi_tree::TrackRowV2& t, Bool_t isProton,
-                               Double_t nsMax, Double_t dcaMax) {
+                               Double_t nsMax, Double_t dcaMax, Double_t tofPThrVar = -1.0) {
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   PhiCutConfig& phiCfg = ConfigManager::GetInstance().GetPhiCuts();
   // The maker takes the deuteron mass from StNuclearIdHelper (1.87561), not from a local
@@ -431,8 +446,12 @@ Bool_t PassFemtoSpeciesRebuild(const femto_phi_tree::TrackRowV2& t, Bool_t isPro
   const Double_t maxAbsEta = isProton ? fc.protonMaxAbsEta : fc.deuteronMaxAbsEta;
   const Short_t minNHitsFit = isProton ? fc.protonMinNHitsFit : fc.deuteronMinNHitsFit;
   const Double_t minNHitsRatio = isProton ? fc.protonMinNHitsRatio : fc.deuteronMinNHitsRatio;
+  // A threshold of 0.0 is meaningful (TOF required everywhere), so the "not varied" sentinel is
+  // negative rather than zero.
   const Double_t tofPThr =
-      isProton ? fc.protonTofMomentumThreshold : fc.deuteronTofMomentumThreshold;
+      (tofPThrVar >= 0.0) ? tofPThrVar
+                          : (isProton ? fc.protonTofMomentumThreshold
+                                      : fc.deuteronTofMomentumThreshold);
   const Double_t minMass2 = isProton ? fc.protonMinMass2 : fc.deuteronMinMass2;
   const Double_t maxMass2 = isProton ? fc.protonMaxMass2 : fc.deuteronMaxMass2;
   const Double_t minPtPair = isProton ? fc.protonMinPtPair : fc.deuteronMinPtPair;
@@ -473,30 +492,62 @@ Bool_t PassDeuteronVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) 
   if (!PassNuclearDedxHits(t, v.dNHitsDedx)) return kFALSE;
   if (!(t.selFlags & femto_phi_tree::kSelNominalPid)) return kFALSE;
   if (!PassTrackQuality(t, v)) return kFALSE;
-  if (v.dNSigma < 0 && v.dDca < 0) {
+  if (v.dNSigma < 0 && v.dDca < 0 && v.dTofPThr < 0) {
     return (t.selFlags & femto_phi_tree::kSelNominalFemto) != 0;
   }
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   // Tightening can ride on top of kSelNominalFemto; loosening cannot, because the flag has
-  // already applied the nominal value, so the whole femto cut has to be rebuilt.
+  // already applied the nominal value, so the whole femto cut has to be rebuilt. A TOF threshold
+  // ABOVE the nominal is a loosening -- it stops requiring the match over a range of momenta --
+  // which is why it is compared the other way round from the nSigma and DCA windows.
   const Bool_t tightenOnly = (v.dNSigma < 0 || v.dNSigma <= fc.deuteronMaxAbsNSigma) &&
-                             (v.dDca < 0 || v.dDca <= fc.deuteronMaxDca);
+                             (v.dDca < 0 || v.dDca <= fc.deuteronMaxDca) &&
+                             (v.dTofPThr < 0 || v.dTofPThr <= fc.deuteronTofMomentumThreshold);
   if (tightenOnly && !(t.selFlags & femto_phi_tree::kSelNominalFemto)) return kFALSE;
-  return PassFemtoSpeciesRebuild(t, kFALSE, v.dNSigma, v.dDca);
+  return PassFemtoSpeciesRebuild(t, kFALSE, v.dNSigma, v.dDca, v.dTofPThr);
+}
+
+// The maker's proton PID, rebuilt from stored fields with the TOF threshold moved.
+//
+// StFemtoPhiTreeMaker sets kSelNominalPid for a proton as
+//   PassTofProtonPid(trk) && |nSigmaProton| <= pid.nSigmaProton,
+// and PassTofProtonPid is "below the threshold, accept; at or above it, require a TOF match and
+// mass2 inside [protonMinMass2, protonMaxMass2]". With production's threshold of 0.0 that means
+// every accepted proton has a TOF match, so the stored bit cannot express a selection that does
+// not require one: on one merged block, 107,828,359 proton rows carry the PID bit with a TOF
+// match and only 3,864 without. Rebuilding is therefore not an optimisation here but the only
+// way to reach the 215,931,886 TOF-unmatched proton rows the envelope kept.
+Bool_t RecomputeProtonPid(const femto_phi_tree::TrackRowV2& t, Double_t tofPThrVar) {
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  const PIDCutConfig& pid = ConfigManager::GetInstance().GetPIDCuts();
+  const Double_t thr = (tofPThrVar >= 0.0) ? tofPThrVar : fc.protonTofMomentumThreshold;
+  const Double_t pmom = t.P();
+  Bool_t tofOk;
+  if (pmom < thr) tofOk = kTRUE;
+  else if (!t.HasTof()) tofOk = kFALSE;
+  else tofOk = (t.Mass2() >= fc.protonMinMass2 && t.Mass2() <= fc.protonMaxMass2);
+  if (!tofOk) return kFALSE;
+  return TMath::Abs(t.NSigmaProton()) <= pid.nSigmaProton;
 }
 
 Bool_t PassProtonVariation(const femto_phi_tree::TrackRowV2& t, const Var& v) {
   if (t.speciesCode != femto_phi_tree::kSpeciesProton) return kFALSE;
-  if (!(t.selFlags & femto_phi_tree::kSelNominalPid)) return kFALSE;
+  // Only a TOF variation may bypass the stored PID bit, and then it rebuilds the same predicate.
+  if (v.pTofPThr < 0) {
+    if (!(t.selFlags & femto_phi_tree::kSelNominalPid)) return kFALSE;
+  } else {
+    if (!RecomputeProtonPid(t, v.pTofPThr)) return kFALSE;
+  }
   if (!PassTrackQuality(t, v)) return kFALSE;
-  if (v.pNSigma < 0 && v.pDca < 0) {
+  if (v.pNSigma < 0 && v.pDca < 0 && v.pTofPThr < 0) {
     return (t.selFlags & femto_phi_tree::kSelNominalFemto) != 0;
   }
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   const Bool_t tightenOnly = (v.pNSigma < 0 || v.pNSigma <= fc.protonMaxAbsNSigma) &&
-                             (v.pDca < 0 || v.pDca <= fc.protonMaxDca);
+                             (v.pDca < 0 || v.pDca <= fc.protonMaxDca) &&
+                             (v.pTofPThr < 0 || v.pTofPThr <= fc.protonTofMomentumThreshold);
   if (tightenOnly && !(t.selFlags & femto_phi_tree::kSelNominalFemto)) return kFALSE;
-  return PassFemtoSpeciesRebuild(t, kTRUE, v.pNSigma, v.pDca);
+  return PassFemtoSpeciesRebuild(t, kTRUE, v.pNSigma, v.pDca, v.pTofPThr);
 }
 
 // StFemtoMaker reaches the proton collection through PassProtonCuts, which begins with the same

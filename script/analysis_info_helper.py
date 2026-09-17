@@ -569,6 +569,11 @@ def main():
         scratch_subdir = analysis.get('scratchSubdir') or ana_name
         output_stem = analysis.get('outputFileStem') or ana_name
         n_files = analysis.get('nFiles', 1000)
+        # PicoDst per subjob. One per job means SUMS writes three files per PicoDst and every job
+        # re-copies the runtime bundle: measured at 1.12 processes/s on GPFS, a 99,246-file
+        # production would have spent 24.5 hours just being submitted. Default stays 1 so that
+        # existing analyses are unchanged.
+        files_per_job = analysis.get('filesPerJob', 1)
         max_events = analysis.get('maxEvents', -1)
         if max_events is None or str(max_events).strip() == '':
             max_events = -1
@@ -614,6 +619,7 @@ def main():
             ('__ERR_DIR__', err_dir),
             ('__CATALOG_URL__', catalog_url),
             ('__N_FILES__', str(n_files)),
+            ('__FILES_PER_JOB__', str(files_per_job)),
             ('__ANA_SO_PREFIX__', ana_so_prefix),
         ]
         for placeholder, value in replacements:

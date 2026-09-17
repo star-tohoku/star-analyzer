@@ -37,6 +37,10 @@ analysis:
   jobName: *anaName
   scratchSubdir: *anaName
   outputFileStem: *anaName
+  filesPerJob: 10    # PicoDst per subjob. At one per job SUMS needs 24.5 h just to write the
+                     # 99,246 process file sets (measured 1.12/s on GPFS), and every job re-copies
+                     # the runtime bundle. Ten gives 9,925 subjobs, about 7.7 GB of input scratch
+                     # each; drop to 5 if jobs run out of scratch.
   nFiles: all        # how many catalog files to take, not files per job (maxFilesPerProcess=1).
                      # Inherited as 10 from the pilot config _v2, where it would have limited a
                      # production submission to ten files.
