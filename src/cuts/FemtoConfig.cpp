@@ -224,6 +224,9 @@ void FemtoConfig::SetDefaults() {
   kstarMassFitCfEnabled = kTRUE;
   kstarMassFitCfTemplate = "rot";
   kstarMassFitCfAlphaErrorMode = "perbin";
+  kstarMassFitCfYieldMode = "fit";
+  kstarMassFitCfSignalShape = "gaus";
+  kstarMassFitCfSignalWidth = 0.004249;
   kstarMassFitCfCrossCheck = kTRUE;
   kstarMassFitCfFitMassMin = 0.99;
   kstarMassFitCfFitMassMax = 1.06;
@@ -587,6 +590,16 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   }
   if (values.find("kstarMassFitCfAlphaErrorMode") != values.end()) {
     kstarMassFitCfAlphaErrorMode = values.at("kstarMassFitCfAlphaErrorMode");
+  }
+  if (values.find("kstarMassFitCfYieldMode") != values.end()) {
+    kstarMassFitCfYieldMode = values.at("kstarMassFitCfYieldMode");
+  }
+  if (values.find("kstarMassFitCfSignalShape") != values.end()) {
+    kstarMassFitCfSignalShape = values.at("kstarMassFitCfSignalShape");
+  }
+  if (values.find("kstarMassFitCfSignalWidth") != values.end()) {
+    kstarMassFitCfSignalWidth =
+        YamlParser::ToDouble(values.at("kstarMassFitCfSignalWidth"), kstarMassFitCfSignalWidth);
   }
   if (values.find("kstarMassFitCfTemplate") != values.end()) {
     kstarMassFitCfTemplate = values.at("kstarMassFitCfTemplate");

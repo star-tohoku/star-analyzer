@@ -2553,6 +2553,84 @@ static Bool_t fitPurityGausPol2OrConst(TH1* hMass, Double_t fitMin, Double_t fit
   return kFALSE;
 }
 
+// The signal shape fitted to S = F - alpha B (no background term; the residual is ~ 0 by
+// construction). "gaus" is the legacy single gaussian; "voigt" is a Breit-Wigner of fixed width
+// folded with a free gaussian resolution, which is what a phi actually is.
+static std::string kmfSignalShape() {
+  if (!gConfigLoaded) return "gaus";
+  const std::string m = ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfSignalShape;
+  return m.empty() ? std::string("gaus") : m;
+}
+
+static Double_t kmfSignalWidth() {
+  if (!gConfigLoaded) return 0.004249;
+  const Double_t w = ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfSignalWidth;
+  return (w > 0.0) ? w : 0.004249;
+}
+
+// [0] area-like scale, [1] pole mass, [2] gaussian resolution, [3] Breit-Wigner Gamma (fixed).
+// TMath::Voigt is normalised to unit area, so [0] is the yield in the fitted range and the
+// integral over the signal window is taken the same way as for the gaussian.
+static Double_t kmfVoigtFcn(Double_t* x, Double_t* p) {
+  return p[0] * TMath::Voigt(x[0] - p[1], p[2], p[3]);
+}
+
+static std::string kmfAlphaErrorMode();
+
+static std::string kmfYieldMode() {
+  if (!gConfigLoaded) return "fit";
+  const std::string m = ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfYieldMode;
+  return m.empty() ? std::string("fit") : m;
+}
+
+// Yield by counting: Y = sum_w F - alpha * sum_w B over the signal mass window w.
+//
+// Nothing is assumed about the shape of the phi peak, and there is no fit to fail or to bias the
+// result through a wrong lineshape -- which matters here, because the gaussian this replaces has
+// chi2/ndf running from 1.8 to 6.5 as the statistics rise. The alpha uncertainty enters exactly:
+// dY/dAlpha = -sum_w B, so its contribution is dAlpha * sum_w B with no refitting.
+//
+// Takes F and B rather than the prepared S, so that the per-bin alpha smearing applied to S (the
+// "perbin" error mode) is not counted a second time.
+static void kmfAnnounceYieldMode() {
+  static Bool_t said = kFALSE;
+  if (said) return;
+  said = kTRUE;
+  const std::string mode = kmfYieldMode();
+  std::cout << "[checkHistAnaFemtoPhi] kstarMassFitCF yield mode: " << mode;
+  if (mode != "count")
+    std::cout << " (shape " << ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfSignalShape << ")";
+  std::cout << ", alpha error mode: " << kmfAlphaErrorMode() << std::endl;
+}
+
+static Bool_t kmfCountYield(TH1* hF, TH1* hB, Double_t alpha, Double_t alphaErr, Double_t sigMin,
+                            Double_t sigMax, KstarMassFitCfFitResult& out) {
+  kmfAnnounceYieldMode();
+  out = KstarMassFitCfFitResult();
+  if (!hF || !hB) return kFALSE;
+  const Int_t b0 = hF->GetXaxis()->FindBin(sigMin + 1e-9);
+  const Int_t b1 = hF->GetXaxis()->FindBin(sigMax - 1e-9);
+  if (b1 < b0) return kFALSE;
+  Double_t eF = 0.0, eB = 0.0;
+  const Double_t sF = hF->IntegralAndError(b0, b1, eF);
+  const Double_t sB = hB->IntegralAndError(b0, b1, eB);
+  const Double_t y = sF - alpha * sB;
+  Double_t var = eF * eF + alpha * alpha * eB * eB;
+  if (kmfAlphaErrorMode() != "off") var += (alphaErr * sB) * (alphaErr * sB);
+  if (!TMath::Finite(y) || !TMath::Finite(var) || var < 0.0) return kFALSE;
+  out.ok = kTRUE;
+  out.nSig = y;
+  out.errNSig = TMath::Sqrt(var);
+  out.nBkg = alpha * sB;
+  out.purity = (sF > 0.0) ? (y / sF) : 0.0;
+  // No lineshape was fitted; leave the shape diagnostics at zero rather than inventing them.
+  out.amp = 0.0;
+  out.mean = 0.0;
+  out.sigma = 0.0;
+  out.chi2NdfOnOriginalHistogram = 0.0;
+  return kTRUE;
+}
+
 // Pure gaussian (no polynomial / const background). Used for S = F-αB where residual BG ~ 0.
 static Bool_t fitPurityGausOnly(TH1* hMass, Double_t fitMin, Double_t fitMax, Double_t sigMin, Double_t sigMax,
                                 Double_t sigmaMin, Double_t sigmaMax, KstarMassFitCfFitResult& out) {
@@ -2562,14 +2640,27 @@ static Bool_t fitPurityGausOnly(TH1* hMass, Double_t fitMin, Double_t fitMax, Do
   Int_t binFitHi = hMass->GetXaxis()->FindBin(fitMax - 1e-9);
   if (hMass->Integral(binFitLo, binFitHi) <= 0.0) return kFALSE;
 
+  const Bool_t useVoigt = (kmfSignalShape() == "voigt");
   TString fname = Form("fm3g_%lx", (unsigned long)hMass);
-  TF1* f = new TF1(fname + "_g", "gaus", fitMin, fitMax);
+  TF1* f = 0;
   Double_t peak = hMass->GetMaximum();
   Int_t maxBin = hMass->GetMaximumBin();
-  f->SetParameter(0, peak > 0.0 ? peak : 1.0);
-  f->SetParameter(1, hMass->GetXaxis()->GetBinCenter(maxBin));
-  f->SetParameter(2, 0.006);
-  f->SetParLimits(2, sigmaMin, sigmaMax);
+  if (useVoigt) {
+    f = new TF1(fname + "_v", kmfVoigtFcn, fitMin, fitMax, 4);
+    // Seed the scale from the peak height: Voigt(0, sigma, Gamma) is of order 1/(2 sigma) for a
+    // resolution-dominated profile, so peak * 2 * sigma is the right magnitude for the area.
+    f->SetParameter(0, (peak > 0.0 ? peak : 1.0) * 2.0 * 0.004);
+    f->SetParameter(1, hMass->GetXaxis()->GetBinCenter(maxBin));
+    f->SetParameter(2, 0.004);
+    f->SetParLimits(2, sigmaMin, sigmaMax);
+    f->FixParameter(3, kmfSignalWidth());
+  } else {
+    f = new TF1(fname + "_g", "gaus", fitMin, fitMax);
+    f->SetParameter(0, peak > 0.0 ? peak : 1.0);
+    f->SetParameter(1, hMass->GetXaxis()->GetBinCenter(maxBin));
+    f->SetParameter(2, 0.006);
+    f->SetParLimits(2, sigmaMin, sigmaMax);
+  }
   TFitResultPtr rfit = hMass->Fit(f, "RQS0");
   const Int_t fitStat = (Int_t)rfit;
   out.originalFitStatus = fitStat;
@@ -4129,8 +4220,15 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
     hS->Draw("E");
     okOut = fitPurityGausOnly(hS, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frOut);
     if (okOut) {
-      TF1* fDraw = new TF1(fName, "gaus", fitMin, fitMax);
-      fDraw->SetParameters(frOut.amp, frOut.mean, frOut.sigma);
+      // Draw the shape that was fitted, not a gaussian with its parameters.
+      const Bool_t drawVoigt = (kmfSignalShape() == "voigt");
+      TF1* fDraw = drawVoigt ? new TF1(fName, kmfVoigtFcn, fitMin, fitMax, 4)
+                             : new TF1(fName, "gaus", fitMin, fitMax);
+      if (drawVoigt) {
+        fDraw->SetParameters(frOut.amp, frOut.mean, frOut.sigma, kmfSignalWidth());
+      } else {
+        fDraw->SetParameters(frOut.amp, frOut.mean, frOut.sigma);
+      }
       fDraw->SetLineColor(kMagenta + 1);
       fDraw->SetLineWidth(2);
       fDraw->Draw("SAME");
@@ -4220,10 +4318,18 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
            Form("_m3sub_seme_%d_%d", iyFirst, iyLast), okSEme, frSEme);
   canvas->cd(14);
 
+  // The drawn fits are kept as a shape check, but in counting mode they do not decide the yield:
+  // it is the sum of S over the signal window, which no fit can fail to produce.
+  if (kmfYieldMode() == "count") {
+    okSE = kmfCountYield(hFse, hBse, aSE, aSEerr, sigMin, sigMax, frSE);
+    okME = kmfCountYield(hFme, hBme, aME, aMEerr, sigMin, sigMax, frME);
+    okSEme = kmfCountYield(hFse, hBme, aSEme, aSEmeErr, sigMin, sigMax, frSEme);
+  }
+
   // The three fits above used statistical errors only when the alpha uncertainty is propagated
   // coherently; add its contribution to the yield error here, once, as a shift of the whole
   // background level (Step 10 T1).
-  if (kmfAlphaErrorMode() == "coherent") {
+  if (kmfYieldMode() != "count" && kmfAlphaErrorMode() == "coherent") {
     const Double_t dSE = kmfCoherentAlphaYieldError(hFse, hBse, aSE, aSEerr, fitMin, fitMax, sigMin,
                                                     sigMax, sigmaMin, sigmaMax, keepAlive);
     const Double_t dME = kmfCoherentAlphaYieldError(hFme, hBme, aME, aMEerr, fitMin, fitMax, sigMin,
@@ -5148,10 +5254,18 @@ static void computeKmfYieldsNoDraw(TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bm
     keepAlive.push_back(hSme);
     keepAlive.push_back(hSseMe);
     KstarMassFitCfFitResult frSE, frME, frSEme;
-    const Bool_t okSE = fitPurityGausOnly(hSse, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSE);
-    const Bool_t okME = fitPurityGausOnly(hSme, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frME);
-    const Bool_t okSEme = fitPurityGausOnly(hSseMe, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSEme);
-    if (kmfAlphaErrorMode() == "coherent") {
+    const Bool_t counting = (kmfYieldMode() == "count");
+    const Bool_t okSE = counting
+                            ? kmfCountYield(hFse, hBse, aSE, aSEe, sigMin, sigMax, frSE)
+                            : fitPurityGausOnly(hSse, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSE);
+    const Bool_t okME = counting
+                            ? kmfCountYield(hFme, hBme, aME, aMEe, sigMin, sigMax, frME)
+                            : fitPurityGausOnly(hSme, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frME);
+    const Bool_t okSEme =
+        counting ? kmfCountYield(hFse, hBme, aSEme, aSEmeE, sigMin, sigMax, frSEme)
+                 : fitPurityGausOnly(hSseMe, fitMin, fitMax, sigMin, sigMax, sigmaMin, sigmaMax, frSEme);
+    // Counting already carries the alpha term analytically; refitting it would double count.
+    if (!counting && kmfAlphaErrorMode() == "coherent") {
       const Double_t dSE = kmfCoherentAlphaYieldError(hFse, hBse, aSE, aSEe, fitMin, fitMax, sigMin,
                                                       sigMax, sigmaMin, sigmaMax, keepAlive);
       const Double_t dME = kmfCoherentAlphaYieldError(hFme, hBme, aME, aMEe, fitMin, fitMax, sigMin,

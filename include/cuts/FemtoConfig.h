@@ -232,6 +232,19 @@ class FemtoConfig {
   // alpha is one number shared by every mass bin, so "perbin" treats a fully correlated
   // uncertainty as if it were independent: it inflates the yield error and deflates chi2/ndf.
   std::string kstarMassFitCfAlphaErrorMode;  // perbin | coherent | off
+  // Shape fitted to S = F - alpha B to extract the phi yield.
+  //   gaus  : single gaussian (legacy). chi2/ndf rises from 1.8 to 6.5 with statistics, because
+  //           the phi is a Breit-Wigner of Gamma = 4.25 MeV folded with the detector resolution
+  //           and a gaussian has no tails to match.
+  //   voigt : Voigt profile, Gamma fixed to kstarMassFitCfSignalWidth, sigma free = resolution
+  // How the phi yield is taken out of S = F - alpha B in each k* bin.
+  //   count : sum the bins of S inside the signal mass window. No shape assumed, no fit to fail.
+  //           The alpha uncertainty is exact here: Y = sum F - alpha * sum B, so it contributes
+  //           dAlpha * sum B with no refitting.
+  //   fit   : fit kstarMassFitCfSignalShape to S and integrate the fitted curve (legacy).
+  std::string kstarMassFitCfYieldMode;     // count | fit
+  std::string kstarMassFitCfSignalShape;   // gaus | voigt (used when yieldMode is fit)
+  Double_t kstarMassFitCfSignalWidth;      // Breit-Wigner Gamma [GeV/c^2], PDG phi = 0.004249
   Bool_t kstarMassFitCfCrossCheck;
   Double_t kstarMassFitCfFitMassMin;
   Double_t kstarMassFitCfFitMassMax;

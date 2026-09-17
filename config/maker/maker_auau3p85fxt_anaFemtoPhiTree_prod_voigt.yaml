@@ -1,3 +1,6 @@
+# Step 10 T3: the nominal maker config with the signal shape changed to a Voigt profile,
+# Gamma fixed to the PDG phi width. checkHistAnaFemtoPhi only; no tree is re-read.
+#
 # PRODUCTION tree configuration -- the one config for Step 7. Frozen 2026-09-15 after the
 # pre-production review (results/pre-production-review-20260915.md).
 #
@@ -118,12 +121,9 @@ cfSubWriteSidecarRoot: false
 cfSubLowStatsRebinExtra: 2
 
 # kstarMassFitCF: per-k* full M_KK, S=F-αB, C = Y_SE/Y_ME. Default template ROT; MIX is cross-check.
-# Yield extraction: count the bins of S = F - alpha B inside the signal window. No lineshape is
-# assumed and there is no fit to fail. Decided 2026-09-17 after the gaussian's chi2/ndf was found
-# to run from 1.8 to 6.5 with statistics (Step 10 T1).
-kstarMassFitCfYieldMode: count
 kstarMassFitCfEnabled: true
 kstarMassFitCfTemplate: rot
+kstarMassFitCfSignalShape: voigt
 kstarMassFitCfCrossCheck: true
 kstarMassFitCfFitMassMin: 0.99
 kstarMassFitCfFitMassMax: 1.06
