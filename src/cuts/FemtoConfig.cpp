@@ -160,10 +160,13 @@ void FemtoConfig::SetDefaults() {
   fullyMixedEnabled = kFALSE;
   fullyMixedSpeciesKey = "phi_mix";
   fullyMixedParticleKey = "phi_fully_mixed";
+  mixChargeMode = "combinedLegacy";
   fullyMixedMaxCandidates = 2000;
   fullyMixedSamplingSeed = 314159;
   rotationSpeciesKey = "phi_rot";
   rotationParticleKey = "phi_rotation";
+  rotationChargeMode = "legacyKp";
+  rotationPairCutMode = "preRotationLegacy";
   rotationN = 10;
   rotationMinAngle = 0.0;
   rotationMaxAngle = 6.283185307179586;
@@ -223,7 +226,7 @@ void FemtoConfig::SetDefaults() {
 
   kstarMassFitCfEnabled = kTRUE;
   kstarMassFitCfTemplate = "rot";
-  kstarMassFitCfAlphaErrorMode = "perbin";
+  kstarMassFitCfAlphaErrorMode = "coherent";
   kstarMassFitCfYieldMode = "fit";
   kstarMassFitCfSignalShape = "gaus";
   kstarMassFitCfSignalWidth = 0.004249;
@@ -232,6 +235,7 @@ void FemtoConfig::SetDefaults() {
   kstarMassFitCfFitMassMax = 1.06;
   kstarMassFitCfKstarBinWidth = 0.050;
   kstarMassFitCfLowKstarMergeBins = 1;
+  kstarMassFitCfMassRebin = 2;
   kstarMassFitCfAlphaMassMin = 1.04;
   kstarMassFitCfAlphaMassMax = 1.06;
   kstarMassFitCfWriteSidecar = kTRUE;
@@ -514,6 +518,8 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   if (values.find("rotationEnabled") != values.end()) rotationEnabled = YamlParser::ToBool(values.at("rotationEnabled"), rotationEnabled);
   if (values.find("rotationSpeciesKey") != values.end()) rotationSpeciesKey = values.at("rotationSpeciesKey");
   if (values.find("rotationParticleKey") != values.end()) rotationParticleKey = values.at("rotationParticleKey");
+  if (values.find("rotationChargeMode") != values.end()) rotationChargeMode = values.at("rotationChargeMode");
+  if (values.find("rotationPairCutMode") != values.end()) rotationPairCutMode = values.at("rotationPairCutMode");
   if (values.find("rotationN") != values.end()) rotationN = YamlParser::ToInt(values.at("rotationN"), rotationN);
   if (values.find("rotationMinAngle") != values.end()) rotationMinAngle = YamlParser::ToDouble(values.at("rotationMinAngle"), rotationMinAngle);
   if (values.find("rotationMaxAngle") != values.end()) rotationMaxAngle = YamlParser::ToDouble(values.at("rotationMaxAngle"), rotationMaxAngle);
@@ -523,6 +529,7 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
   }
   if (values.find("fullyMixedSpeciesKey") != values.end()) fullyMixedSpeciesKey = values.at("fullyMixedSpeciesKey");
   if (values.find("fullyMixedParticleKey") != values.end()) fullyMixedParticleKey = values.at("fullyMixedParticleKey");
+  if (values.find("mixChargeMode") != values.end()) mixChargeMode = values.at("mixChargeMode");
   if (values.find("fullyMixedMaxCandidates") != values.end()) {
     fullyMixedMaxCandidates = YamlParser::ToInt(values.at("fullyMixedMaxCandidates"), fullyMixedMaxCandidates);
   }
@@ -638,6 +645,10 @@ void FemtoConfig::ApplyYamlValues(const std::map<std::string, std::string>& valu
     warnDeprecated("method3BkgSubLowKstarMergeBins", "kstarMassFitCfLowKstarMergeBins");
     kstarMassFitCfLowKstarMergeBins =
         YamlParser::ToInt(values.at("method3BkgSubLowKstarMergeBins"), kstarMassFitCfLowKstarMergeBins);
+  }
+  if (values.find("kstarMassFitCfMassRebin") != values.end()) {
+    kstarMassFitCfMassRebin =
+        YamlParser::ToInt(values.at("kstarMassFitCfMassRebin"), kstarMassFitCfMassRebin);
   }
   if (values.find("kstarMassFitCfAlphaMassMin") != values.end()) {
     kstarMassFitCfAlphaMassMin =
@@ -856,8 +867,36 @@ Bool_t FemtoConfig::Validate() const {
     std::cerr << "ERROR: rotationEnabled but species '" << rotationSpeciesKey << "' not defined" << std::endl;
     ok = kFALSE;
   }
+  if (rotationChargeMode != "legacyKp" && rotationChargeMode != "legacyKm" &&
+      rotationChargeMode != "bothSeparated") {
+    std::cerr << "ERROR: FemtoConfig rotationChargeMode must be legacyKp, legacyKm, or bothSeparated (got '"
+              << rotationChargeMode << "')" << std::endl;
+    ok = kFALSE;
+  }
+  if (rotationPairCutMode != "preRotationLegacy" && rotationPairCutMode != "postRotation") {
+    std::cerr << "ERROR: FemtoConfig rotationPairCutMode must be preRotationLegacy or postRotation (got '"
+              << rotationPairCutMode << "')" << std::endl;
+    ok = kFALSE;
+  }
+  if (rotationEnabled && rotationChargeMode == "bothSeparated" &&
+      (species.find("phi_rot_kp") == species.end() || species.find("phi_rot_km") == species.end())) {
+    std::cerr << "ERROR: rotationChargeMode=bothSeparated requires species phi_rot_kp and phi_rot_km"
+              << std::endl;
+    ok = kFALSE;
+  }
   if (fullyMixedEnabled && species.find(fullyMixedSpeciesKey) == species.end()) {
     std::cerr << "ERROR: fullyMixedEnabled but species '" << fullyMixedSpeciesKey << "' not defined" << std::endl;
+    ok = kFALSE;
+  }
+  if (mixChargeMode != "combinedLegacy" && mixChargeMode != "bothSeparated") {
+    std::cerr << "ERROR: FemtoConfig mixChargeMode must be combinedLegacy or bothSeparated (got '"
+              << mixChargeMode << "')" << std::endl;
+    ok = kFALSE;
+  }
+  if (fullyMixedEnabled && mixChargeMode == "bothSeparated" &&
+      (species.find("phi_mix_curkp") == species.end() || species.find("phi_mix_curkm") == species.end())) {
+    std::cerr << "ERROR: mixChargeMode=bothSeparated requires species phi_mix_curkp and phi_mix_curkm"
+              << std::endl;
     ok = kFALSE;
   }
   if (fullyMixedEnabled &&
@@ -967,6 +1006,11 @@ Bool_t FemtoConfig::Validate() const {
   if (kstarMassFitCfLowKstarMergeBins < 1) {
     std::cerr << "ERROR: FemtoConfig kstarMassFitCfLowKstarMergeBins must be >= 1 (got "
               << kstarMassFitCfLowKstarMergeBins << ")" << std::endl;
+    ok = kFALSE;
+  }
+  if (kstarMassFitCfMassRebin < 1) {
+    std::cerr << "ERROR: FemtoConfig kstarMassFitCfMassRebin must be >= 1 (got "
+              << kstarMassFitCfMassRebin << ")" << std::endl;
     ok = kFALSE;
   }
   if (kstarMassFitCfAlphaMassMax > kstarMassFitCfAlphaMassMin && kstarMassFitCfAlphaMassMin < 0.0) {

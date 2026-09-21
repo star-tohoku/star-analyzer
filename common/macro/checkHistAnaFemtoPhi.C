@@ -3735,9 +3735,12 @@ static void drawDirectMassFitPurityPageForBase(TCanvas* canvas, TFile* fin, cons
 // kstarMassFitCF ROT/MIX mass-background subtraction QA (dedicated PDF)
 // S = F - alpha * B,  alpha = int_side F / int_side B  (left+right SB windows)
 // ---------------------------------------------------------------------------
-// Mass-axis rebin applied to SE/ME F and B projections before alpha, S, and gaus fit.
-// Trial value (YAML wiring deferred); set 1 to disable.
-static const Int_t kKmfMassRebin = 3;
+// Mass-axis rebin applied to SE/ME F and B projections before alpha, S, and yield extraction.
+static Int_t getKstarMassFitCfMassRebin() {
+  if (!gConfigLoaded) return 2;
+  const Int_t factor = ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfMassRebin;
+  return factor >= 1 ? factor : 1;
+}
 static const Double_t kKmfMassXMaxDisplay = 1.12;
 
 static Bool_t getChannelSidebandWindows(const std::string& channelBase, Double_t& lMin, Double_t& lMax,
@@ -3819,9 +3822,17 @@ static Double_t kmfAlphaFromSingleWindow(TH1* hF, TH1* hB, Double_t mMin, Double
 }
 
 static std::string kmfAlphaErrorMode() {
-  if (!gConfigLoaded) return "perbin";
+  if (!gConfigLoaded) return "coherent";
   const std::string m = ConfigManager::GetInstance().GetFemtoConfig().kstarMassFitCfAlphaErrorMode;
-  return m.empty() ? std::string("perbin") : m;
+  if (m.empty()) return "coherent";
+  if (m == "coherent" || m == "perbin" || m == "off") return m;
+  static Bool_t warned = kFALSE;
+  if (!warned) {
+    warned = kTRUE;
+    std::cerr << "[checkHistAnaFemtoPhi] WARNING: unknown kstarMassFitCfAlphaErrorMode='"
+              << m << "'; using coherent" << std::endl;
+  }
+  return "coherent";
 }
 
 // alpha is one number shared by every mass bin of S = F - alpha B, so its uncertainty moves the
@@ -3854,6 +3865,9 @@ static Double_t kmfCoherentAlphaYieldError(TH1* hF, TH1* hB, Double_t alpha, Dou
 }
 
 static void kmfApplyAlphaErrorToS(TH1* hS, TH1* hB, Double_t alphaErr) {
+  // Counted yields propagate the one shared alpha analytically in kmfCountYield.
+  // Their diagnostic S histogram must therefore retain statistical bin errors only.
+  if (kmfYieldMode() == "count") return;
   if (kmfAlphaErrorMode() != "perbin") return;
   if (!hS || !hB || alphaErr <= 0.0) return;
   const Int_t n = hS->GetNbinsX();
@@ -3946,11 +3960,11 @@ static void drawKstarMassFitCfGuidePage(TCanvas* canvas) {
   t->DrawLatex(0.06, y, "Row3: same columns for S = F_{SE} - #alpha B_{ME} (#alpha from F_{SE} / B_{ME} in #alpha window).");
   y -= dy * 1.2;
   t->SetTextFont(62);
-  t->DrawLatex(0.06, y, "Mass rebin (before #alpha / S / fit):");
+  t->DrawLatex(0.06, y, "Mass rebin (before #alpha / S / yield extraction):");
   t->SetTextFont(42);
   y -= dy;
-  t->DrawLatex(0.08, y, Form("SE and ME: Rebin(%d) on F and B projections (kKmfMassRebin).",
-                             kKmfMassRebin));
+  t->DrawLatex(0.08, y, Form("SE and ME: Rebin(%d) on F and B projections (YAML kstarMassFitCfMassRebin).",
+                             getKstarMassFitCfMassRebin()));
   y -= dy;
   t->DrawLatex(0.08, y, Form("Low k*: merge first %d x %.3f-GeV/c bins before projection and fit.",
                              getKstarMassFitCfLowKstarMergeBins(), getKstarMassFitCfKstarBinTarget()));
@@ -4046,8 +4060,8 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
 
   // Rebin mass axis for SE and ME (F and B) before alpha, subtraction, and fit.
   auto rebinMass = [&](TH1* h) {
-    if (!h || kKmfMassRebin <= 1) return;
-    h->Rebin(kKmfMassRebin);
+    if (!h || getKstarMassFitCfMassRebin() <= 1) return;
+    h->Rebin(getKstarMassFitCfMassRebin());
   };
   rebinMass(hFse);
   rebinMass(hFme);
@@ -4350,7 +4364,7 @@ static Bool_t drawKstarMassFitCfKstarPage(TCanvas* canvas, TFile* fin, const Fem
   title->DrawLatex(0.02, 0.985,
                    Form("%s  %s  template=%s  %.3f<k*<%.3f GeV/c  (x=%.3f)  Rebin(%d)  rows: SE | ME | SE#leftarrow ME BKG",
                         channelBase.c_str(), slice.id.c_str(), templateTag, kstarLo, kstarHi, kstar,
-                        kKmfMassRebin));
+                        getKstarMassFitCfMassRebin()));
   (void)minEntries;
   (void)fin;
   (void)slice;
@@ -4578,7 +4592,7 @@ static TH1* kmfProjectMassKstar(TH2* h2, Double_t kLo, Double_t kHi, const char*
   TH1* h = h2->ProjectionX(pwgUniq(stem).Data(), iy0, iy1);
   if (!h) return 0;
   h->SetDirectory(0);
-  if (kKmfMassRebin > 1) h->Rebin(kKmfMassRebin);
+  if (getKstarMassFitCfMassRebin() > 1) h->Rebin(getKstarMassFitCfMassRebin());
   keepAlive.push_back(h);
   return h;
 }
@@ -5224,11 +5238,11 @@ static void computeKmfYieldsNoDraw(TH2* h2Fse, TH2* h2Fme, TH2* h2Bse, TH2* h2Bm
     hFme->SetDirectory(0);
     hBse->SetDirectory(0);
     hBme->SetDirectory(0);
-    if (kKmfMassRebin > 1) {
-      hFse->Rebin(kKmfMassRebin);
-      hFme->Rebin(kKmfMassRebin);
-      hBse->Rebin(kKmfMassRebin);
-      hBme->Rebin(kKmfMassRebin);
+    if (getKstarMassFitCfMassRebin() > 1) {
+      hFse->Rebin(getKstarMassFitCfMassRebin());
+      hFme->Rebin(getKstarMassFitCfMassRebin());
+      hBse->Rebin(getKstarMassFitCfMassRebin());
+      hBme->Rebin(getKstarMassFitCfMassRebin());
     }
     keepAlive.push_back(hFse);
     keepAlive.push_back(hFme);
@@ -7397,9 +7411,9 @@ static void kmcFillFitAudit(TFile* fin, std::vector<TH1*>& keepAlive, std::map<s
           if (!hF || !hB) continue;
           hF->SetDirectory(0);
           hB->SetDirectory(0);
-          if (kKmfMassRebin > 1) {
-            hF->Rebin(kKmfMassRebin);
-            hB->Rebin(kKmfMassRebin);
+          if (getKstarMassFitCfMassRebin() > 1) {
+            hF->Rebin(getKstarMassFitCfMassRebin());
+            hB->Rebin(getKstarMassFitCfMassRebin());
           }
           keepAlive.push_back(hF);
           keepAlive.push_back(hB);
@@ -7540,9 +7554,9 @@ static void drawKmfWindowCountMassPages(TCanvas* canvas, TFile* fin, const TStri
         TH1* hB = (TH1*)hBn->Clone(pwgUniq("cmpB").Data());
         hF->SetDirectory(0);
         hB->SetDirectory(0);
-        if (kKmfMassRebin > 1) {
-          hF->Rebin(kKmfMassRebin);
-          hB->Rebin(kKmfMassRebin);
+        if (getKstarMassFitCfMassRebin() > 1) {
+          hF->Rebin(getKstarMassFitCfMassRebin());
+          hB->Rebin(getKstarMassFitCfMassRebin());
         }
         keepAlive.push_back(hF);
         keepAlive.push_back(hB);
@@ -8251,9 +8265,9 @@ static void drawKmcIntegratedResidualPage(TCanvas* canvas, TFile* fin, const TSt
     TH1* hBd = (TH1*)hB->Clone(pwgUniq("intBd").Data());
     hFd->SetDirectory(0);
     hBd->SetDirectory(0);
-    if (kKmfMassRebin > 1) {
-      hFd->Rebin(kKmfMassRebin);
-      hBd->Rebin(kKmfMassRebin);
+    if (getKstarMassFitCfMassRebin() > 1) {
+      hFd->Rebin(getKstarMassFitCfMassRebin());
+      hBd->Rebin(getKstarMassFitCfMassRebin());
     }
     keepAlive.push_back(hFd);
     keepAlive.push_back(hBd);
@@ -8266,7 +8280,7 @@ static void drawKmcIntegratedResidualPage(TCanvas* canvas, TFile* fin, const TSt
     canvas->cd(2);
     TH1* hSd = (TH1*)hS->Clone(pwgUniq("intSd").Data());
     hSd->SetDirectory(0);
-    if (kKmfMassRebin > 1) hSd->Rebin(kKmfMassRebin);
+    if (getKstarMassFitCfMassRebin() > 1) hSd->Rebin(getKstarMassFitCfMassRebin());
     keepAlive.push_back(hSd);
     hSd->SetLineColor(kRed + 1);
     hSd->SetTitle("S=F-#alpha B  (outside-signal residual);#it{M}_{KK};S");
@@ -9154,7 +9168,7 @@ static void drawKmfSidebandLeakageSection(TCanvas* canvas, TFile* fin, const TSt
   const char* bases[] = {"phi_proton", "phi_deuteron", 0};
   const char* tags[] = {"rot", "mix", 0};
   const char* sbs[] = {"lsb", "rsb", "sblr", 0};
-  const Double_t dks[2] = {getKstarMassFitCfKstarBinTarget(), 2.0 * getKstarMassFitCfKstarBinTarget()};
+  const Double_t dks[2] = {0.040, 0.080};  // Fixed closure widths; must match dk40/dk80 keys.
   const char* dkTags[2] = {"dk40", "dk80"};
   if (sl && fin) {
     Double_t sigMin = 0, sigMax = 0, lMin = 0, lMax = 0, rMin = 0, rMax = 0;
@@ -9944,6 +9958,8 @@ static void writeKstarMassFitCfSidecarRoot(const TString& outDir, const TString&
     pMax.Write();
     TParameter<Double_t> pDk("meta_kstarMassFitCfKstarBinWidth", fc.kstarMassFitCfKstarBinWidth);
     pDk.Write();
+    TParameter<Int_t> pMassRebin("meta_kstarMassFitCfMassRebin", fc.kstarMassFitCfMassRebin);
+    pMassRebin.Write();
     TParameter<Double_t> pA0("meta_kstarMassFitCfAlphaMassMin", fc.kstarMassFitCfAlphaMassMin);
     pA0.Write();
     TParameter<Double_t> pA1("meta_kstarMassFitCfAlphaMassMax", fc.kstarMassFitCfAlphaMassMax);
@@ -10734,10 +10750,11 @@ void checkHistAnaFemtoPhi(const Char_t* inputRootFile,
                  fc.cfSubtractionMode.c_str(), fc.cfSubPurityMode.c_str(), fc.cfSubSidebandCombine.c_str(),
                  fc.cfSubLowStatsRebinExtra, fc.cfSubWriteSidecarRoot ? "true" : "false");
     note += Form("kstarMassFitCF YAML: enabled=%s template=%s crossCheck=%s fitMass=[%.3f,%.3f] "
-                 "kstarBinWidth=%.3f writeSidecar=%s\n",
+                 "kstarBinWidth=%.3f massRebin=%d writeSidecar=%s\n",
                  fc.kstarMassFitCfEnabled ? "true" : "false", fc.kstarMassFitCfTemplate.c_str(),
                  fc.kstarMassFitCfCrossCheck ? "true" : "false", fc.kstarMassFitCfFitMassMin,
                  fc.kstarMassFitCfFitMassMax, fc.kstarMassFitCfKstarBinWidth,
+                 fc.kstarMassFitCfMassRebin,
                  fc.kstarMassFitCfWriteSidecar ? "true" : "false");
   }
   note += "Re-run analysis after hist/Maker changes so new keys exist in the ROOT file.\n";

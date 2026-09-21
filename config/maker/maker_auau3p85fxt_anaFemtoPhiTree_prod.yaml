@@ -122,6 +122,7 @@ cfSubLowStatsRebinExtra: 2
 # assumed and there is no fit to fail. Decided 2026-09-17 after the gaussian's chi2/ndf was found
 # to run from 1.8 to 6.5 with statistics (Step 10 T1).
 kstarMassFitCfYieldMode: count
+kstarMassFitCfAlphaErrorMode: coherent
 kstarMassFitCfEnabled: true
 kstarMassFitCfTemplate: rot
 kstarMassFitCfCrossCheck: true
@@ -129,6 +130,7 @@ kstarMassFitCfFitMassMin: 0.99
 kstarMassFitCfFitMassMax: 1.06
 kstarMassFitCfKstarBinWidth: 0.050
 kstarMassFitCfLowKstarMergeBins: 2
+kstarMassFitCfMassRebin: 2
 # alpha window. Moved off 1.04-1.06 on 2026-09-17 after the window scan (Step 10 T2):
 # there the phi's Breit-Wigner tail still contributes 1.03% of the window's counts, and the
 # correlation function at k* = 0.05 has not yet reached its plateau. At 1.07-1.09 the leak is
@@ -242,6 +244,8 @@ rotationSeed: 20260915
 rotationEnabled: true
 rotationSpeciesKey: phi_rot
 rotationParticleKey: phi_rotation
+rotationChargeMode: legacyKp
+rotationPairCutMode: preRotationLegacy
 rotationN: 10
 rotationMinAngle: 0.0
 rotationMaxAngle: 6.283185307179586
@@ -249,6 +253,7 @@ rotationMaxAngle: 6.283185307179586
 fullyMixedEnabled: true
 fullyMixedSpeciesKey: phi_mix
 fullyMixedParticleKey: phi_fully_mixed
+mixChargeMode: combinedLegacy
 fullyMixedMaxCandidates: 2000
 fullyMixedSamplingSeed: 314159
 

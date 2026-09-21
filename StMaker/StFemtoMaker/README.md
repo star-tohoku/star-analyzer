@@ -9,7 +9,8 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
 - One key per candidate source registered in the event store
 - Examples: `proton`, `anti_proton`, `kaon_plus`, `phi`
 - Each species entry requires:
-  - `builderType`: `track` or `resonance`
+  - `builderType`: `track`, `resonance`, or `derived` (`derived` is populated by a parent
+    background builder rather than dispatched independently)
   - `particleKey`: builder dispatch key (see below)
 
 ## Particle keys (`particleKey` field)
@@ -264,9 +265,21 @@ Does **not** use global `PIDCutConfig.requireTOF` / `tofFallbackMode` (those rem
 
 When `rotationEnabled: true`, species `phi_rot` with `particleKey: phi_rotation` fills rotated φ candidates (`rotationN` azimuth rotations per real KK pair; DCA/PID/TOF evaluated on real tracks). Pair with proton via channel `phi_rot_proton`.
 
+- `rotationChargeMode: legacyKp|legacyKm|bothSeparated`; production remains `legacyKp` until the
+  charge-symmetric validation is accepted. `bothSeparated` additionally fills derived species
+  `phi_rot_kp` and `phi_rot_km`; channels are named `phi_rot_kp_<bachelor>` and
+  `phi_rot_km_<bachelor>`. The legacy `phi_rot` store stays identical to the K⁺ leg. Non-legacy
+  modes are currently implemented only by `anaFemtoPhiTreeDownstreamV3`; direct `StFemtoMaker`
+  rejects them until the validation gate is passed and the Maker/histogram rollout is completed.
+- `rotationPairCutMode: preRotationLegacy|postRotation`. The former applies opening-angle and
+  pair-rapidity cuts before rotation; the latter applies them independently to each rotated leg.
+
 ## Fully-mixed KK (`phi_mix`)
 
 - **Species:** `phi_mix` / `particleKey: phi_fully_mixed` when `fullyMixedEnabled: true`.
+- `mixChargeMode: combinedLegacy|bothSeparated`. The latter preserves the accepted directions as
+  derived species `phi_mix_curkp` (current K⁺ × buffer K⁻) and `phi_mix_curkm` (buffer K⁺ ×
+  current K⁻), while `phi_mix` remains their exact raw union under the same combined cap/sample.
 - **Population:** production-PID daughters (`PassPhiDaughterTofPid`) in both directions combined — current K⁺ × buffered K⁻ and buffered K⁺ × current K⁻ — into one pair-index space. Eligible pairs also pass invMass>0, opening-angle, and pair-rapidity cuts.
 - **Cap:** `fullyMixedMaxCandidates` is the stored-candidate count **per current event** on the combined set (not per direction). Production uses `2000`. `<=0` keeps every eligible pair (validation only; do not run uncapped on full production).
 - **Sampling:** lazy Fisher–Yates permutation of 64-bit flat pair indices (`include/FemtoPhiMixSampler.h`). The first `cap` eligible pairs in that random order are stored, which is a uniform sample without replacement from the eligible set. No sampling weights / event reweighting.
@@ -308,3 +321,26 @@ See also `docs/femto_track_sharing_concerns.md` for overlap risks when extending
 - **QA hist prefixes:** `hP_`, `hDeuteron_`, `hTriton_`, `hHe3_`, `hHe4_`; k* keys `hKstarSE/ME_<channel>`.
 - **checkHist:** `checkHistAnaFemtoPhi.C` — bachelor-loop QA; single PDF (no CF-only PDF).
 
+## DATA-006 p–p / p–d / d–d reduced-tree channels
+
+The source-calibration channels use canonical track-species names
+`proton_proton`, `proton_deuteron`, and `deuteron_deuteron`. They are built downstream from
+the schema-3 `anaFemtoPhiTree` production, so event, centrality, track-quality, and PID decisions
+are the stored decisions from the phi production. The producer mainconf and its 119-key
+`FemtoFlagConfig` snapshot must match; the separate downstream-only configuration is
+`config/maker/data006_auau3p85fxt_pp_pd_dd.yaml`.
+
+- Identical SE pairs are unordered (`i < j`), excluding self-pairs and double counting.
+- Identical ME pairs use current × buffer once; the reverse direction is not duplicated.
+- p–d ME uses both current-p × buffer-d and buffer-p × current-d, following `mixBothDirections`.
+- A shared `(eventUID, trackIndex)` is rejected when one physical track appears in both species.
+- The baseline keeps the phi production's disabled close-pair veto. Uncut Δη–Δφ* SE/ME QA is
+  still stored; enabling the DATA-006 switch applies the configured window to SE and ME alike.
+- Native k* is 5 MeV/c. ROOT retains 0–3 GeV/c, fitter CSV covers 0–500 MeV/c, and normalization
+  is channel-configured at 0.5–1.0 GeV/c.
+
+Use `script/singularity_run_data006.sh` per reduced-tree block, merge its ROOT outputs with
+`hadd`, then use `script/package_data006.sh`. Merged centralities add SE and ME before
+normalization; finished CFs are never averaged.
+For visual checks, run `script/singularity_plot_data006.sh` on the finalized package. Its display
+rebinning recomputes the CF from rebinned SE and ME and never replaces the native 5 MeV/c data.

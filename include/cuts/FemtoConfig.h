@@ -161,6 +161,8 @@ class FemtoConfig {
   Bool_t rotationEnabled;
   std::string rotationSpeciesKey;
   std::string rotationParticleKey;
+  std::string rotationChargeMode;   // legacyKp | legacyKm | bothSeparated
+  std::string rotationPairCutMode;  // preRotationLegacy | postRotation
   Int_t rotationN;
   Double_t rotationMinAngle;
   Double_t rotationMaxAngle;
@@ -172,6 +174,7 @@ class FemtoConfig {
   Bool_t fullyMixedEnabled;
   std::string fullyMixedSpeciesKey;
   std::string fullyMixedParticleKey;
+  std::string mixChargeMode;  // combinedLegacy | bothSeparated
   Int_t fullyMixedMaxCandidates; // cap per event on combined fwd+rev; <=0 = uncapped (validation only)
   Int_t fullyMixedSamplingSeed;  // >0 fixed SplitMix64 seed; 0 = time-based (not for production)
 
@@ -225,7 +228,7 @@ class FemtoConfig {
   Bool_t kstarMassFitCfEnabled;
   std::string kstarMassFitCfTemplate;  // rot | mix
   // How the uncertainty on alpha reaches the extracted yield.
-  //   perbin   : add |B_i| * dAlpha in quadrature to every mass bin of S before the fit (legacy)
+  //   perbin   : legacy fit-only mode; add |B_i| * dAlpha to each mass-bin error
   //   coherent : fit S with statistical errors only, then add the yield shift under
   //              alpha -> alpha +- dAlpha in quadrature to the fit error
   //   off      : ignore dAlpha
@@ -250,6 +253,7 @@ class FemtoConfig {
   Double_t kstarMassFitCfFitMassMax;
   Double_t kstarMassFitCfKstarBinWidth;  // [GeV/c]; must be >0 when enabled
   Int_t kstarMassFitCfLowKstarMergeBins;  // merge first N rebinned k* bins (1 = disabled)
+  Int_t kstarMassFitCfMassRebin;           // mass-axis rebin factor; >=1
   Double_t kstarMassFitCfAlphaMassMin;    // α window; max<=min => leftSB+rightSB
   Double_t kstarMassFitCfAlphaMassMax;
   Bool_t kstarMassFitCfWriteSidecar;

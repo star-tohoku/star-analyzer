@@ -1,0 +1,154 @@
+# DATA-006 downstream-only pair and delivery configuration.
+#
+# Selection flags still come from, and are checked against, the frozen producer mainconf
+# main_auau3p85fxt_anaFemtoPhiTree_prod.yaml.  This file changes no producer-side event, track,
+# PID, or centrality decision.  It defines only track-track pairing, histogram axes, normalization,
+# and the requested native/merged output classes.
+
+# Native 5 MeV/c bins.  The ROOT working histograms retain 0--3 GeV/c so the 0.5--1.0 GeV/c
+# normalization region is explicit; the delivered fitter table stops at 0.5 GeV/c.
+kstarBins: 600
+kstarMin: 0.0
+kstarMax: 3.0
+deliveryKstarMax: 0.5
+
+# mT means mT_pair/2 = 0.5*sqrt((E1+E2)^2-(pz1+pz2)^2).
+pairMtBins: 150
+pairMtMin: 0.8
+pairMtMax: 3.8
+pairRapidityBins: 160
+pairRapidityMin: -1.5
+pairRapidityMax: 0.5
+
+# Baseline is deliberately OFF because the current phi production has closePairEnabled=false.
+# The Δη--Δφ* QA is still filled for SE and ME.  Enabling this switch applies the per-channel
+# windows below identically to SE and ME and therefore constitutes an explicit cut variation.
+closePairEnabled: false
+closePairShape: box
+closePairRadiusMin: 0.6
+closePairRadiusMax: 2.0
+closePairRadiusStep: 0.05
+
+nChannels: 3
+channel_0_channelName: proton_proton
+channel_0_partA: proton
+channel_0_partB: proton
+channel_0_enabled: true
+channel_0_doMixing: true
+channel_0_normQMin: 0.5
+channel_0_normQMax: 1.0
+channel_0_closePairDEta: 0.015
+channel_0_closePairDPhiStar: 0.015
+
+channel_1_channelName: proton_deuteron
+channel_1_partA: proton
+channel_1_partB: deuteron
+channel_1_enabled: true
+channel_1_doMixing: true
+channel_1_normQMin: 0.5
+channel_1_normQMax: 1.0
+channel_1_closePairDEta: 0.040
+channel_1_closePairDPhiStar: 0.040
+
+channel_2_channelName: deuteron_deuteron
+channel_2_partA: deuteron
+channel_2_partB: deuteron
+channel_2_enabled: true
+channel_2_doMixing: true
+channel_2_normQMin: 0.5
+channel_2_normQMax: 1.0
+channel_2_closePairDEta: 0.040
+channel_2_closePairDPhiStar: 0.040
+
+# cent9 grows toward central events.  Native and paper-comparison classes are both explicit.
+# 10--20% appears once because it is simultaneously native and a paper-comparison class.
+nCentralityClasses: 10
+centrality_0_id: pct_0_5
+centrality_0_lowPercent: 0
+centrality_0_highPercent: 5
+centrality_0_cent9Min: 8
+centrality_0_cent9Max: 8
+centrality_0_refmultLow: 142
+centrality_0_refmultHigh: 220
+centrality_0_nativeClass: true
+
+centrality_1_id: pct_5_10
+centrality_1_lowPercent: 5
+centrality_1_highPercent: 10
+centrality_1_cent9Min: 7
+centrality_1_cent9Max: 7
+centrality_1_refmultLow: 119
+centrality_1_refmultHigh: 142
+centrality_1_nativeClass: true
+
+centrality_2_id: pct_10_20
+centrality_2_lowPercent: 10
+centrality_2_highPercent: 20
+centrality_2_cent9Min: 6
+centrality_2_cent9Max: 6
+centrality_2_refmultLow: 86
+centrality_2_refmultHigh: 119
+centrality_2_nativeClass: true
+
+centrality_3_id: pct_20_30
+centrality_3_lowPercent: 20
+centrality_3_highPercent: 30
+centrality_3_cent9Min: 5
+centrality_3_cent9Max: 5
+centrality_3_refmultLow: 60
+centrality_3_refmultHigh: 86
+centrality_3_nativeClass: true
+
+centrality_4_id: pct_30_40
+centrality_4_lowPercent: 30
+centrality_4_highPercent: 40
+centrality_4_cent9Min: 4
+centrality_4_cent9Max: 4
+centrality_4_refmultLow: 41
+centrality_4_refmultHigh: 60
+centrality_4_nativeClass: true
+
+centrality_5_id: pct_40_50
+centrality_5_lowPercent: 40
+centrality_5_highPercent: 50
+centrality_5_cent9Min: 3
+centrality_5_cent9Max: 3
+centrality_5_refmultLow: 26
+centrality_5_refmultHigh: 41
+centrality_5_nativeClass: true
+
+centrality_6_id: pct_50_60
+centrality_6_lowPercent: 50
+centrality_6_highPercent: 60
+centrality_6_cent9Min: 2
+centrality_6_cent9Max: 2
+centrality_6_refmultLow: 16
+centrality_6_refmultHigh: 26
+centrality_6_nativeClass: true
+
+centrality_7_id: pct_0_10
+centrality_7_lowPercent: 0
+centrality_7_highPercent: 10
+centrality_7_cent9Min: 7
+centrality_7_cent9Max: 8
+centrality_7_refmultLow: 119
+centrality_7_refmultHigh: 220
+centrality_7_nativeClass: false
+
+centrality_8_id: pct_20_40
+centrality_8_lowPercent: 20
+centrality_8_highPercent: 40
+centrality_8_cent9Min: 4
+centrality_8_cent9Max: 5
+centrality_8_refmultLow: 41
+centrality_8_refmultHigh: 86
+centrality_8_nativeClass: false
+
+centrality_9_id: pct_40_60
+centrality_9_lowPercent: 40
+centrality_9_highPercent: 60
+centrality_9_cent9Min: 2
+centrality_9_cent9Max: 3
+centrality_9_refmultLow: 16
+centrality_9_refmultHigh: 41
+centrality_9_nativeClass: false

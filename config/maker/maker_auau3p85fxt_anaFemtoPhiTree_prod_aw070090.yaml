@@ -127,6 +127,7 @@ cfSubLowStatsRebinExtra: 2
 # assumed and there is no fit to fail. Decided 2026-09-17 after the gaussian's chi2/ndf was found
 # to run from 1.8 to 6.5 with statistics (Step 10 T1).
 kstarMassFitCfYieldMode: count
+kstarMassFitCfAlphaErrorMode: coherent
 kstarMassFitCfEnabled: true
 kstarMassFitCfTemplate: rot
 kstarMassFitCfCrossCheck: true
@@ -134,6 +135,7 @@ kstarMassFitCfFitMassMin: 0.99
 kstarMassFitCfFitMassMax: 1.06
 kstarMassFitCfKstarBinWidth: 0.050
 kstarMassFitCfLowKstarMergeBins: 2
+kstarMassFitCfMassRebin: 2
 kstarMassFitCfAlphaMassMin: 1.070
 kstarMassFitCfAlphaMassMax: 1.090
 kstarMassFitCfWriteSidecar: true

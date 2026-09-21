@@ -82,3 +82,11 @@ See [docs/REFERENCE.md](docs/REFERENCE.md) for a longer directory table and scri
 Open this repository as the **project folder** in [Cursor](https://cursor.com/). Canonical AI guidance lives in [docs/ai/README.md](docs/ai/README.md) and [PHILOSOPHY.md](PHILOSOPHY.md). [.cursor/rules/](.cursor/rules/) and [.cursor/skills/](.cursor/skills/) are lightweight wrappers for Cursor integration.
 
 When a skill source under `docs/ai/skills/*.md` is edited in Cursor, `.cursor/hooks.json` triggers `.cursor/hooks/auto-sync-skills.sh`, which runs `script/sync_and_check_skills.sh` automatically.
+
+### DATA-006 source calibration
+
+The schema-3 phi reduced tree also supports matter p–p, p–d, and d–d source-calibration
+correlations without redefining event selection, PID, or centrality. See
+`script/singularity_run_data006.sh`, `script/package_data006.sh`,
+`script/singularity_plot_data006.sh`, and
+`docs/others/DATA-006-implementation.md`.

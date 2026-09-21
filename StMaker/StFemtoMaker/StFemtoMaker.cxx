@@ -125,6 +125,15 @@ Int_t StFemtoMaker::Init() {
   }
 
   const FemtoConfig& femtoCfg = ConfigManager::GetInstance().GetFemtoConfig();
+  if (femtoCfg.rotationChargeMode != "legacyKp" ||
+      femtoCfg.rotationPairCutMode != "preRotationLegacy" ||
+      femtoCfg.mixChargeMode != "combinedLegacy") {
+    std::cerr << "[StFemtoMaker] charge-separated ROT/MIX modes are currently implemented only "
+                 "in anaFemtoPhiTreeDownstreamV3 for the validation study. Refusing a direct "
+                 "Maker run that would otherwise leave derived species empty."
+              << std::endl;
+    return kStErr;
+  }
   if (femtoCfg.rotationEnabled && femtoCfg.rotationSeed != 0) {
     gRandom->SetSeed(femtoCfg.rotationSeed);
   }

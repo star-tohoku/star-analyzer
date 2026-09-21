@@ -526,7 +526,7 @@ const string mParamStr_ref5[nID_ref5][nSet_ref5] = {
   // mParameterIndex = 0
   // Run 18 Au+Au 3.85 GeV (sqrt(s_NN)=3 GeV), Trigger ID = 620052
   {
-    "2018:3.85:19151029,22179999:198,202",         // Year, energy, run start end, Vz range (stop extended for P24iy FXT 2021; use official 2021 fxtmult tables when available)
+    "2018:3.85:19151029,22179999:198,202",         // Year, energy, run start end, Vz range (Run18 parameters officially apply to P24iy FXT 2021; stop extended for its run IDs)
     "5,7,9,12,16,21,26,33,41,50,60,72,86,101,119,142",  // Multiplicity values for the centrality classes
     "40",                        // Normalization start (of Glauber to the data)
     "0.,0.,0.,0.,0.,0.,0.,0.",   // Vz correction parameters (switched to new scheme, parameters defined near the shape corrections)

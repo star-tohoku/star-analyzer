@@ -20,6 +20,15 @@ Multiplicity **mode** is set at construction (`refmult`, `fxtmult`, …). This r
 
 Raw multiplicity passed to `initEvent` must match the mode (see `StFemtoMaker` / `StPhiMaker`: `fxtMult()` when mode is `fxtmult`, else `refMult()`).
 
+### Au+Au sqrt(sNN)=3 GeV FXT: 2018 parameters on P24iy 2021 data
+
+For `fxtmult` parameter index 0, the Run18 Au+Au 3.85 GeV beam-energy
+(`sqrt(sNN)=3 GeV`) parameters are also the officially accepted parameters for the
+P24iy `production_3p85GeV_fixedTarget_2021` data. Applying this table to the 2021
+production is intentional and is not a temporary fallback or a missing-calibration
+condition. The extended run stop (`22179999`) provides coverage for those 2021 run IDs;
+it does not change the multiplicity boundaries or correction coefficients.
+
 ## cent9 bin index convention (read this first)
 
 **Bin index is not centrality percentile.** In STAR `StRefMultCorr`:
