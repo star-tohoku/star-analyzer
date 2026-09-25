@@ -1,0 +1,62 @@
+# Full Finder/Topo Lambda reconstruction, schema 2 (scalar config is incompatible).
+# Core: frozen .DEV2. PID flow and TOF coefficients: xwu2 KFTree_lambda.
+# AuAu19 acceptance below is explicit, NOT identical to the xwu2 FXT acceptance.
+# TOF calibration validity for this dataset requires QA; profile is recorded in output.
+schemaVersion: 2
+backend: finder_topo
+pidProfile: dedx_pull
+tofCalibrationProfile: xwu2_lambda_reference
+
+minNHitsFit: 15
+minNHitsDedx: 5
+minNHitsRatio: 0.0 # disabled; reference FXT profile below uses 0.52
+minPt: 0.15
+maxPt: 10.0
+minEta: -1.5
+maxEta: 1.5
+minDedxError: 0.04
+maxDedxError: 0.12
+useHftTracksOnly: false
+
+nSigmaPion: 3.0
+nSigmaKaon: 2.0
+nSigmaProton: 3.0
+useTof: true
+strictTofPid: false
+cleanKaonsWithTof: false
+tofNSigma: 3.0
+tofPMax: 2.0
+tofKaonPMin: 0.5
+tofKaonPMax: 2.0
+# Six rows flattened: pi+, K+, p, pi-, K-, pbar; powers p^0..p^4.
+# Source: xwu2 Interface GetTofPID, polynomial evaluated at min(p, tofPMax).
+tofMean: [0.0228319, -0.0148291, 0.0188313, -0.0182425, 0.00409811, 0.248425, -0.00699781, -0.00991387, 0.0132717, -0.00694824, 0.863211, 0.0264171, -0.0230833, 0.00239637, 0.000262309, 0.0224095, -0.0123235, 0.0145216, -0.0149944, 0.00325952, 0.250696, -0.0151308, 0.00437457, 0.00516669, -0.00529184, 0.886912, -0.0298543, 0.0449904, -0.0286879, 0.00541963]
+tofSigma: [0.0112498, -0.0400571, 0.0733615, -0.0316505, 0.00629469, 0.015483, -0.0396312, 0.0719647, -0.0290683, 0.00637164, 0.114465, -0.287213, 0.356536, -0.169257, 0.0299844, 0.0111682, -0.0394877, 0.0718342, -0.0302914, 0.00587317, 0.0157322, -0.0402606, 0.0716639, -0.0272101, 0.00564467, 0.0899438, -0.211922, 0.273122, -0.129597, 0.0231844]
+
+rejectBadCovariance: true
+maxPositionVariance: 100.0
+maxMomentumVariance: 1.0
+
+# Distinct Interface, PV reconstructor and Finder thresholds.
+interfaceChiPrimaryCut: 3.0
+primaryProbCut: 0.0001
+finderMaxDaughterDistance: 1.5 # cm
+finderLCut: 1.0 # cm
+finderChiPrimary2D: 3.0
+finderChi2Ndf2D: 10.0
+finderLdL2D: 3.0
+reconstructAntiLambda: true
+
+# Additional Maker selection, after Finder. Negative values disable optional
+# bounds (minCosPointing <= -1 disables). No parent mass constraint is applied.
+minMass: 1.05
+maxMass: 1.25
+maxMassError: -1.0
+maxChi2Ndf: -1.0
+maxTopoChi2Ndf: -1.0
+maxDaughterDistance: -1.0
+maxDistanceToPv: -1.0
+minDecayLength: -1.0
+minDecayLengthSignificance: -1.0
+minVertexLineSignificance: -1.0
+minCosPointing: -2.0

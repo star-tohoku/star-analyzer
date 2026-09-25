@@ -1,0 +1,4 @@
+# StLambdaMaker::PassEventCuts uses only this event-level control.
+# Vertex/RefMult/VPD conditions are not applied by this Maker.
+# Bad-run/pileup/centrality settings are in the centrality: concern.
+maxNTr: 0 # 0 disables the track-count upper bound

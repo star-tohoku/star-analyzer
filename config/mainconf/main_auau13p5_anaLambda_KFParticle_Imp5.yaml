@@ -1,0 +1,10 @@
+# config-generator: manual
+# Imp5-matched full KF reconstruction: active settings only.
+# Common daughter cuts and KF-specific cuts both come from kf:.
+# Event file contains only the active maxNTr control and mode-aware QA center.
+# Centrality/hist files are shared read-only with the standard KF configuration.
+event:         cuts/event/event_auau13p5_anaLambda_KFParticle_Imp5.yaml
+centrality:    cuts/centrality/centrality_auau13p5_anaLambda_KFParticle.yaml
+kf:            cuts/kf/kf_auau13p5_anaLambda_KFParticle_Imp5.yaml
+hist:          hist/hist_auau13p5_anaLambda_KFParticle.yaml
+analysis:      analysis/analysis_info_auau13p5_anaLambda_KFParticle_Imp5.yaml

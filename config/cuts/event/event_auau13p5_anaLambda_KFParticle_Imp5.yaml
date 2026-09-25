@@ -1,0 +1,11 @@
+# Imp5 event policy follows current StLambdaMaker: maxNTr plus centrality.
+# These centers are used only to calculate the vertex-radius QA histogram.
+# They are NOT vertex cuts; no Vz/radius/RefMult/VPD thresholds are applied here.
+# analysis.mode selects the matching QA center, preserving the previous coordinates.
+maxNTr: 0 # 0 disables the track-count upper bound
+
+qaVertexByMode:
+  refmult:
+    center: [0.0, 0.0]
+  fxtmult:
+    center: [-0.4, -2.0]

@@ -1,0 +1,11 @@
+# Complete configuration for 19 GeV KFParticle Lambda reconstruction.
+event:         cuts/event/event_auau19_anaLambda_KFParticle.yaml
+track:         cuts/track/track_auau19_anaLambda.yaml
+pid:           cuts/pid/pid_auau19_anaLambda.yaml
+v0:            cuts/v0reco/v0_auau19_anaLambda.yaml
+mixing:        cuts/mixing/mixing_auau19_anaLambda.yaml
+centrality:    cuts/centrality/centrality_auau19_anaLambda.yaml
+lambda:        maker/maker_auau19_anaLambda.yaml
+kf:            cuts/kf/kf_auau19_anaLambda_KFParticle.yaml
+hist:          hist/hist_auau19_anaLambda_KFParticle.yaml
+analysis:      analysis/analysis_info_auau19_anaLambda_KFParticle.yaml

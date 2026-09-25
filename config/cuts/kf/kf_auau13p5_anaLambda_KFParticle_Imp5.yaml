@@ -1,0 +1,49 @@
+# Opt-in comparison with CURRENT StLambdaMaker Imp5 (2026-09-08).
+# Source of common cut numbers: config/maker/maker_auau13p5_anaLambda.yaml.
+# User identifies that implementation as Imp5; linked Notion text was unavailable.
+# Unused configuration entries were removed without changing effective cuts.
+# lambda_imp5 bypasses unused generic pT/eta/nHitsDedx/dEdxError acceptance,
+# uses stored inclusive |nSigma| plus original gDCA(x,y,z), no TOF or kaons.
+# Event policy: finite-PV safety + legacy maxNTr only, then same centrality.
+# The dedicated event YAML supplies only mode-aware QA centers, NOT vertex cuts.
+# Finder/PV/covariance thresholds below are unchanged KF-specific requirements.
+# Final distance/pointing thresholds use KF reconstructed states, not Helix fits.
+# Only the maxPathLength guard uses original pair helices; mass remains KF fit.
+schemaVersion: 2
+backend: finder_topo
+selectionProfile: lambda_imp5
+imp5MinDCAProton: 0.7
+imp5MinDCAPion: 1.0
+imp5MaxPathLength: 100.0
+pidProfile: pico_nsigma
+
+minNHitsFit: 15
+minNHitsRatio: 0.52
+useHftTracksOnly: false
+
+nSigmaPion: 3.0
+nSigmaProton: 3.0
+useTof: false
+strictTofPid: false
+cleanKaonsWithTof: false
+
+rejectBadCovariance: true
+maxPositionVariance: 100.0
+maxMomentumVariance: 1.0
+
+# Active Interface and Finder thresholds. PicoDst supplies the PV; no PV refit.
+interfaceChiPrimaryCut: 3.0
+finderMaxDaughterDistance: 1.5 # cm
+finderLCut: 1.0 # cm
+finderChiPrimary2D: 3.0
+finderChi2Ndf2D: 10.0
+finderLdL2D: 3.0
+reconstructAntiLambda: false
+
+# Active additional Maker selection after Finder. No parent mass constraint.
+# Omitted optional final bounds are disabled; the effective dump records this.
+minMass: 1.05
+maxMass: 1.25
+maxDaughterDistance: 0.5
+maxDistanceToPv: 0.5
+minCosPointing: 0.998

@@ -1,0 +1,8 @@
+# config-generator: manual
+# Active settings for StLambdaMaker only; paths are relative to config/.
+# PID, track quality and V0 topology are all in lambda:, not generic cut copies.
+event:         cuts/event/event_auau13p5_anaLambda.yaml
+centrality:    cuts/centrality/centrality_auau13p5_anaLambda.yaml
+lambda:        maker/maker_auau13p5_anaLambda.yaml
+hist:          hist/hist_auau13p5_anaLambda.yaml
+analysis:      analysis/analysis_info_auau13p5_anaLambda.yaml
