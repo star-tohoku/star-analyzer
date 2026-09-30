@@ -58,7 +58,8 @@ double CurvatureAngle(double charge, double field, double radius, double pt) {
 
 FemtoLambdaLegacy::FemtoLambdaLegacy()
     : mRoot(0), mNuclear(0), mSpeciesIndex(-1), mMean(0), mWindow(0),
-      mOuterFactor(0), mFieldTesla(0), mRadiusMeters(0), mMinNHitsDedx(0),
+      mOuterFactor(0), mFieldTesla(0), mRadiusMeters(0),
+      mDaughterProtonMass(0), mDaughterPionMass(0), mMinNHitsDedx(0),
       mMinPt(0), mNSigmaFill(0), mNSigmaExclude(0), mMaxNSigma(0), mM2SigmaCut(0),
       mMinPTofQa(0), mMinM2(0), mMaxM2(0), mMaxRigidity(0), mM2Selection(false) {}
 FemtoLambdaLegacy::~FemtoLambdaLegacy() { delete mRoot; delete mNuclear; }
@@ -92,6 +93,10 @@ bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
     mMean = Number(maker,"lambdaSignalMean");
     mWindow = Number(maker,"lambdaSignalSigma") * Number(maker,"lambdaSignalNSigma");
     mOuterFactor = Number(maker,"lambdaSidebandOuterFactor");
+    mDaughterProtonMass = Number(maker,"lambdaDaughterProtonMass");
+    mDaughterPionMass = Number(maker,"lambdaDaughterPionMass");
+    if (mDaughterProtonMass <= 0 || mDaughterPionMass <= 0)
+      throw std::runtime_error("Lambda daughter QA masses must be positive");
     const YAML::Node kf = YAML::LoadFile(Resolve(base, main, "kf"));
     const double lower[] = {Number(kf,"minMass"), mMean-mWindow, mMean-mOuterFactor*mWindow, mMean+mWindow};
     const double upper[] = {Number(kf,"maxMass"), mMean+mWindow, mMean-mWindow, mMean+mOuterFactor*mWindow};
@@ -164,6 +169,10 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
       "hLambdaKF_DecayLength","hLambdaKF_DecayLengthSignificance","hLambdaKF_Chi2Ndf","hLambdaKF_TopoChi2Ndf"};
     for (unsigned i=0;i<sizeof(rootNames)/sizeof(rootNames[0]);++i) Need(*mRoot,rootNames[i]);
     for (int c=0;c<9;++c) Need(*mRoot,"hLambda_InvMass_CentBin"+Index(c));
+    Need(*mRoot,"hLambda_PtVsYLab_signal");
+    Need(*mRoot,"hLambdaProton_PtVsYLab_signal");
+    Need(*mRoot,"hLambdaPion_PtVsYLab_signal");
+    Need(*mRoot,"hNucleus_PtVsYLab_"+mSpecies);
     const char* common[]={"hDedxP","hDedxP_cut","hDedxP_e","hDedxP_pi","hDedxP_K","hDedxP_p","hDedxP_else","hM2P"};
     for (unsigned i=0;i<sizeof(common)/sizeof(common[0]);++i) Need(*mNuclear,common[i]);
     for (int s=0;s<4;++s) {
@@ -184,8 +193,8 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
         for(int c=0;c<9;++c) Need(*mNuclear,"hKstar_"+stem+"_CentBin"+Index(c));
       }
       for(int c=0;c<9;++c) Need(*mNuclear,"hKstarMass_"+prefix+mLegacySpecies+"_CentBin"+Index(c));
-      const char* channels[]={"","_signal","_leftSB","_rightSB"};
-      for(int r=0;r<4;++r) {
+      const char* channels[]={"","_signal","_leftSB","_rightSB","_signalLow","_signalHigh"};
+      for(int r=0;r<6;++r) {
         Need(*mRoot,"hKstar"+mode+"_lambda_"+mSpecies+channels[r]);
         Need(*mRoot,"hKstar"+mode+"VsCent_lambda_"+mSpecies+channels[r]);
       }
@@ -203,6 +212,11 @@ int FemtoLambdaLegacy::MassRegion(double mass) const {
   if (delta < -mWindow && delta >= -mOuterFactor*mWindow) return 2;
   if (delta > mWindow && delta <= mOuterFactor*mWindow) return 3;
   return 0;
+}
+
+int FemtoLambdaLegacy::SignalHalf(double mass) const {
+  if (MassRegion(mass) != 1) return 0;
+  return mass < mMean ? 1 : 2;
 }
 
 int FemtoLambdaLegacy::SelectNuclearType(double p, const double pulls[4], bool tof, double m2) const {
@@ -270,6 +284,10 @@ void FemtoLambdaLegacy::CollectNuclei(StPicoDst* dst,int eventIndex,int cent9,Fe
       c.trk.nSigmaDeuteron=pulls[0]; c.trk.nSigmaTriton=pulls[1];
       c.trk.nSigmaHe3=pulls[2]; c.trk.nSigmaHe4=pulls[3];
       c.trk.tofMatch=tof; c.trk.mass2=m2; store[c.speciesKey].push_back(c);
+      // Final target nucleus once per track, independent of Lambda/pair multiplicity.
+      // NuclearP4 already applied the physical mass and (for He) Z=2 exactly once.
+      if (best == mSpeciesIndex)
+        mRoot->Fill(("hNucleus_PtVsYLab_"+mSpecies).c_str(),c.P4().Rapidity(),c.P4().Pt());
       const std::string vzKey=std::string("hVz_")+kLegacy[best];
       if(mNuclear->HasHistogram(vzKey.c_str())) mNuclear->Fill(vzKey.c_str(),dst->event()->primaryVertex().Z());
     }
@@ -315,6 +333,34 @@ void FemtoLambdaLegacy::FillLambda(const FemtoLambdaCandidate& c,int cent9,doubl
   mRoot->Fill("hLambdaKF_Chi2Ndf",c.chi2Ndf); mRoot->Fill("hLambdaKF_TopoChi2Ndf",c.topoChi2Ndf);
 }
 
+bool FemtoLambdaLegacy::FillLambdaAcceptance(const FemtoLambdaCandidate& c,StPicoDst* dst) {
+  if (MassRegion(c.mass) != 1) return true;
+  if (!mRoot || !dst || c.protonIndex < 0 || c.pionIndex < 0 ||
+      static_cast<unsigned>(c.protonIndex) >= dst->numberOfTracks() ||
+      static_cast<unsigned>(c.pionIndex) >= dst->numberOfTracks() ||
+      !dst->track(c.protonIndex) || !dst->track(c.pionIndex)) {
+    std::cerr << "[FemtoLambdaLegacy] Invalid daughter source for acceptance QA" << std::endl;
+    return false;
+  }
+  TLorentzVector proton,pion;
+  // Secondary daughters: global-track momentum, not PV-constrained primary pMom.
+  proton.SetVectM(dst->track(c.protonIndex)->gMom(),mDaughterProtonMass);
+  pion.SetVectM(dst->track(c.pionIndex)->gMom(),mDaughterPionMass);
+  const TLorentzVector lambda=c.candidate.P4();
+  if (!std::isfinite(lambda.Rapidity()) || !std::isfinite(lambda.Pt()) ||
+      !std::isfinite(proton.Rapidity()) || !std::isfinite(proton.Pt()) ||
+      !std::isfinite(pion.Rapidity()) || !std::isfinite(pion.Pt())) {
+    std::cerr << "[FemtoLambdaLegacy] Nonfinite lab kinematics for acceptance QA" << std::endl;
+    return false;
+  }
+  // No CM shift. One entry per Lambda candidate; daughters can be shared by
+  // distinct Lambda candidates, but are never multiplied by nuclear pair count.
+  mRoot->Fill("hLambda_PtVsYLab_signal",lambda.Rapidity(),lambda.Pt());
+  mRoot->Fill("hLambdaProton_PtVsYLab_signal",proton.Rapidity(),proton.Pt());
+  mRoot->Fill("hLambdaPion_PtVsYLab_signal",pion.Rapidity(),pion.Pt());
+  return true;
+}
+
 bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n,
     double kstar,double qlab,int cent9,bool mixed,StPicoDst* dst) {
   if(!mRoot || !mNuclear || n.speciesKey!=mSpecies || l.speciesKey!="lambda" ||
@@ -336,6 +382,13 @@ bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n
   mNuclear->Fill(("hKstar_"+stem+"_CentBin"+Index(cent9)).c_str(),kstar);
   mRoot->Fill(("hKstar"+mode+"_"+channel+canonical[region]).c_str(),kstar);
   mRoot->Fill(("hKstar"+mode+"VsCent_"+channel+canonical[region]).c_str(),kstar,cent9);
+  if (region==1) {
+    // Subdivide the SAME accepted signal pair; never rerun/multiply mixing.
+    // Midpoint belongs only to the high half, so low+high is exactly signal.
+    const std::string half=SignalHalf(l.reso.invMass)==1?"_signalLow":"_signalHigh";
+    mRoot->Fill(("hKstar"+mode+"_"+channel+half).c_str(),kstar);
+    mRoot->Fill(("hKstar"+mode+"VsCent_"+channel+half).c_str(),kstar,cent9);
+  }
   if(!mixed && region==1 && dst) FillMerging(l,n,dst);
   return true;
 }
@@ -376,4 +429,3 @@ bool FemtoLambdaLegacy::Write(TDirectory* out) {
   if(previous) previous->cd();
   return ok;
 }
-

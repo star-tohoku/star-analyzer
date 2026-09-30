@@ -28,7 +28,8 @@ def main():
 
     tested = 0
     for species, legacy in (("deuteron", "d"), ("triton", "t"), ("he3", "3He"), ("he4", "4He")):
-        top = yaml.safe_load((ROOT / ("config/hist/hist_femtoLambda_" + species + "_kf.yaml")).read_text())["histograms"]
+        top_doc = yaml.safe_load((ROOT / ("config/hist/hist_femtoLambda_" + species + "_kf.yaml")).read_text())
+        top = top_doc["histograms"]
         nuclear = yaml.safe_load((ROOT / ("config/hist/hist_femtoLambda_" + species + "_nuclear.yaml")).read_text())["histograms"]
         legacy_expected = set()
         for item in old:
@@ -50,11 +51,19 @@ def main():
                 channel = "lambda_" + species + region
                 assert "hKstar" + mode + "_" + channel in top
                 assert "hKstar" + mode + "VsCent_" + channel in top
-        assert len(top) == 67
+            for region in ("_signalLow", "_signalHigh"):
+                for centrality in ("", "VsCent"):
+                    stem = "hKstar" + mode + centrality + "_lambda_" + species
+                    assert signature(top[stem + region]) == signature(top[stem + "_signal"]), (species, stem, region)
+        acceptance = ("hLambda_PtVsYLab_signal", "hLambdaProton_PtVsYLab_signal",
+                      "hLambdaPion_PtVsYLab_signal", "hNucleus_PtVsYLab_" + species)
+        for key in acceptance:
+            assert signature(top[key]) == ("TH2D", [top_doc["axes"]["YLab"], top_doc["axes"]["Pt"]]), key
+        assert top_doc["axes"]["YLab"]["min"] < 0 < top_doc["axes"]["YLab"]["max"]
+        assert len(top) == 79
         assert len(nuclear) == 113
     print("PASS original Lambda histogram contract:", tested, "legacy key/axis/class comparisons across four species")
 
 
 if __name__ == "__main__":
     main()
-

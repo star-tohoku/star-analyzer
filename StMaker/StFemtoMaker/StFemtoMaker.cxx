@@ -304,6 +304,7 @@ Int_t StFemtoMaker::MakeLambdaEvent() {
     const FemtoLambdaCandidate& c = lambdas[i];
     m_eventCandidates["lambda"].push_back(c.candidate);
     mLambdaLegacy->FillLambda(c, m_cent9, m_refMultCorr, pv);
+    if (!mLambdaLegacy->FillLambdaAcceptance(c, mPicoDst)) return kStErr;
     mLambdaProtonIndex = c.protonIndex; mLambdaPionIndex = c.pionIndex;
     mLambdaRawMass = c.mass; mLambdaPx = c.candidate.px; mLambdaPy = c.candidate.py; mLambdaPz = c.candidate.pz;
     if (mLambdaCandidateLedger->Fill() < 0) return kStErr;

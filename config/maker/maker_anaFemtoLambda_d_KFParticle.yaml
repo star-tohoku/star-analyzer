@@ -4,6 +4,9 @@ lambdaEventPolicy: lambda_imp5_compat
 nuclearSelectionProfile: legacy_nuclearid
 lambdaPairMassMode: fixed
 lambdaPairMass: 1.115683
+# Daughter rapidity mass hypotheses [GeV/c^2]; global-track momentum, not PV momentum.
+lambdaDaughterProtonMass: 0.9382720813
+lambdaDaughterPionMass: 0.13957039
 lambdaSignalMean: 1.11596
 lambdaSignalSigma: 0.00296
 lambdaSignalNSigma: 3.0

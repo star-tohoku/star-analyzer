@@ -418,3 +418,24 @@ Static config/entry checks: `python3 tests/test_femto_lambda_entries.py`.
 See [the implementation plan](../../mdfiles/femto/plans/plan_femto_lambda_nuclei_kfparticle_20260929.md)
 for real-data closure gates; these implementation notes do not by themselves claim
 that those runtime gates have passed.
+
+### ΛのアクセプタンスQAと信号窓の二分割（2026-09-30追加）
+
+- 最上位の `hLambda_PtVsYLab_signal`、`hLambdaProton_PtVsYLab_signal`、
+  `hLambdaPion_PtVsYLab_signal` は±3σ内の採用Λについて1候補1回記録する。
+  X=実験室系ラピディティ、Y=pT。重心系シフトは行わない。
+- Λはペア用の固定質量四元運動量、娘は対応するPico global trackの `gMom()` を使う。
+  makerの必須キー `lambdaDaughterProtonMass: 0.9382720813` と
+  `lambdaDaughterPionMass: 0.13957039` [GeV/c²] は娘QA専用。
+  このヘルパーはKFライブラリへのリンク依存を持たない。
+- `hNucleus_PtVsYLab_<species>` は最終選別後の対象核種について1track1回記録する。
+  HeのZ=2補正は既存 `NuclearP4` による1回のみ。Λの有無やペア数では重み付けしない。
+- `hKstarSE/ME[VsCent]_lambda_<species>_signalLow` と `_signalHigh` を追加。
+  既存signal判定の後で `mass < lambdaSignalMean` を低側、残りを高側とする。
+  中心値は高側だけに入り、SE／MEの各binで低側＋高側が従来signalに一致する。
+  **派生ヒストであり、4 channelの定義やmixing loopは増やさない。**
+- 既存180ヒストを保持し、12ヒスト追加で計192（最上位79、true71、mix42）。
+  QAは新ROOTで7ページ、旧ROOTでは追加ヒスト欠落の警告付きで従来4ページ。
+  新ヒストが一部だけある場合は失敗させる。CFは引き続きQA側でSE／MEから計算する。
+- 詳しい母集団・軸・境界は[ヒストグラム一覧](../../mdfiles/femto/implementation/femto_lambda_histograms_20260930.md)。
+  これらは採用候補の分布であり、生成数で補正した検出効率ではない。

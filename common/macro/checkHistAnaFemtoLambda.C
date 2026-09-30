@@ -29,6 +29,53 @@ TH2* SumMass(TFile& file, const TString& pattern, const char* name, Int_t first,
 void Message(const char* text) {
   TLatex label; label.SetNDC(); label.SetTextSize(0.035); label.DrawLatex(0.12, 0.5, text);
 }
+
+Int_t CheckAcceptanceAndSplit(TFile& file, const TString& channel,
+                            const TString& species, TH2* acceptance[4]) {
+  // Old ROOT output has none of the additions. A partial contract must not look successful.
+  const TString names[] = {
+    "hLambda_PtVsYLab_signal", "hLambdaProton_PtVsYLab_signal",
+    "hLambdaPion_PtVsYLab_signal", "hNucleus_PtVsYLab_" + species,
+    "hKstarSE_" + channel + "_signalLow", "hKstarSEVsCent_" + channel + "_signalLow",
+    "hKstarME_" + channel + "_signalLow", "hKstarMEVsCent_" + channel + "_signalLow",
+    "hKstarSE_" + channel + "_signalHigh", "hKstarSEVsCent_" + channel + "_signalHigh",
+    "hKstarME_" + channel + "_signalHigh", "hKstarMEVsCent_" + channel + "_signalHigh"
+  };
+  const Int_t dimensions[] = {2, 2, 2, 2, 1, 2, 1, 2, 1, 2, 1, 2};
+  Int_t present = 0;
+  for (Int_t i = 0; i < 12; ++i) {
+    TObject* object = file.Get(names[i]);
+    if (!object) continue;
+    ++present;
+    TH1* histogram = dynamic_cast<TH1*>(object);
+    if (!histogram || histogram->GetDimension() != dimensions[i]) {
+      std::cerr << "ERROR: wrong histogram type/dimension for " << names[i] << std::endl;
+      return -1;
+    }
+    if (i < 4) acceptance[i] = dynamic_cast<TH2*>(histogram);
+  }
+  if (present == 0) {
+    std::cerr << "WARNING: new acceptance/split-signal histograms absent; rerun analysis "
+              << "to create them. Drawing the original four QA pages only." << std::endl;
+    return 0;
+  }
+  if (present != 12) {
+    std::cerr << "ERROR: incomplete acceptance/split-signal histogram contract ("
+              << present << "/12); rerun analysis with matching Maker and YAML."
+              << std::endl;
+    return -1;
+  }
+  return 1;
+}
+void DrawAcceptance(TCanvas& canvas, TH2* acceptance[4], const char* outputPdf) {
+  canvas.Clear(); canvas.Divide(2, 2);
+  for (Int_t i = 0; i < 4; ++i) {
+    canvas.cd(i + 1);
+    acceptance[i]->SetStats(kFALSE);
+    acceptance[i]->Draw("COLZ");
+  }
+  canvas.Print(outputPdf);
+}
 }
 
 Int_t checkHistAnaFemtoLambda(const char* rootFile, const char* mainconf, const char* outputPdf) {
@@ -65,6 +112,10 @@ Int_t checkHistAnaFemtoLambda(const char* rootFile, const char* mainconf, const 
     std::cerr << "ERROR: missing Lambda mass or full-mass legacy histogram contract" << std::endl;
     delete massSE; delete massME; return 1;
   }
+  TH2* acceptance[4] = {0, 0, 0, 0};
+  const Int_t extensions = FemtoLambdaQa::CheckAcceptanceAndSplit(
+      file, base.name.c_str(), species.c_str(), acceptance);
+  if (extensions < 0) { delete massSE; delete massME; return 1; }
   const TString outputDirectory = gSystem->DirName(outputPdf);
   if (gSystem->mkdir(outputDirectory.Data(), kTRUE) != 0
       && gSystem->AccessPathName(outputDirectory.Data())) {
@@ -86,13 +137,19 @@ Int_t checkHistAnaFemtoLambda(const char* rootFile, const char* mainconf, const 
   delete pairMass;
 
   Int_t result = 0;
-  const char* suffixes[] = {"signal", "leftSB", "rightSB"};
-  for (Int_t region = 0; region < 3; ++region) {
+  const char* suffixes[] = {"signal", "leftSB", "rightSB", "signalLow", "signalHigh"};
+  const Int_t regions = extensions ? 5 : 3;
+  for (Int_t region = 0; region < regions; ++region) {
+    // Preserve the original four pages first, then add acceptance and the two split CFs.
+    if (region == 3) FemtoLambdaQa::DrawAcceptance(canvas, acceptance, outputPdf);
     canvas.Clear(); canvas.Divide(2, 1);
     const TString channel = TString(base.name.c_str()) + "_" + suffixes[region];
     TH2* seCent = dynamic_cast<TH2*>(file.Get("hKstarSEVsCent_" + channel));
     TH2* meCent = dynamic_cast<TH2*>(file.Get("hKstarMEVsCent_" + channel));
-    if (!seCent || !meCent) { result = 1; break; }
+    if (!seCent || !meCent) {
+      std::cerr << "ERROR: missing SE/ME centrality histogram for " << channel << std::endl;
+      result = 1; break;
+    }
     TH1* se = seCent->ProjectionX("qaSE", seCent->GetYaxis()->FindBin(first), seCent->GetYaxis()->FindBin(last));
     TH1* me = meCent->ProjectionX("qaME", meCent->GetYaxis()->FindBin(first), meCent->GetYaxis()->FindBin(last));
     se->SetDirectory(0); me->SetDirectory(0);

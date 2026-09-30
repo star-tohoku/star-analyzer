@@ -9,6 +9,10 @@ axes:
     nBins: 200
     min: 0.0
     max: 10.0
+  YLab: &YLab
+    nBins: 200
+    min: -5.0
+    max: 5.0
   Y: &Y
     nBins: 100
     min: -2.0
@@ -374,3 +378,55 @@ histograms:
     xAxis: *Kstar
     yAxis: *Cent9
     title: "ME lambda_he3_rightSB;k* [GeV/c];cent9"
+
+  # Single-particle acceptance: one fill per signal Lambda/daughter or selected nucleus.
+  hLambda_PtVsYLab_signal:
+    xAxis: *YLab
+    yAxis: *Pt
+    type: TH2D
+    title: "Signal #Lambda acceptance;y_{lab};p_{T} [GeV/c]"
+  hLambdaProton_PtVsYLab_signal:
+    xAxis: *YLab
+    yAxis: *Pt
+    type: TH2D
+    title: "Proton daughter of signal #Lambda acceptance;y_{lab};p_{T} [GeV/c]"
+  hLambdaPion_PtVsYLab_signal:
+    xAxis: *YLab
+    yAxis: *Pt
+    type: TH2D
+    title: "#pi^{-} daughter of signal #Lambda acceptance;y_{lab};p_{T} [GeV/c]"
+  hNucleus_PtVsYLab_he3:
+    xAxis: *YLab
+    yAxis: *Pt
+    type: TH2D
+    title: "Selected he3 acceptance;y_{lab};p_{T} [GeV/c]"
+
+  # Derived disjoint halves of the existing signal: Low mass < mean; High mass >= mean.
+  hKstarSE_lambda_he3_signalLow:
+    axis: *Kstar
+    title: "SE lambda_he3 [-N#sigma, 0);k* [GeV/c];Pairs"
+  hKstarSEVsCent_lambda_he3_signalLow:
+    xAxis: *Kstar
+    yAxis: *Cent9
+    title: "SE lambda_he3 [-N#sigma, 0);k* [GeV/c];cent9"
+  hKstarME_lambda_he3_signalLow:
+    axis: *Kstar
+    title: "ME lambda_he3 [-N#sigma, 0);k* [GeV/c];Pairs"
+  hKstarMEVsCent_lambda_he3_signalLow:
+    xAxis: *Kstar
+    yAxis: *Cent9
+    title: "ME lambda_he3 [-N#sigma, 0);k* [GeV/c];cent9"
+  hKstarSE_lambda_he3_signalHigh:
+    axis: *Kstar
+    title: "SE lambda_he3 [0, +N#sigma];k* [GeV/c];Pairs"
+  hKstarSEVsCent_lambda_he3_signalHigh:
+    xAxis: *Kstar
+    yAxis: *Cent9
+    title: "SE lambda_he3 [0, +N#sigma];k* [GeV/c];cent9"
+  hKstarME_lambda_he3_signalHigh:
+    axis: *Kstar
+    title: "ME lambda_he3 [0, +N#sigma];k* [GeV/c];Pairs"
+  hKstarMEVsCent_lambda_he3_signalHigh:
+    xAxis: *Kstar
+    yAxis: *Cent9
+    title: "ME lambda_he3 [0, +N#sigma];k* [GeV/c];cent9"

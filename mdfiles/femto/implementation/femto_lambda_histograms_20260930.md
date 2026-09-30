@@ -16,10 +16,10 @@ cent9は大きいほど中心衝突です。詳細は[centralityの定義](../..
 
 | ROOT内の場所 | 内容 | 1ファイルのヒスト数 |
 |---|---|---:|
-| 最上位 `/` | Λ・イベントQA、共通Femto形式のSE/ME、混合QA | 67 |
+| 最上位 `/` | Λ・イベントQA、アクセプタンス、共通Femto形式のSE/ME、混合QA | 79 |
 | `true/` | 共通原子核QA、対象核種の旧形式SE、track-merging QA | 71 |
 | `mix/` | 対象核種の旧形式ME | 42 |
-| 合計 | TTreeやメタデータは含めない | 180 |
+| 合計 | TTreeやメタデータは含めない | 192 |
 
 原子核QAには全4核種のPID仮説を残しますが、pairヒストはファイルごとの対象核種だけです。以下の1次元ヒストのY軸は、断りがなければ件数です。
 
@@ -37,6 +37,28 @@ cent9は大きいほど中心衝突です。詳細は[centralityの定義](../..
 | 右sideband | (1.12484, 1.15148]（+3σ〜+12σ） | `_rightSB`、`_SBPos` |
 
 **signalのFemto解析は±3σですが、背景確認用の全質量・sidebandヒストは別に保存します。** `hLambda_InvMass` が±3σ外にも分布を持つのはこのためです。保存質量は質量制約をかけていないKF再構成値です。k*の計算では、別途固定Λ質量1.115683 GeV/c²を使用します。
+
+## 最上位：採用粒子のpT–Y_Lab分布（今回追加）
+
+全4核種・両エネルギーに追加しました。4つともTH2Dで、**横軸は実験室系ラピディティ `Y_Lab`、縦軸はpT [GeV/c]**です。
+`Y_Lab = 0.5 × ln((E+pz)/(E−pz))` とし、擬ラピディティηではありません。重心系への移動やビームラピディティの差引きは行いません。
+Y_Lab軸は200 bin・−5〜5、pT軸は200 bin・0〜10 GeV/cです。軸の定義はヒストYAMLにあり、範囲外はunderflow／overflowに保存します。
+
+| ヒストグラム名 | 記録対象・回数 | 運動量・質量の定義 |
+|---|---|---|
+| `hLambda_PtVsYLab_signal` | 高purity KF選別と±3σ質量窓を通ったΛ。原子核との組合せ前に1候補1回 | KFのΛ運動量と、ペア計算にも使う固定Λ質量 `lambdaPairMass` |
+| `hLambdaProton_PtVsYLab_signal` | 上記Λを構成するp。Λ候補ごとに1回 | Pico配列indexで対応づけた娘trackの `gMom()` と `lambdaDaughterProtonMass` |
+| `hLambdaPion_PtVsYLab_signal` | 上記Λを構成するπ⁻。Λ候補ごとに1回 | 同じく娘trackの `gMom()` と `lambdaDaughterPionMass` |
+| `hNucleus_PtVsYLab_{deuteron,triton,he3,he4}` | そのファイルの対象核種で、best-species・p/q上限・設定されたTOF条件まで通過した候補。1track1回 | 原子核ペアに渡す四元運動量。HeはZ=2補正を一度だけ適用し、質量は核種YAMLの値 |
+
+娘粒子にはsecondary trackのglobal運動量を使い、PVに結び付けたprimary運動量 `pMom()` やKF崩壊点へ輸送した娘運動量は使いません。
+娘質量は各maker YAMLに `lambdaDaughterProtonMass: 0.9382720813`、`lambdaDaughterPionMass: 0.13957039` [GeV/c²] と明記しています。これらは同梱KFParticleの粒子質量定義と同じ値で、QA計算にだけ使用します。既存のKF再構成やk*計算の質量は変更しません。
+
+原子核の分布は、同じイベントにΛがない場合も記録します。後で混合イベントにも使用する、最終選別後の候補全体を示すためです。
+Λ・原子核とも、**ペア数や混合回数による重み付けはしません**。ただし娘trackが複数のΛ候補で共有された場合、娘の分布には各Λ候補について1回ずつ入ります。
+
+これらは「実データで選択された粒子が占める運動学的範囲」を示します。生成粒子数で割ったアクセプタンス・再構成効率ではなく、検出器の効率そのものではありません。
+また、Λの分布は±3σだけが対象なので、全質量の `hLambda_Pt` 等と母集団が異なります。
 
 ## 最上位：Λ候補のQA
 
@@ -117,6 +139,41 @@ k*軸は200 bin・0〜1 GeV/c、q_lab軸は200 bin・0〜2 GeV/c、全質量TH2�
 
 旧形式と共通形式は**同じ採用pairを別名で保存したもの**です。たとえば `true/hKstar_d` と最上位の `hKstarSE_lambda_deuteron_signal` は同じ母集団なので、足し合わせてはいけません。全質量TH2も1 pairにつき1回で、signal/SBごとに再加算しません。これらはSE/ME分布であり、Maker出力に完成済みCFやpurityヒストがあるわけではありません。
 
+## 最上位：信号窓を低質量側・高質量側に分けたk*（今回追加）
+
+従来の±3σ信号、全質量、左右サイドバンドをすべて維持し、**同じ採用済みsignal pair**を次の2群へ追加記録します。
+実際の判定は従来の `MassRegion(mass)==1` を先に確認し、質量中心より低いかどうかで分けます。
+
+| suffix | Λ質量の条件 [GeV/c²] | 意味 |
+|---|---|---|
+| `_signalLow` | [1.10708, 1.11596) | −3σ〜0の低質量側 |
+| `_signalHigh` | [1.11596, 1.12484] | 0〜+3σの高質量側。中心ちょうどはこちらだけに入る |
+
+| ヒストグラム名（最上位） | 軸・対象 |
+|---|---|
+| `hKstarSE_{C}_signalLow` | X：k*。低質量側の同一イベントペア |
+| `hKstarME_{C}_signalLow` | X：k*。低質量側の混合イベントペア |
+| `hKstarSE_{C}_signalHigh` | X：k*。高質量側の同一イベントペア |
+| `hKstarME_{C}_signalHigh` | X：k*。高質量側の混合イベントペア |
+| `hKstar{SE,ME}VsCent_{C}_{signalLow,signalHigh}` | X：k*、Y：cent9。上の4分布をcentrality別に保存 |
+
+`{C}` は `lambda_deuteron`、`lambda_triton`、`lambda_he3`、`lambda_he4` です。
+k*軸は従来と同じ200 bin・0〜1 GeV/cです。質量判定にはbin中心ではなく候補の再構成質量を使います。保存質量はFloat_tであり、数値境界は従来と同じ浮動小数点比較に従います。
+
+SE／MEの各bin（underflow／overflowを含む）で、**`signalLow + signalHigh = signal`**になります。
+両群は重複しませんが、元の `signal` の部分集合なので、3つを足し合わせて収量にしないでください。
+追加のpair loopやmixing channelは作らず、元の4 channelとmixing pool・両方向処理を維持します。新しいcutではありません。
+
+各群のCFは、それぞれのSE／MEを独立に正規化して作ります。
+`checkHistAnaFemtoLambda.C` は、設定されたcentrality範囲を合算・rebinした後、
+従来どおり0.5〜1.0 GeV/c（YAMLの `normQMin/Max`）でMEをSEへ正規化し、低側／高側それぞれのCFを描画します。
+CFを足し合わせて元のsignal CFにしてはいけません。合算する場合はSEとMEの段階で合算し、改めて正規化します。
+正規化区間の統計がゼロならCFは未定義と表示し、MEがゼロのbinも測定値ゼロとして描きません。
+
+新出力のQA PDFは、従来4ページにアクセプタンス1ページと低側／高側CF各1ページを加えた7ページです。
+既存ROOTには新しい12ヒストは自動追加されません。**Makerを再ビルドして再解析する必要があります**。
+旧ROOTのQAは警告を出して従来4ページを表示します。新ヒストが一部だけ存在する不完全な出力はエラーにします。
+
 ## true/：track-mergingの確認
 
 | ヒストグラム名 | 軸・意味 |
@@ -155,4 +212,10 @@ k*軸は200 bin・0〜1 GeV/c、q_lab軸は200 bin・0〜2 GeV/c、全質量TH2�
 現在のYAMLには `hDedxP_4He_m2`、原子核QAの `*_CentBin{i}`、`hVz_{S}`、`hMult_{S}` 等の旧コード上だけのoptionalヒストはありません。未作成のものを一覧の実出力に数えていません。`mix/` のヒストを空の複製として `true/` へ書く旧来の構成も引き継いでいません。
 
 参照：[実装・検証まとめ](femto_lambda_nuclei_kfparticle_20260930.md)、[全キー・軸の機械可読一覧](../plans/femto_lambda_legacy_histogram_manifest_20260930.json)、[代表のΛ/common YAML](../../../config/hist/hist_femtoLambda_deuteron_kf.yaml)、[代表の核種/pair YAML](../../../config/hist/hist_femtoLambda_deuteron_nuclear.yaml)、[記録処理](../../../StMaker/common/FemtoLambdaLegacy.cxx)。
+
+## 追加分の検証と出力先
+
+SL24y／ROOT 5で全ビルドと4核種の人工データ検証が成功しました。13.5／3.85 GeVの全4核種を前回と同じ先頭10,000イベントで再解析し、既存180ヒストの型・軸・全bin内容・誤差・entriesとイベント／Λ候補記録の完全一致を確認しました。新12ヒストの作成、SE／MEの低側＋高側＝signalも検証済みです。
+
+新ROOT・QA図・各mapのentries・再実行手順は[追加ヒストの検証記録](../../../rootfile/femto_lambda_kf_validation_20260930/acceptance_split/README.md)を参照してください。従来のROOT・PDFは上書きしていません。
 
