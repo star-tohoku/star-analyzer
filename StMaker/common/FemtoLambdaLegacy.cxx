@@ -9,6 +9,8 @@
 #include "yaml-cpp/yaml.h"
 #include "TDirectory.h"
 #include "TH1.h"
+#include "TH2.h"
+#include "TNamed.h"
 #include "TSystem.h"
 #include "TVector3.h"
 #include "TVector2.h"
@@ -50,6 +52,21 @@ void KeysAndRequireLoaded(const std::string& path, HistManager& hist, std::vecto
 void Need(HistManager& h, const std::string& key) {
   if (!h.HasHistogram(key.c_str())) throw std::runtime_error("Required histogram missing: " + key);
 }
+bool SameAxis(const TAxis& a, const TAxis& b) {
+  if (a.GetNbins() != b.GetNbins()) return false;
+  for (int i=1;i<=a.GetNbins()+1;++i)
+    if (a.GetBinLowEdge(i) != b.GetBinLowEdge(i)) return false;
+  return true;
+}
+void NeedPairMt(HistManager& hist, const std::string& key,
+                const TH1& kstar, const TH2*& reference) {
+  TH2* h = dynamic_cast<TH2*>(hist.Get(key.c_str()));
+  if (!h || h->GetDimension()!=2 || !SameAxis(*h->GetXaxis(),*kstar.GetXaxis()))
+    throw std::runtime_error("Missing/invalid kstar-mT histogram or mismatched kstar axis: "+key);
+  if (reference && !SameAxis(*h->GetYaxis(),*reference->GetYaxis()))
+    throw std::runtime_error("Inconsistent pair mT axes: "+key);
+  reference=h;
+}
 double CurvatureAngle(double charge, double field, double radius, double pt) {
   const double a = 0.3 * charge * field * radius / (2.0 * pt);
   return std::asin(std::max(-1.0, std::min(1.0, a)));
@@ -59,7 +76,7 @@ double CurvatureAngle(double charge, double field, double radius, double pt) {
 FemtoLambdaLegacy::FemtoLambdaLegacy()
     : mRoot(0), mNuclear(0), mSpeciesIndex(-1), mMean(0), mWindow(0),
       mOuterFactor(0), mFieldTesla(0), mRadiusMeters(0),
-      mDaughterProtonMass(0), mDaughterPionMass(0), mMinNHitsDedx(0),
+      mDaughterProtonMass(0), mDaughterPionMass(0), mLambdaPairMass(0), mMinNHitsDedx(0),
       mMinPt(0), mNSigmaFill(0), mNSigmaExclude(0), mMaxNSigma(0), mM2SigmaCut(0),
       mMinPTofQa(0), mMinM2(0), mMaxM2(0), mMaxRigidity(0), mM2Selection(false) {}
 FemtoLambdaLegacy::~FemtoLambdaLegacy() { delete mRoot; delete mNuclear; }
@@ -90,6 +107,10 @@ bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
       }
     }
     if (nuclei != 1) throw std::runtime_error("Lambda legacy profile requires exactly one nuclear species");
+    if (Required<std::string>(maker,"lambdaPairMassMode") != "fixed")
+      throw std::runtime_error("Lambda pair mT requires the fixed-mass pair convention");
+    mLambdaPairMass = Number(maker,"lambdaPairMass");
+    if (mLambdaPairMass <= 0) throw std::runtime_error("Lambda pair mass must be positive");
     mMean = Number(maker,"lambdaSignalMean");
     mWindow = Number(maker,"lambdaSignalSigma") * Number(maker,"lambdaSignalNSigma");
     mOuterFactor = Number(maker,"lambdaSidebandOuterFactor");
@@ -183,6 +204,7 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
       }
       if (s<3) Need(*mNuclear,std::string("hDedxP_")+kLegacy[s]+"_m2");
     }
+    const TH2* mtReference=0;
     for (int mixed=0;mixed<2;++mixed) {
       const std::string prefix=mixed?"Mixed_":"";
       const std::string mode=mixed?"ME":"SE";
@@ -191,6 +213,13 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
         const std::string stem=prefix+mLegacySpecies+suffixes[r];
         Need(*mNuclear,"hKstar_"+stem); Need(*mNuclear,"hQlab_"+stem);
         for(int c=0;c<9;++c) Need(*mNuclear,"hKstar_"+stem+"_CentBin"+Index(c));
+      }
+      const char* mtSuffixes[]={"","_SBPos","_SBNeg","_signalLow","_signalHigh"};
+      for(int r=0;r<5;++r) for(int c=0;c<9;++c) {
+        const std::string cent="_CentBin"+Index(c);
+        const std::string source="hKstar_"+prefix+mLegacySpecies+(r<3?mtSuffixes[r]:"")+cent;
+        NeedPairMt(*mNuclear,"hKstarMt_"+prefix+mLegacySpecies+mtSuffixes[r]+cent,
+                   *mNuclear->Get(source.c_str()),mtReference);
       }
       for(int c=0;c<9;++c) Need(*mNuclear,"hKstarMass_"+prefix+mLegacySpecies+"_CentBin"+Index(c));
       const char* channels[]={"","_signal","_leftSB","_rightSB","_signalLow","_signalHigh"};
@@ -367,6 +396,14 @@ bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n
      !std::isfinite(kstar) || !std::isfinite(qlab) || !std::isfinite(l.reso.invMass) ||
      cent9<0 || cent9>=9 || FemtoCandidatesShareTrack(l,n)) return false;
   if((mixed && l.eventIndex==n.eventIndex) || (!mixed && l.eventIndex!=n.eventIndex)) return false;
+  // User-defined femtoscopic mT: average fixed mass and HALF the vector
+  // sum of transverse momenta; neither total pair Mt nor scalar Pt sum.
+  // Nuclear momenta already include He's charge correction.
+  const TLorentzVector pair=l.P4()+n.P4();
+  const double massSum=mLambdaPairMass+mNuclearMass[mSpeciesIndex];
+  const double mt2=0.25*(pair.Px()*pair.Px()+pair.Py()*pair.Py()+massSum*massSum);
+  if(!std::isfinite(mt2) || mt2<0) return false;
+  const double pairMt=std::sqrt(mt2);
   const std::string mode=mixed?"ME":"SE", prefix=mixed?"Mixed_":"";
   const std::string channel="lambda_"+mSpecies;
   mRoot->Fill(("hKstar"+mode+"_"+channel).c_str(),kstar);
@@ -380,6 +417,7 @@ bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n
   mNuclear->Fill(("hKstar_"+stem).c_str(),kstar);
   mNuclear->Fill(("hQlab_"+stem).c_str(),qlab);
   mNuclear->Fill(("hKstar_"+stem+"_CentBin"+Index(cent9)).c_str(),kstar);
+  mNuclear->Fill(("hKstarMt_"+stem+"_CentBin"+Index(cent9)).c_str(),kstar,pairMt);
   mRoot->Fill(("hKstar"+mode+"_"+channel+canonical[region]).c_str(),kstar);
   mRoot->Fill(("hKstar"+mode+"VsCent_"+channel+canonical[region]).c_str(),kstar,cent9);
   if (region==1) {
@@ -388,6 +426,7 @@ bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n
     const std::string half=SignalHalf(l.reso.invMass)==1?"_signalLow":"_signalHigh";
     mRoot->Fill(("hKstar"+mode+"_"+channel+half).c_str(),kstar);
     mRoot->Fill(("hKstar"+mode+"VsCent_"+channel+half).c_str(),kstar,cent9);
+    mNuclear->Fill(("hKstarMt_"+prefix+mLegacySpecies+half+"_CentBin"+Index(cent9)).c_str(),kstar,pairMt);
   }
   if(!mixed && region==1 && dst) FillMerging(l,n,dst);
   return true;
@@ -417,6 +456,14 @@ bool FemtoLambdaLegacy::Write(TDirectory* out) {
   TDirectory* previous=gDirectory;
   out->cd();
   bool ok=true;
+  std::ostringstream mtDescription;
+  mtDescription.precision(17);
+  mtDescription << "average_mass: sqrt(|pT_Lambda+pT_nucleus|^2/4+(m_Lambda+m_nucleus)^2/4); "
+                << "fixed masses [GeV/c^2]: Lambda=" << mLambdaPairMass
+                << ", nucleus=" << mNuclearMass[mSpeciesIndex]
+                << "; X=kstar [GeV/c], Y=m_T [GeV/c^2]; not total pair transverse mass";
+  TNamed mtDefinition("FemtoLambdaPairMtDefinition",mtDescription.str().c_str());
+  if(mtDefinition.Write()<=0) ok=false;
   for(size_t i=0;i<mRootKeys.size();++i) if(mRoot->Get(mRootKeys[i].c_str())->Write()<=0) ok=false;
   TDirectory* se=out->GetDirectory("true"); if(!se) se=out->mkdir("true");
   TDirectory* me=out->GetDirectory("mix"); if(!me) me=out->mkdir("mix");

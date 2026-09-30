@@ -76,6 +76,82 @@ void DrawAcceptance(TCanvas& canvas, TH2* acceptance[4], const char* outputPdf) 
   }
   canvas.Print(outputPdf);
 }
+
+Bool_t SameAxis(const TAxis& first, const TAxis& second) {
+  if (first.GetNbins() != second.GetNbins()) return kFALSE;
+  for (Int_t bin = 1; bin <= first.GetNbins() + 1; ++bin)
+    if (first.GetBinLowEdge(bin) != second.GetBinLowEdge(bin)) return kFALSE;
+  return kTRUE;
+}
+
+Int_t CheckPairMt(TFile& file, const TString& shortName) {
+  // Check all stored centralities, not only the range selected for the QA display.
+  // Old output has no mT maps; a partial or incompatible schema is an error.
+  const char* suffixes[] = {"", "_SBPos", "_SBNeg", "_signalLow", "_signalHigh"};
+  Int_t present = 0;
+  TH2* reference = 0;
+  for (Int_t mixed = 0; mixed < 2; ++mixed) {
+    const TString prefix = mixed ? "mix/hKstarMt_Mixed_" : "true/hKstarMt_";
+    for (Int_t region = 0; region < 5; ++region) {
+      for (Int_t cent = 0; cent < 9; ++cent) {
+        const TString name = prefix + shortName + suffixes[region]
+            + TString::Format("_CentBin%d", cent);
+        TObject* object = file.Get(name);
+        if (!object) continue;
+        ++present;
+        TH2* histogram = dynamic_cast<TH2*>(object);
+        if (!histogram || histogram->GetDimension() != 2) {
+          std::cerr << "ERROR: wrong histogram type/dimension for " << name << std::endl;
+          return -1;
+        }
+        if (!reference) reference = histogram;
+        else if (!SameAxis(*reference->GetXaxis(), *histogram->GetXaxis())
+                 || !SameAxis(*reference->GetYaxis(), *histogram->GetYaxis())) {
+          std::cerr << "ERROR: incompatible kstar-mT axes for " << name << std::endl;
+          return -1;
+        }
+      }
+    }
+  }
+  if (present == 0) {
+    std::cerr << "WARNING: kstar-mT histograms absent; rerun analysis to create them. "
+              << "Skipping the five kstar-mT QA pages." << std::endl;
+    return 0;
+  }
+  if (present != 90) {
+    std::cerr << "ERROR: incomplete kstar-mT histogram contract (" << present
+              << "/90); rerun analysis with matching Maker and YAML." << std::endl;
+    return -1;
+  }
+  return 1;
+}
+
+Int_t DrawPairMt(TCanvas& canvas, TFile& file, const TString& shortName,
+                 Int_t first, Int_t last, const char* outputPdf) {
+  const char* suffixes[] = {"", "_SBPos", "_SBNeg", "_signalLow", "_signalHigh"};
+  const char* labels[] = {"signal", "SBPos", "SBNeg", "signalLow", "signalHigh"};
+  for (Int_t region = 0; region < 5; ++region) {
+    const TString tail = shortName + suffixes[region] + "_CentBin%d";
+    TH2* se = SumMass(file, "true/hKstarMt_" + tail, "qaPairMtSE", first, last);
+    TH2* me = SumMass(file, "mix/hKstarMt_Mixed_" + tail, "qaPairMtME", first, last);
+    if (!se || !me) {
+      std::cerr << "ERROR: could not sum kstar-mT histograms for " << labels[region] << std::endl;
+      delete se; delete me; return 1;
+    }
+    canvas.Clear(); canvas.Divide(2, 1);
+    canvas.cd(1);
+    se->SetTitle(TString::Format("SE #Lambda-%s %s, cent9 %d-%d;k* (GeV/c);m_{T} (GeV/c^{2})",
+                                shortName.Data(), labels[region], first, last));
+    se->SetStats(kFALSE); se->Draw("COLZ");
+    canvas.cd(2);
+    me->SetTitle(TString::Format("ME #Lambda-%s %s, cent9 %d-%d;k* (GeV/c);m_{T} (GeV/c^{2})",
+                                shortName.Data(), labels[region], first, last));
+    me->SetStats(kFALSE); me->Draw("COLZ");
+    canvas.Print(outputPdf);
+    delete se; delete me;
+  }
+  return 0;
+}
 }
 
 Int_t checkHistAnaFemtoLambda(const char* rootFile, const char* mainconf, const char* outputPdf) {
@@ -116,6 +192,8 @@ Int_t checkHistAnaFemtoLambda(const char* rootFile, const char* mainconf, const 
   const Int_t extensions = FemtoLambdaQa::CheckAcceptanceAndSplit(
       file, base.name.c_str(), species.c_str(), acceptance);
   if (extensions < 0) { delete massSE; delete massME; return 1; }
+  const Int_t pairMt = FemtoLambdaQa::CheckPairMt(file, shortName);
+  if (pairMt < 0) { delete massSE; delete massME; return 1; }
   const TString outputDirectory = gSystem->DirName(outputPdf);
   if (gSystem->mkdir(outputDirectory.Data(), kTRUE) != 0
       && gSystem->AccessPathName(outputDirectory.Data())) {
@@ -192,6 +270,8 @@ Int_t checkHistAnaFemtoLambda(const char* rootFile, const char* mainconf, const 
     canvas.Print(outputPdf);
     delete cf; delete se; delete me;
   }
+  if (result == 0 && pairMt)
+    result = FemtoLambdaQa::DrawPairMt(canvas, file, shortName, first, last, outputPdf);
   canvas.Print(TString(outputPdf) + "]");
   delete massSE; delete massME;
   FileStat_t pdfInfo;

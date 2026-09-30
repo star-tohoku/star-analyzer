@@ -97,6 +97,101 @@ void CheckSplitSignal(const char* mainconf,const FemtoCandidate& lambda,const Fe
   CheckLegacy(helper.RootHistograms()->Get("hLambda_PtVsYLab_signal")->GetEntries()==0,
               "pair filling never weights single-particle acceptance");
 }
+void CheckPairMt(const char* mainconf,const FemtoCandidate& lambda,const FemtoCandidate& nucleus) {
+  FemtoLambdaLegacy helper;
+  CheckLegacy(helper.Init(mainconf,std::cerr),"mT helper Init");
+  const int type=helper.SpeciesKey()=="deuteron"?0:helper.SpeciesKey()=="triton"?1:helper.SpeciesKey()=="he3"?2:3;
+  const char* shortName[]={"d","t","3He","4He"};
+  const char* suffix[]={"","_SBPos","_SBNeg","_signalLow","_signalHigh"};
+  const char* canonical[]={"_signal","_rightSB","_leftSB","_signalLow","_signalHigh"};
+  const double lambdaMass=1.115683; // Explicit fixture matches production maker YAML.
+  const double nuclearMass=helper.NuclearP4(TVector3(),type).M();
+  const double averageMass=.5*(lambdaMass+nuclearMass);
+  const float masses[]={1.112f,1.119f,1.095f,1.14f,1.20f};
+  const double kstars[]={-.1,0.,.217,.999999,1.,1.1};
+  // Non-collinear transverse vectors, then a large pair-pT exercising mT overflow.
+  const double vectors[3][4]={{.7,-.3,-.2,.8},{3.,4.,-.9,.3},{20.,15.,6.,-3.}};
+  for(int mode=0;mode<2;++mode)for(int cent=0;cent<9;++cent) {
+    TH2* maps[5]={0,0,0,0,0};TH2* expected[5]={0,0,0,0,0};
+    const std::string stem=std::string(mode?"Mixed_":"")+shortName[type];
+    const std::string tail="_CentBin"+std::to_string(cent);
+    for(int region=0;region<5;++region) {
+      const std::string name="hKstarMt_"+stem+suffix[region]+tail;
+      maps[region]=dynamic_cast<TH2*>(helper.NuclearHistograms()->Get(name.c_str()));
+      CheckLegacy(maps[region] && std::string(maps[region]->ClassName())=="TH2D","all 90 mT keys are TH2D");
+      CheckLegacy(maps[region]->GetNbinsX()==200 && maps[region]->GetNbinsY()==200 &&
+                  maps[region]->GetXaxis()->GetXmin()==0. && maps[region]->GetXaxis()->GetXmax()==1. &&
+                  maps[region]->GetYaxis()->GetXmin()==0. && maps[region]->GetYaxis()->GetXmax()==10.,"mT axes");
+      expected[region]=static_cast<TH2*>(maps[region]->Clone(("expected_"+name).c_str()));
+      expected[region]->SetDirectory(0);expected[region]->Reset();
+    }
+    for(int vector=0;vector<3;++vector)for(int longitudinal=0;longitudinal<2;++longitudinal) {
+      FemtoCandidate l=lambda,n=nucleus;
+      TLorentzVector lp,np;
+      lp.SetXYZM(vectors[vector][0],vectors[vector][1],longitudinal?17.:2.1,lambdaMass);
+      np.SetXYZM(vectors[vector][2],vectors[vector][3],longitudinal?-23.:-.9,nuclearMass);
+      l.SetP4(lp);n.SetP4(np);
+      n.eventIndex=l.eventIndex+(mode?1:0);n.trk.trackIndex=mode?l.reso.dau1Index:9;
+      // Independent oracle: vector-sum pair pT / 2 and configured mean mass.
+      // Read back Float_t components exactly as production sees them.
+      const double px=double(l.px)+double(n.px),py=double(l.py)+double(n.py);
+      const double mt=std::sqrt(averageMass*averageMass+.25*(px*px+py*py));
+      if(vector==0) {
+        const double wrongScalar=.5*(l.P4().Pt()+n.P4().Pt());
+        const double wrongMt=std::sqrt(averageMass*averageMass+wrongScalar*wrongScalar);
+        CheckLegacy(maps[0]->GetYaxis()->FindBin(mt)!=maps[0]->GetYaxis()->FindBin(wrongMt),
+                    "fixture distinguishes vector sum from scalar pT sum");
+        CheckLegacy(maps[0]->GetYaxis()->FindBin(mt)!=maps[0]->GetYaxis()->FindBin((l.P4()+n.P4()).Mt()),
+                    "fixture distinguishes average-mass mT from pair total transverse mass");
+      } else if(vector==2) {
+        CheckLegacy(maps[0]->GetYaxis()->FindBin(mt)==maps[0]->GetNbinsY()+1,"fixture reaches mT overflow");
+      }
+      for(unsigned mass=0;mass<sizeof(masses)/sizeof(masses[0]);++mass) {
+        l.reso.invMass=masses[mass];
+        const int classification=helper.MassRegion(l.reso.invMass);
+        for(unsigned k=0;k<sizeof(kstars)/sizeof(kstars[0]);++k) {
+          CheckLegacy(helper.FillPair(l,n,kstars[k],.2,cent,mode!=0),"mT SE/ME accepted pair");
+          if(classification==1) {
+            expected[0]->Fill(kstars[k],mt);
+            expected[l.reso.invMass<1.11596?3:4]->Fill(kstars[k],mt);
+          } else if(classification==2) expected[2]->Fill(kstars[k],mt);
+          else if(classification==3) expected[1]->Fill(kstars[k],mt);
+        }
+      }
+    }
+    for(int region=0;region<5;++region) {
+      CheckLegacy(maps[region]->GetEntries()==expected[region]->GetEntries(),"mT exact entry count");
+      for(int bin=0;bin<LegacyCells(*maps[region]);++bin) {
+        CheckLegacy(maps[region]->GetBinContent(bin)==expected[region]->GetBinContent(bin),"mT exact expected bin including flows");
+        CheckLegacy(maps[region]->GetBinError(bin)==expected[region]->GetBinError(bin),"mT exact expected Sumw2");
+      }
+      TH2* byCent=dynamic_cast<TH2*>(helper.RootHistograms()->Get(
+        (std::string("hKstar")+(mode?"ME":"SE")+"VsCent_lambda_"+helper.SpeciesKey()+canonical[region]).c_str()));
+      CheckLegacy(byCent!=0,"mT canonical centrality reference");
+      TH1D* projection=maps[region]->ProjectionX("toy_mt_projection",0,maps[region]->GetNbinsY()+1,"e");
+      projection->SetDirectory(0);
+      for(int x=0;x<=maps[region]->GetNbinsX()+1;++x) {
+        const int reference=byCent->GetBin(x,cent+1);
+        CheckLegacy(projection->GetBinContent(x)==byCent->GetBinContent(reference),"mT ProjectionX reproduces old kstar cent slice");
+        CheckLegacy(std::fabs(std::pow(projection->GetBinError(x),2)-std::pow(byCent->GetBinError(reference),2))<1.e-10,
+                    "mT ProjectionX squared-error closure");
+      }
+      delete projection;delete expected[region];
+    }
+    CheckPartition(maps[0],maps[3],maps[4]);
+  }
+  TMemFile file("femto_lambda_mt_test","RECREATE");
+  CheckLegacy(helper.Write(&file),"mT output write");
+  for(int mode=0;mode<2;++mode)for(int cent=0;cent<9;++cent)for(int region=0;region<5;++region) {
+    const std::string name=std::string("hKstarMt_")+(mode?"Mixed_":"")+shortName[type]+suffix[region]+
+                           "_CentBin"+std::to_string(cent);
+    CheckLegacy(file.Get((std::string(mode?"mix/":"true/")+name).c_str())!=0,"mT correct SE/ME directory");
+    CheckLegacy(file.Get((std::string(mode?"true/":"mix/")+name).c_str())==0,"mT no opposite-directory artifact");
+  }
+  CheckLegacy(helper.RootHistograms()->Get("hLambda_PtVsYLab_signal")->GetEntries()==0,
+              "mT pair maps never multiply candidate acceptance");
+}
+
 struct LambdaPicoFixture {
   TClonesArray event,tracks;
   TClonesArray* arrays[StPicoArrays::NAllPicoArrays];
@@ -247,6 +342,7 @@ int femto_lambda_legacy(const char* mainconf) {
               std::fabs(se->GetYaxis()->GetXmax()-1.25)<1.e-12,"legacy full-mass axes");
   CheckSplitSignal(mainconf,l,n);
   CheckAcceptance(mainconf);
+  CheckPairMt(mainconf,l,n);
   std::cout<<"PASS femto_lambda_legacy "<<helper.SpeciesKey()<<std::endl;
   return 0;
  } catch(const std::exception& e) { std::cerr<<"FAIL femto_lambda_legacy "<<e.what()<<std::endl;return 1; }

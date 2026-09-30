@@ -30,7 +30,8 @@ def main():
     for species, legacy in (("deuteron", "d"), ("triton", "t"), ("he3", "3He"), ("he4", "4He")):
         top_doc = yaml.safe_load((ROOT / ("config/hist/hist_femtoLambda_" + species + "_kf.yaml")).read_text())
         top = top_doc["histograms"]
-        nuclear = yaml.safe_load((ROOT / ("config/hist/hist_femtoLambda_" + species + "_nuclear.yaml")).read_text())["histograms"]
+        nuclear_doc = yaml.safe_load((ROOT / ("config/hist/hist_femtoLambda_" + species + "_nuclear.yaml")).read_text())
+        nuclear = nuclear_doc["histograms"]
         legacy_expected = set()
         for item in old:
             key = item["key"]
@@ -45,7 +46,20 @@ def main():
             if item["directory"] != "/":
                 legacy_expected.add(key)
             tested += 1
-        assert set(nuclear) == legacy_expected | {"hDphiDeta_proton_" + legacy + "_EventField"}
+        mt_expected = set()
+        assert nuclear_doc["axes"]["PairMt"] == {"nBins": 200, "min": 0.0, "max": 10.0}
+        for mixed in ("", "Mixed_"):
+            for region in ("", "_SBPos", "_SBNeg", "_signalLow", "_signalHigh"):
+                for cent in range(9):
+                    key = "hKstarMt_" + mixed + legacy + region + "_CentBin" + str(cent)
+                    mt_expected.add(key)
+                    # ProjectionX must have exactly the original per-centrality k* axis.
+                    original_region = "" if region in ("_signalLow", "_signalHigh") else region
+                    original = "hKstar_" + mixed + legacy + original_region + "_CentBin" + str(cent)
+                    assert signature(nuclear[key]) == ("TH2D", [nuclear[original]["axis"],
+                                                               nuclear_doc["axes"]["PairMt"]]), (species, key)
+        assert len(mt_expected) == 90
+        assert set(nuclear) == legacy_expected | {"hDphiDeta_proton_" + legacy + "_EventField"} | mt_expected
         for mode in ("SE", "ME"):
             for region in ("", "_signal", "_leftSB", "_rightSB"):
                 channel = "lambda_" + species + region
@@ -61,8 +75,10 @@ def main():
             assert signature(top[key]) == ("TH2D", [top_doc["axes"]["YLab"], top_doc["axes"]["Pt"]]), key
         assert top_doc["axes"]["YLab"]["min"] < 0 < top_doc["axes"]["YLab"]["max"]
         assert len(top) == 79
-        assert len(nuclear) == 113
+        assert len(nuclear) == 203
+        assert len(top) + len(nuclear) == 282
     print("PASS original Lambda histogram contract:", tested, "legacy key/axis/class comparisons across four species")
+    print("PASS k*-mT histogram contract: 90 new TH2D keys per species, 282 total histograms per output")
 
 
 if __name__ == "__main__":

@@ -439,3 +439,19 @@ that those runtime gates have passed.
   新ヒストが一部だけある場合は失敗させる。CFは引き続きQA側でSE／MEから計算する。
 - 詳しい母集団・軸・境界は[ヒストグラム一覧](../../mdfiles/femto/implementation/femto_lambda_histograms_20260930.md)。
   これらは採用候補の分布であり、生成数で補正した検出効率ではない。
+
+### centrality別のk*–m_T（2026-09-30追加）
+
+- ユーザー指定：`m_T = sqrt((|pT_Lambda+pT_nucleus|/2)^2 + ((m_Lambda+m_nucleus)/2)^2)`。
+  pTは横運動量ベクトルの和。ペア全体の横質量ではない。
+- Λは `lambdaPairMass`、原子核は `nuclearMass<Species>` の固定質量を使う。
+  signal／sideband／SE／MEで共通。Heの運動量補正は候補作成時の1回のみ。
+- `true/hKstarMt_<S>{,_SBPos,_SBNeg,_signalLow,_signalHigh}_CentBin<i>` と
+  `mix/hKstarMt_Mixed_<S>{,_SBPos,_SBNeg,_signalLow,_signalHigh}_CentBin<i>`。
+  `S=d,t,3He,4He`、`i=0..8`。suffixなしは±3σsignal。
+- 90 TH2DをnuclearヒストYAMLへ追加。Xは既存Kstar、Yは `PairMt`（200 bin、0〜10 GeV/c²）。
+  従来のpair loop内で埋め、カット・mixing・旧192ヒストは変更しない。最新出力は282ヒスト。
+- `FemtoLambdaPairMtDefinition` に定義と固定質量を保存。Yのflow込みProjectionXは従来k*に一致する。
+- 後段でcent9をSE／ME別に加算し、同じm_T bin範囲を射影して、その範囲内でCFを正規化する。
+  選択精度は保存bin幅まで。既存ROOTからm_Tを復元することはできないので再解析が必要。
+- QA末尾に5領域のk*–m_Tを追加（合計12ページ）。旧ROOTの従来表示は維持し、部分欠損・型／軸不整合は失敗する。

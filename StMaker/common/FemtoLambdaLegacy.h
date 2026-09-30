@@ -51,7 +51,7 @@ class FemtoLambdaLegacy {
   std::string mSpecies, mLegacySpecies;
   int mSpeciesIndex;
   double mMean, mWindow, mOuterFactor, mFieldTesla, mRadiusMeters;
-  double mDaughterProtonMass, mDaughterPionMass;
+  double mDaughterProtonMass, mDaughterPionMass, mLambdaPairMass;
   int mMinNHitsDedx;
   double mMinPt, mNuclearMass[4], mTofMean[3], mTofSigma[3];
   double mNSigmaFill, mNSigmaExclude, mMaxNSigma, mM2SigmaCut;

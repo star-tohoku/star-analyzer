@@ -17,9 +17,9 @@ cent9は大きいほど中心衝突です。詳細は[centralityの定義](../..
 | ROOT内の場所 | 内容 | 1ファイルのヒスト数 |
 |---|---|---:|
 | 最上位 `/` | Λ・イベントQA、アクセプタンス、共通Femto形式のSE/ME、混合QA | 79 |
-| `true/` | 共通原子核QA、対象核種の旧形式SE、track-merging QA | 71 |
-| `mix/` | 対象核種の旧形式ME | 42 |
-| 合計 | TTreeやメタデータは含めない | 192 |
+| `true/` | 共通原子核QA、対象核種のSE、k*–m_T、track-merging QA | 116 |
+| `mix/` | 対象核種のME、k*–m_T | 87 |
+| 合計 | TTreeやメタデータは含めない | 282 |
 
 原子核QAには全4核種のPID仮説を残しますが、pairヒストはファイルごとの対象核種だけです。以下の1次元ヒストのY軸は、断りがなければ件数です。
 
@@ -170,7 +170,7 @@ SE／MEの各bin（underflow／overflowを含む）で、**`signalLow + signalHi
 CFを足し合わせて元のsignal CFにしてはいけません。合算する場合はSEとMEの段階で合算し、改めて正規化します。
 正規化区間の統計がゼロならCFは未定義と表示し、MEがゼロのbinも測定値ゼロとして描きません。
 
-新出力のQA PDFは、従来4ページにアクセプタンス1ページと低側／高側CF各1ページを加えた7ページです。
+アクセプタンス／質量窓二分割追加時点のQA PDFは、従来4ページに3ページを加えた7ページです。さらに本ページ末尾のk*–m_T追加により、最新出力では計12ページになります。
 既存ROOTには新しい12ヒストは自動追加されません。**Makerを再ビルドして再解析する必要があります**。
 旧ROOTのQAは警告を出して従来4ページを表示します。新ヒストが一部だけ存在する不完全な出力はエラーにします。
 
@@ -219,3 +219,91 @@ SL24y／ROOT 5で全ビルドと4核種の人工データ検証が成功しま�
 
 新ROOT・QA図・各mapのentries・再実行手順は[追加ヒストの検証記録](../../../rootfile/femto_lambda_kf_validation_20260930/acceptance_split/README.md)を参照してください。従来のROOT・PDFは上書きしていません。
 
+## centrality別のk*–m_T（2026-09-30追加）
+
+後段でcentralityとm_Tを指定してCFを作るため、**SE／MEを別々に、cent9=0〜8の各binにTH2Dを保存**します。
+既存192ヒストを保持し、90ヒストを追加して計282ヒストです。全4核種・両エネルギーの設定に追加しています。
+
+### m_Tの定義
+
+ユーザー指定の平均質量・ペア横運動量の半分を使います（以下c=1）。
+
+```text
+m       = (m_Lambda + m_nucleus) / 2
+pT_pair = |pT_vector_Lambda + pT_vector_nucleus|
+pT      = pT_pair / 2
+m_T     = sqrt(m^2 + pT^2)
+```
+
+これは **sqrt(M_pair^2 + pT_pair^2)というペア全体の横質量ではありません**。
+横運動量はベクトル和であり、個々のpTの大きさの和でもありません。再構成Λの候補質量や、Λ／原子核各々の横質量の平均も使いません。
+
+質量はk*と共通の固定仮説を使います。Λはmaker YAMLの `lambdaPairMass: 1.115683`、原子核はnuclearid YAMLの `nuclearMassDeuteron: 1.87561`、`nuclearMassTriton: 2.80892`、`nuclearMassHe3: 2.80839`、`nuclearMassHe4: 3.72742` [GeV/c²] です。
+運動量は既存のペア候補に保存した物理運動量で、HeのZ=2補正を再適用しません。
+signal、左右sideband、低側／高側、SE／MEすべてに同じ式と質量仮説を使用します。
+出力ROOTの `FemtoLambdaPairMtDefinition`（TNamed）に式・使用質量・単位を記録します。
+
+### 名前・軸・選択領域
+
+`{S}` は `d,t,3He,4He`、`{i}` はcent9の0〜8です。
+
+| 保存場所 | ヒストグラム名 | Λの質量領域 |
+|---|---|---|
+| `true/` | `hKstarMt_{S}_CentBin{i}` | signal：±3σ |
+| `mix/` | `hKstarMt_Mixed_{S}_CentBin{i}` | signal：±3σ |
+| `true/` | `hKstarMt_{S}_SBPos_CentBin{i}` | 右sideband |
+| `mix/` | `hKstarMt_Mixed_{S}_SBPos_CentBin{i}` | 右sideband |
+| `true/` | `hKstarMt_{S}_SBNeg_CentBin{i}` | 左sideband |
+| `mix/` | `hKstarMt_Mixed_{S}_SBNeg_CentBin{i}` | 左sideband |
+| `true/` | `hKstarMt_{S}_signalLow_CentBin{i}` | signalの低質量半分 |
+| `mix/` | `hKstarMt_Mixed_{S}_signalLow_CentBin{i}` | signalの低質量半分 |
+| `true/` | `hKstarMt_{S}_signalHigh_CentBin{i}` | signalの高質量半分 |
+| `mix/` | `hKstarMt_Mixed_{S}_signalHigh_CentBin{i}` | signalの高質量半分 |
+
+- X：k* [GeV/c]、既存と同じ200 bin・0〜1（bin幅0.005）。
+- Y：m_T [GeV/c²]、200 bin・0〜10（bin幅0.05）。各nuclearヒストYAMLの `PairMt` 軸で変更可能。
+- 合計：2（SE／ME）×5（質量領域）×9（cent9）＝90ヒスト／核種別ROOT。
+- 各採用pairを、従来のk*と同じ選別・同じcent9で1回ずつ記録する。追加のcut、mixing pool、pair loopはない。
+- MEの両方向も同じ保存処理を通り、同じcent9のイベント同士で構成する。
+- m_Tの範囲外はunderflow／overflowへ残る。m_Tを全域（flow込み）で射影すれば元のcentrality別k*を再現する。
+- 各k*–m_T binでも `signalLow + signalHigh = signal`。分割版とsignalを重ねて加算しない。
+- 全質量のk*–massは従来どおり別に残す。今回のk*–m_Tには全質量版はなく、5つの質量領域を保存する。
+
+### 後段でのm_T選択とCF
+
+1. 希望のcentrality binのTH2を、SEとMEそれぞれで加算する。
+2. 両者で**同じm_T範囲**を指定し、X軸（k*）へ射影する。
+3. k*のrebinを揃え、そのcentrality・m_T範囲内のSE／MEで改めて正規化してCFを作る。
+4. sideband CFも同じcentrality・m_T選択で作る。完成したCF同士を平均してcentralityを統合しない。
+
+たとえばTH2ポインタを `hSE`／`hME` とし、m_Tのbin 31〜40（[1.50,2.00) GeV/c²）を選ぶ場合：
+
+```cpp
+TH1D* se = hSE->ProjectionX("se_mt150_200", 31, 40, "e");
+TH1D* me = hME->ProjectionX("me_mt150_200", 31, 40, "e");
+// 選択後のSE／MEを同じk* binningへ揃え、設定した正規化域でCFを作る。
+```
+
+これは射影例であり、全核種でこのm_T範囲に統計があるという意味ではありません。
+**任意範囲の選択精度は保存bin幅0.05 GeV/c²まで**です。bin途中を境界にしても、その内部を正確に分割できません。
+境界はbin edgeに合わせ、隣接領域を[下限,上限)として重複させないでください。もっと細かい選択には `PairMt` のbin数を変えて再解析が必要です。
+
+CFの正規化は `C = (SE/ME) × (ME_norm/SE_norm)`。既存設定は0.5〜1.0 GeV/cで、必ず選択したm_T・centralityの分布から求めます。
+MEがゼロのbinや正規化統計がゼロの範囲はCF未定義として扱います。今回Makerへ完成済みCFを保存する処理は追加していません。
+
+### QA・旧ROOTとの互換性
+
+QAの末尾に、signal／SBPos／SBNeg／signalLow／signalHighのk*–m_T（SEとME）を各1ページ追加し、最新ROOTは12ページです。
+図は `cfCent9Min..cfCent9Max` を合算したものですが、ROOTには9 bin個別のTH2が残っています。
+旧ROOTに90個の新ヒストが全くなければ警告して従来ページだけを表示します。一部欠損・異次元・軸不整合はPDF作成前に停止します。
+既存ROOTにm_T情報は後付けできないため、再ビルド・再解析した新ROOTを使用してください。
+
+### k*–m_T追加分の検証・実出力
+
+SL24y／ROOT5で全ビルド・4核種の人工データ試験が成功しました。13p5／3p85 × 4核種を同じ先頭10,000イベントで再解析し、既存192ヒストとイベント・Λ候補記録が不変であることを確認しました。
+全90 TH2のm_T全域射影（flow・誤差を含む）が従来k*と一致し、低側＋高側＝signalも各二次元binで確認済みです。
+全8 QAは12ページで、旧4／7ページ形式との互換性・異常出力の拒否も検証しました。
+
+最新出力は `rootfile/femto_lambda_kf_validation_20260930/pair_mt/` に分離して保存しました。
+[検証記録・全QAリンク](../../../rootfile/femto_lambda_kf_validation_20260930/pair_mt/README.md)を参照してください。
+以前の `acceptance_split/` のROOTには今回のm_Tヒストは入っていません。

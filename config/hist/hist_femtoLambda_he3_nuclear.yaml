@@ -96,6 +96,10 @@ axes:
     nBins: 200
     min: 0.0
     max: 1.0
+  PairMt: &PairMt
+    nBins: 200
+    min: 0.0
+    max: 10.0
   Qlab: &Qlab
     nBins: 200
     min: 0.0
@@ -609,3 +613,545 @@ histograms:
     xAxis: *DeltaPhiStar
     yAxis: *DeltaEta
     title: "Event-field merging QA proton(Lambda) vs 3He;Delta phi*;Delta eta"
+
+  # Pair transverse mass: one TH2 per cent9 and mass region, for later k* projection.
+  # Signal includes both +/-3 sigma edges; signalLow + signalHigh partition it.
+  hKstarMt_3He_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBPos_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_SBNeg_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalLow_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal low half), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_3He_signalHigh_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "SE k* vs m_{T} (Lambda - 3He, signal high half), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal +/-3 sigma), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBPos_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, high-mass sideband), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_SBNeg_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, low-mass sideband), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalLow_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal low half), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin0:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=0 (70-80%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin1:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=1 (60-70%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin2:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=2 (50-60%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin3:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=3 (40-50%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin4:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=4 (30-40%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin5:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=5 (20-30%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin6:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=6 (10-20%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin7:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=7 (5-10%);k* (GeV/c);m_{T} (GeV/c^{2})"
+
+  hKstarMt_Mixed_3He_signalHigh_CentBin8:
+    type: TH2D
+    xAxis: *Kstar
+    yAxis: *PairMt
+    title: "ME k* vs m_{T} (Lambda - 3He, signal high half), cent9=8 (0-5%);k* (GeV/c);m_{T} (GeV/c^{2})"
