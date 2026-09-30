@@ -3,8 +3,9 @@
 
 External headers stay in the global namespace. Each upstream C++ declaration
 is enclosed in star_analyzer_kfp, including bundled SIMD and allocator types.
-No physics expressions or STAR conditional branches are changed. See the
-generated manifest and StRoot/KFParticle/PROVENANCE.md for snapshot details.
+Default physics selections and STAR conditional branches are preserved. Two
+explicit Lambda-only study controls are added reproducibly; see the generated
+manifest and StRoot/KFParticle/PROVENANCE.md for snapshot details.
 """
 
 import argparse
@@ -32,8 +33,72 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def lambda_study_controls(name, text):
+    """Apply only audited Lambda selection hooks, failing on upstream drift."""
+    def replace(old, new):
+        nonlocal text
+        if text.count(old) != 1:
+            raise RuntimeError("Lambda study transform anchor changed: " + name + ": " + old)
+        text = text.replace(old, new)
+
+    if name == "KFParticleTopoReconstructor.h":
+        replace("  ~KFParticleTopoReconstructor();",
+                "  ~KFParticleTopoReconstructor();\n"
+                "  void SetLambdaTopoChi2NdfCut(float cut) { fLambdaTopoChi2NdfCut = cut; }\n"
+                "  float GetLambdaTopoChi2NdfCut() const { return fLambdaTopoChi2NdfCut; }")
+        replace("    fNThreads = a.fNThreads;",
+                "    fNThreads = a.fNThreads;\n    fLambdaTopoChi2NdfCut = a.fLambdaTopoChi2NdfCut;")
+        replace("  void CopyCuts(const KFParticleTopoReconstructor* topo) { fKFParticleFinder->CopyCuts(topo->fKFParticleFinder); }",
+                "  void CopyCuts(const KFParticleTopoReconstructor* topo) { fKFParticleFinder->CopyCuts(topo->fKFParticleFinder); fLambdaTopoChi2NdfCut = topo->fLambdaTopoChi2NdfCut; }")
+        replace("}__attribute__((aligned(sizeof(float32_v)))); // class KFParticleTopoReconstructor",
+                "  // Appended local study setting; the upstream default is unchanged.\n"
+                "  float fLambdaTopoChi2NdfCut = 3.f;\n"
+                "}__attribute__((aligned(sizeof(float32_v)))); // class KFParticleTopoReconstructor")
+        replace("  {\n  }\n  \n  /** Copy cuts from KF Particle Finder",
+                "  {\n    fLambdaTopoChi2NdfCut = a.fLambdaTopoChi2NdfCut;\n  }\n  \n  /** Copy cuts from KF Particle Finder")
+    elif name == "KFParticleTopoReconstructor.cxx":
+        replace("      if(tmp.Chi2()/tmp.NDF()<3.)",
+                "      const float topoCut = abs(fParticles[iParticle].GetPDG()) == 3122\n"
+                "          ? fLambdaTopoChi2NdfCut : 3.f;\n"
+                "      if(tmp.Chi2()/tmp.NDF()<topoCut)")
+    elif name == "KFParticleFinder.h":
+        replace("  void SetLCut(float cut) { fLCut = cut; }",
+                "  void SetApplyLambdaGeometryCuts(bool apply) { fApplyLambdaGeometryCuts = apply; }\n"
+                "  bool GetApplyLambdaGeometryCuts() const { return fApplyLambdaGeometryCuts; }\n"
+                "  void SetLCut(float cut) { fLCut = cut; }")
+        replace("    fLCut = finder->fLCut;",
+                "    fLCut = finder->fLCut;\n    fApplyLambdaGeometryCuts = finder->fApplyLambdaGeometryCuts;")
+        replace("  KFParticleFinder(const KFParticleFinder&);",
+                "  // Appended local study switch: only Lambda/anti-Lambda geometry gates.\n"
+                "  bool fApplyLambdaGeometryCuts = true;\n\n"
+                "  KFParticleFinder(const KFParticleFinder&);")
+    elif name == "KFParticleFinder.cxx":
+        # Restrict these three gates to the two-daughter ConstructV0 path.
+        begin = text.index("inline void KFParticleFinder::ConstructV0(")
+        end = text.index("inline void KFParticleFinder::SaveV0PrimSecCand(", begin)
+        prefix, suffix = text[:begin], text[end:]
+        text = text[begin:end]
+        replace("  saveParticle &= (lMin < 200.f);",
+                "  const mask32_v skipLambdaGeometry = fApplyLambdaGeometryCuts\n"
+                "      ? (int32_v(0) == int32_v(1)) : (abs(mother.PDG()) == int32_v(3122));\n"
+                "  saveParticle &= (lMin < 200.f) || skipLambdaGeometry;")
+        replace("  saveParticle &= ((!isPrimary) && isParticleFromVertex) || isPrimary;",
+                "  saveParticle &= ((!isPrimary) && isParticleFromVertex) || isPrimary || skipLambdaGeometry;")
+        replace("  saveParticle &= ( ((isK0 || isLambda || isHyperNuclei) && lMin > float32_v(fLCut)) || !(isK0 || isLambda || isHyperNuclei) );",
+                "  saveParticle &= ( ((isK0 || isLambda || isHyperNuclei) && lMin > float32_v(fLCut)) || !(isK0 || isLambda || isHyperNuclei) ) || skipLambdaGeometry;")
+        text = prefix + text + suffix
+        replace("                  active[iPDGPos] &= (dr < float32_v(fDistanceCut));",
+                "                  const mask32_v skipLambdaGeometry = fApplyLambdaGeometryCuts\n"
+                "                      ? (int32_v(0) == int32_v(1)) : (abs(motherPDG) == int32_v(3122));\n"
+                "                  active[iPDGPos] &= (dr < float32_v(fDistanceCut)) || skipLambdaGeometry;")
+        replace("                  active[iPDGPos] &= (p1p2 > -p12);\n                  active[iPDGPos] &= (p1p2 > -p22);",
+                "                  active[iPDGPos] &= (p1p2 > -p12) || skipLambdaGeometry;\n"
+                "                  active[iPDGPos] &= (p1p2 > -p22) || skipLambdaGeometry;")
+    return text
+
+
 def isolate(name, data, guard_names):
-    text = data.decode("utf-8")
+    text = lambda_study_controls(name, data.decode("utf-8"))
     # Unlike the other internal KF types, upstream KFPTrack ignores the
     # standalone switch for ClassDef. Preserve TObject/STAR layout, but apply
     # the same dictionary opt-out as KFParticle/KFVertex.
@@ -110,7 +175,7 @@ def main():
     manifest = {
         "source": str(source), "snapshot_date": args.snapshot_date,
         "source_id": source_id, "namespace": NAMESPACE,
-        "transform": "namespace-guards-and-kfptrack-standalone-dictionary-v2",
+        "transform": "namespace-guards-kfptrack-dictionary-lambda-study-controls-v3",
         "build_defines": ["__ROOT__", "KFParticleStandalone", "HomogeneousField"],
         "simd": "bundled KFPSimd SSE4.1; -msse4.1, not -march=native",
         "translation_units": [name + ".cxx" for name in CORE],

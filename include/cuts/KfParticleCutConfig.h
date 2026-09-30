@@ -68,6 +68,9 @@ public:
   Double_t minVertexLineSignificance;
   Double_t minCosPointing;
   Bool_t reconstructAntiLambda;
+  // Appended study controls; omitted YAML keys retain the established cuts.
+  Double_t topoChi2NdfCut;
+  Bool_t applyLambdaGeometryCuts;
 
 private:
   KfParticleCutConfig();

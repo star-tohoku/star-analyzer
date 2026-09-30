@@ -3,7 +3,7 @@
 日付: 2026-09-07（再開セッション、EDT）  
 状態: full Finder／Topo経路およびモード別vertex選別を実装。ROOT 5でclean build、人工テスト、AuAu13p5先頭1ファイルの実イベント・出力QA・限定Helix回帰比較を確認。全データ・校正・独立参照比較まで完了したものではない。
 
-関連: [承認済み計画](plan_kfparticle_lambda_full_reconstruction.md)、[同日の日報](../analysisnote/20260907/summary20260907.md)。
+関連: [承認済み計画](../plans/plan_kfparticle_lambda_full_reconstruction.md)、[同日の日報](../../../analysisnote/20260907/summary20260907.md)。
 前半セッションの実装詳細・失敗調査は日報§2–7に記録済み。本書では再開後に確認した最終状態を区別する。
 
 ## 1. 再構成の構成とROOT環境
@@ -83,8 +83,8 @@ vertexByMode:
 ./script/singularity_make.sh config/mainconf/main_auau13p5_anaLambda_KFParticle.yaml --no-clean test-kfparticle-full-chain test-kfparticle-pico-adapter KF_TEST_CUTS=config/cuts/kf/kf_auau13p5_anaLambda_KFParticle.yaml -j4
 ```
 
-- [clean allログ](../analysisnote/20260907/kfparticle_resume_logs/clean_all.log)
-- [人工テストログ](../analysisnote/20260907/kfparticle_resume_logs/synthetic_tests.log)
+- [clean allログ](../../../analysisnote/20260907/kfparticle_resume_logs/clean_all.log)
+- [人工テストログ](../../../analysisnote/20260907/kfparticle_resume_logs/synthetic_tests.log)
 
 full-chain: Λ／anti-Λ、磁場±5、ID／Sort、複数PID、rawと拘束コピーの分離、reset。
 Pico adapter: 6 parameter／21 covariance、TOF index 0／欠測／不正参照、dEdxPull数値対応、strict KF schema。
@@ -126,10 +126,10 @@ bad run、非有限PV、Vz、RefMult、track数、pileup、centrality-bin、KF e
 
 出力:
 
-- [local_mode_1000.root](../rootfile/auau13p5_anaLambda_KFParticle_validation_20260907/local_mode_1000.root)
-- [local_mode_1479.root](../rootfile/auau13p5_anaLambda_KFParticle_validation_20260907/local_mode_1479.root)
-- [1000実行ログ](../analysisnote/20260907/kfparticle_resume_logs/local_mode_1000.log)／[出力QA](../analysisnote/20260907/kfparticle_resume_logs/output_qa_mode_1000.log)
-- [1479実行ログ](../analysisnote/20260907/kfparticle_resume_logs/local_mode_1479.log)／[出力QA](../analysisnote/20260907/kfparticle_resume_logs/output_qa_mode_1479.log)
+- [local_mode_1000.root](../../../rootfile/auau13p5_anaLambda_KFParticle/validation_20260907/local_mode_1000.root)
+- [local_mode_1479.root](../../../rootfile/auau13p5_anaLambda_KFParticle/validation_20260907/local_mode_1479.root)
+- [1000実行ログ](../../../analysisnote/20260907/kfparticle_resume_logs/local_mode_1000.log)／[出力QA](../../../analysisnote/20260907/kfparticle_resume_logs/output_qa_mode_1000.log)
+- [1479実行ログ](../../../analysisnote/20260907/kfparticle_resume_logs/local_mode_1479.log)／[出力QA](../../../analysisnote/20260907/kfparticle_resume_logs/output_qa_mode_1479.log)
 
 farm configlog: **なし**（farm未投入、jobidはlocal label）。
 ROOT内にKFParticleEffectiveConfiguration、KFEventSelectionConfiguration、backend fingerprint、KFRunStatus=completedを保存。
@@ -149,10 +149,10 @@ raw Λ massの最多binは1.115–1.116 GeV/c²（107件）。
 ## 5. 誤った成功判定を防ぐ否定テスト
 
 - 旧出力にはmode metadataがないため、新QAはexit 6で拒否。
-  [ログ](../analysisnote/20260907/kfparticle_resume_logs/output_qa_old_metadata_rejected.log)。
+  [ログ](../../../analysisnote/20260907/kfparticle_resume_logs/output_qa_old_metadata_rejected.log)。
 - legacy Event-only診断へvertexByMode付きYAMLを渡すと、入力解析前にexit 1で拒否。
   TEnvで階層を無視して原点cutと誤診断させない。
-  [ログ](../analysisnote/20260907/kfparticle_resume_logs/event_legacy_nested_rejected.log)。
+  [ログ](../../../analysisnote/20260907/kfparticle_resume_logs/event_legacy_nested_rejected.log)。
 
 新しいevent cutの診断には、実行ROOTのKFEventSelectionConfiguration／hKfEventSelectionと新出力QAを利用する。
 
@@ -165,9 +165,9 @@ raw Λ massの最多binは1.115–1.116 GeV/c²（107件）。
 - 旧 `helix_control_20.root` と新 `helix_mode_control_20.root` を
   `tests/compare_helix_histograms.C` で厳密比較し、**46ヒストグラム、2,469,952セル、差分0、比較exit 0**。
   型・軸・ラベル・entries・bin内容・誤差・under/overflowを含む。
-  [比較ログ](../analysisnote/20260907/kfparticle_resume_logs/helix_comparison.log)。
+  [比較ログ](../../../analysisnote/20260907/kfparticle_resume_logs/helix_comparison.log)。
 - 比較macroの初回はROOT 5にないGetNcellsを使って失敗したため、新規比較macroだけを公開GetBin APIへ修正して再実行した。
-  [初回ログ](../analysisnote/20260907/kfparticle_resume_logs/helix_comparison_first_attempt.log)。
+  [初回ログ](../../../analysisnote/20260907/kfparticle_resume_logs/helix_comparison_first_attempt.log)。
 - これは今回再開前後の限定20イベントにおける非退行確認であり、全解析・全統計での一致保証ではない。
 
 ## 7. 再開セッションの変更ファイル

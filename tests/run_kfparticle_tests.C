@@ -18,9 +18,10 @@ void run_kfparticle_tests(const char* testName = "full-chain",
   gSystem->ResetSignal(kSigIllegalInstruction, kTRUE);
   gSystem->ResetSignal(kSigFloatingException, kTRUE);
   const TString test(testName ? testName : "");
-  const Bool_t pico = test == "pico-adapter";
+  const Bool_t femtoLambda = test == "femto-lambda-provider";
+  const Bool_t pico = test == "pico-adapter" || femtoLambda;
   if (test != "full-chain" && !pico) {
-    std::cerr << "ERROR: expected full-chain or pico-adapter test" << std::endl;
+    std::cerr << "ERROR: expected full-chain, pico-adapter, or femto-lambda-provider test" << std::endl;
     gSystem->Exit(1); return;
   }
   if (gROOT->LoadMacro("$STAR/StRoot/StMuDSTMaker/COMMON/macros/loadSharedLibraries.C") < 0) {
@@ -50,14 +51,14 @@ void run_kfparticle_tests(const char* testName = "full-chain",
   if (pico && gSystem->Load(directory + "libStKfParticleCommon.so") < 0) {
     gSystem->Exit(1); return;
   }
-  const TString module = directory + (pico ? "test_kfparticle_pico_adapter.so"
-                                          : "test_kfparticle_full_chain.so");
+  const TString module = directory + (femtoLambda ? "test_femto_lambda_provider.so" :
+      (pico ? "test_kfparticle_pico_adapter.so" : "test_kfparticle_full_chain.so"));
   if (gSystem->Load(module) < 0) {
     std::cerr << "ERROR: loading test module " << module << std::endl;
     gSystem->Exit(1); return;
   }
-  const char* symbol = pico ? "star_analyzer_kfp_pico_adapter_test"
-                            : "star_analyzer_kfp_full_chain_test";
+  const char* symbol = femtoLambda ? "run_femto_lambda_provider_tests" :
+      (pico ? "star_analyzer_kfp_pico_adapter_test" : "star_analyzer_kfp_full_chain_test");
   StarAnalyzerKfpTestEntry entry =
       (StarAnalyzerKfpTestEntry)gSystem->DynFindSymbol(module.Data(), symbol);
   if (!entry) {

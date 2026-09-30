@@ -76,12 +76,14 @@ public:
     // -2 ln(prob). SetChi2PrimaryCut also sets Finder ChiPrimary2D, hence the
     // explicit Finder value MUST be applied after this probability setting.
     topo.SetChi2PrimaryCut(-2. * std::log(cuts.primaryProbCut));
+    topo.SetLambdaTopoChi2NdfCut(cuts.topoChi2NdfCut);
     kfp::KFParticleFinder* finder = topo.GetKFParticleFinder();
     finder->SetMaxDistanceBetweenParticlesCut(cuts.finderMaxDaughterDistance);
     finder->SetLCut(cuts.finderLCut);
     finder->SetChiPrimaryCut2D(cuts.finderChiPrimary2D);
     finder->SetChi2Cut2D(cuts.finderChi2Ndf2D);
     finder->SetLdLCut2D(cuts.finderLdL2D);
+    finder->SetApplyLambdaGeometryCuts(cuts.applyLambdaGeometryCuts);
     finder->AddDecayToReconstructionList(3122);
     if (cuts.reconstructAntiLambda) finder->AddDecayToReconstructionList(-3122);
   }
@@ -403,7 +405,7 @@ public:
     // Same STAR Interface sequence, with the external Pico PV. No PV refit,
     // custom p x pi loop, extra competition pass, or scalar fallback is performed.
     // Upstream ReconstructParticles itself runs SelectParticleCandidates:
-    // Lambda must already pass PV-constrained chi2/NDF < 3. Keep that behavior.
+    // Lambda must pass the configured PV-copy chi2/NDF cut (default 3).
     topo.CleanPV();
     topo.Init(inputs, &pdgs, &hftHits);
     topo.GetKFParticleFinder()->Init(topo.NPrimaryVertices());
@@ -454,5 +456,5 @@ const char* StPicoKFParticleInterface::BackendDescription() {
       "; snapshot=" STAR_ANALYZER_KFP_SNAPSHOT_DATE
       "; namespace=star_analyzer_kfp; __ROOT__,KFParticleStandalone,HomogeneousField,SSE4.1"
       "; Pico source=xwu2/KFTree_lambda/StKFParticleInterface"
-      "; upstream Lambda PV chi2/NDF<3 retained; parent mass unconstrained";
+      "; local=lambda-study-controls-v1; Lambda PV chi2/NDF and Finder geometry use effective config; parent mass unconstrained";
 }

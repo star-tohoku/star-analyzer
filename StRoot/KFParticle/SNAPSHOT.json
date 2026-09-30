@@ -119,11 +119,11 @@
     },
     "KFParticleFinder.cxx": {
       "upstream_sha256": "85088b2cd92d46c46da76f7698658b35213552aa00bb2fb94ca272d6d682f0a3",
-      "vendored_sha256": "9b1c1a6635afe69c835952d7427de4e84533f74fe7bdd7178cf6500252048fbd"
+      "vendored_sha256": "17e754175157898868dc5df997d24c0899cc2b964902e8b8a0309fcdfa240dcd"
     },
     "KFParticleFinder.h": {
       "upstream_sha256": "3aa228d36e1f5f5ecb88c8a53f18bf8d686c3b856341f9d63d2f5c68e51351c1",
-      "vendored_sha256": "0f45299f687817c0b77965b028f53a496dd5afa877383db30075a65a49791870"
+      "vendored_sha256": "cf5efcb512aa9c145abe1c7fc634c14d97ba015570895550d1c3e833cd40e090"
     },
     "KFParticleMath.h": {
       "upstream_sha256": "ee922eb7e750116f33e2a02b729091179a252db14ce1b05989ea4529372df860",
@@ -147,11 +147,11 @@
     },
     "KFParticleTopoReconstructor.cxx": {
       "upstream_sha256": "6b4bd3277749ad9614cddf1283ff285b0bdbefc65b02e6ef1f8fd01db525a40b",
-      "vendored_sha256": "4f2e6d631f5553fd5854552765863fa83bd351acd036723ae6145205090c1c84"
+      "vendored_sha256": "9038803c4f97bea1ecd95a1a1a6de90bcd0239849f90c02d35089b94b4ca6cf5"
     },
     "KFParticleTopoReconstructor.h": {
       "upstream_sha256": "01bb204d106f5c1e9f93b2634006cbe18ce7ebc4026872a3f262d9092896b3a3",
-      "vendored_sha256": "99c1991c15cd145b52d69a3ad65b80ffd23e27b121cd6a6797a0197e9221bdeb"
+      "vendored_sha256": "577a38fe67c420964e996f779ff5534b1ca24ec1ae3203fe33bf99d45aca958f"
     },
     "KFVertex.cxx": {
       "upstream_sha256": "5b648eec12edb07735739354923f34a03828506462e2c2d9af74d209eb80cad0",
@@ -167,7 +167,7 @@
   "snapshot_date": "2026-09-07",
   "source": "/direct/star+nfs4/AFS/star/packages/.DEV2/StRoot/KFParticle",
   "source_id": "033c38b7128ea7cb351a2785a3a65ff0ec2e19e391ca3680d8ffd4d17c27ceb5",
-  "transform": "namespace-guards-and-kfptrack-standalone-dictionary-v2",
+  "transform": "namespace-guards-kfptrack-dictionary-lambda-study-controls-v3",
   "translation_units": [
     "KFParticle.cxx",
     "KFPTrack.cxx",

@@ -185,12 +185,14 @@ TEST_DEPS := $(addsuffix .d,$(TEST_BINS))
 TEST_TARGETS := $(foreach name,$(TEST_NAMES),test-$(subst _,-,$(name)))
 TEST_KFP_FULL_CHAIN := $(LIB_DIR)/test_kfparticle_full_chain.so
 TEST_KFP_PICO_ADAPTER := $(LIB_DIR)/test_kfparticle_pico_adapter.so
+TEST_FEMTO_LAMBDA_PROVIDER := $(LIB_DIR)/test_femto_lambda_provider.so
+FEMTO_LAMBDA_TEST_MAINCONF ?=
 KF_TEST_CUTS ?= config/cuts/kf/kf_auau19_anaLambda_KFParticle.yaml
 # singularity_make selects the compiler/ROOT binary but does not source the
 # complete run environment. Resolve the same ROOT's loader path for tests only.
 KF_TEST_RUNTIME = env ROOTSYS="$(ROOT_PREFIX)" LD_LIBRARY_PATH="$(abspath $(LIB_DIR)):$(STAR_LIB_DIR):$(ROOT_LIB_DIR):$${KF_TEST_RUNTIME_LIBRARY_PATH:-$${LD_LIBRARY_PATH:-}}"
 
-.PHONY: all base-libs core kfparticle-analysis clean test $(TEST_TARGETS) test-kfparticle-full-chain test-kfparticle-pico-adapter
+.PHONY: all base-libs core kfparticle-analysis clean test $(TEST_TARGETS) test-kfparticle-full-chain test-kfparticle-pico-adapter test-femto-lambda-provider
 
 all: core kfparticle-analysis
 
@@ -225,6 +227,14 @@ test-kfparticle-pico-adapter: $(TEST_KFP_PICO_ADAPTER)
 
 $(TEST_KFP_PICO_ADAPTER): tests/kfparticle_pico_adapter.cxx tests/kfparticle_event_selection.h $(LIB_DIR)/libStKfParticleCommon.so $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/libKFParticle.so $(KFP_HEADERS) $(KF_HELPER_HEADERS) include/cuts/KfParticleCutConfig.h Makefile | $(LIB_DIR)
 	$(CXX) $(CXXFLAGS_KF_HELPER) -DSTAR_ANALYZER_KFP_ROOT_TEST -shared -Wl,--no-undefined $< -o $@ -L$(LIB_DIR) -lStKfParticleCommon -lStarAnaConfig -lKFParticle $(STAR_LDFLAGS) -lStEvent -lStarRoot -lStBichsel $(KFP_ROOT_EXTRA_LIBS) -Wl,-rpath,$(abspath $(LIB_DIR)) -Wl,-rpath,$(STAR_LIB_DIR) $(ROOTLIBS)
+
+# Optional Lambda provider; no test or KF link dependency is added to make core.
+test-femto-lambda-provider: $(TEST_FEMTO_LAMBDA_PROVIDER)
+	@test -n "$(FEMTO_LAMBDA_TEST_MAINCONF)" || { echo "FEMTO_LAMBDA_TEST_MAINCONF is required" >&2; exit 1; }
+	$(KF_TEST_RUNTIME) root4star -b -q 'tests/bootstrap_kfparticle_tests.C("femto-lambda-provider","$(FEMTO_LAMBDA_TEST_MAINCONF)")'
+
+$(TEST_FEMTO_LAMBDA_PROVIDER): tests/femto_lambda_provider.cxx include/FemtoLambdaProvider.h include/FemtoCandidate.h $(LIB_DIR)/libStKfParticleCommon.so $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/libKFParticle.so $(KF_HELPER_HEADERS) include/cuts/KfParticleCutConfig.h Makefile | $(LIB_DIR)
+	$(CXX) $(CXXFLAGS_KF_HELPER) -shared -Wl,--no-undefined $< -o $@ -L$(LIB_DIR) -lStKfParticleCommon -lStarAnaConfig -lKFParticle $(STAR_LDFLAGS) -lStEvent -lStarRoot -lStBichsel $(KFP_ROOT_EXTRA_LIBS) -Wl,-rpath,$(abspath $(LIB_DIR)) -Wl,-rpath,$(STAR_LIB_DIR) $(ROOTLIBS)
 
 # Build yaml-cpp via CMake (static lib, must match STAR/ROOT bitness)
 $(YAML_CPP_BUILD)/libyaml-cpp.a:
@@ -300,6 +310,11 @@ $(LIB_DIR)/$(LIB_COMMON_NAME): $(LIB_DIR) $(COMMON_OBJS) $(LIB_DIR)/libStarAnaCo
 $(LIB_DIR)/common_%.o: $(COMMON_DIR)/%.cxx $(COMMON_DIR)/%.h | $(LIB_DIR)
 	$(CXX) $(CXXFLAGS_MAKER) -c $< -o $@
 
+# Lambda's strict YAML validation is local to these two core objects. No KF flags/link dependency.
+$(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/common_FemtoLambdaLegacy.o: CXXFLAGS_MAKER += -Isrc/third_party/yaml-cpp/include
+$(LIB_DIR)/StFemtoMaker.o: include/FemtoLambdaProvider.h StMaker/common/FemtoLambdaLegacy.h
+$(LIB_DIR)/common_FemtoLambdaLegacy.o: include/FemtoLambdaProvider.h $(COMMON_DIR)/NuclearIdDeDxVsMom.h
+
 # Extra header-only dependency for nuclear ID calibration tables
 $(LIB_DIR)/common_StNuclearIdHelper.o: $(COMMON_DIR)/NuclearIdDeDxVsMom.h
 
@@ -327,5 +342,5 @@ $(foreach _kf,$(KF_MAKER_NAMES),$(eval $(LIB_DIR)/$(_kf).o: $(KFP_HEADERS) $(KF_
 
 clean:
 	rm -f $(LIB_DIR)/*.o $(LIB_DIR)/*.so $(LIB_DIR)/kfp_*.d $(LIB_DIR)/kfhelper_*.d $(patsubst %,$(LIB_DIR)/%.d,$(KF_MAKER_NAMES))
-	rm -f $(TEST_BINS) $(TEST_DEPS) $(TEST_KFP_FULL_CHAIN) $(TEST_KFP_PICO_ADAPTER)
+	rm -f $(TEST_BINS) $(TEST_DEPS) $(TEST_KFP_FULL_CHAIN) $(TEST_KFP_PICO_ADAPTER) $(TEST_FEMTO_LAMBDA_PROVIDER)
 	rm -rf $(YAML_CPP_BUILD)

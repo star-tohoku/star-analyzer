@@ -1,0 +1,6 @@
+# Local standalone KF control for the Femto transplant; same saved selection.
+analysis: ../rootfile/auau13p5_anaLambda_KFParticle/purity_upstream_20260928/configs/frozen/best50_replay10k_analysis.yaml
+event: cuts/event/event_femtoLambda_imp5.yaml
+centrality: cuts/centrality/centrality_auau13p5_femtoLambda.yaml
+kf: cuts/kf/kf_auau13p5_anaLambda_KFParticle_highpurity.yaml
+hist: ../rootfile/auau13p5_anaLambda_KFParticle/purity_upstream_20260928/configs/hist.yaml

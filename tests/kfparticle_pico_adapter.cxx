@@ -114,6 +114,37 @@ void TestConfiguration(const char* cutsPath, KfParticleCutConfig& cuts) {
   std::ifstream input(cutsPath);
   Require(static_cast<bool>(input), "cannot read KF cut YAML for configuration tests");
   const std::string yaml((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  const std::string legacyYaml = RemoveScalar(RemoveScalar(yaml, "topoChi2NdfCut"),
+                                               "applyLambdaGeometryCuts");
+  {
+    TemporaryConfig legacy(legacyYaml);
+    Require(cuts.LoadFromFile(legacy.path.c_str()), "legacy YAML without Lambda switches was rejected");
+    Require(cuts.topoChi2NdfCut == 3. && cuts.applyLambdaGeometryCuts,
+            "legacy YAML did not retain historical Topo/geometry defaults");
+  }
+  {
+    TemporaryConfig loose(SetScalar(SetScalar(legacyYaml, "topoChi2NdfCut", "30"),
+                                    "applyLambdaGeometryCuts", "false"));
+    Require(cuts.LoadFromFile(loose.path.c_str()) && cuts.topoChi2NdfCut == 30. &&
+            !cuts.applyLambdaGeometryCuts, "Lambda cut switches did not load from YAML");
+    std::ostringstream dump; cuts.Dump(dump);
+    Require(dump.str().find("topoChi2NdfCut: 30") != std::string::npos &&
+            dump.str().find("applyLambdaGeometryCuts:") != std::string::npos,
+            "effective dump omitted Lambda Topo threshold or geometry switch");
+    TemporaryConfig legacy(legacyYaml);
+    Require(cuts.LoadFromFile(legacy.path.c_str()) && cuts.topoChi2NdfCut == 3. &&
+            cuts.applyLambdaGeometryCuts, "legacy reload retained prior Lambda switch overrides");
+  }
+  const char* invalidTopoCuts[] = {"0", "-1", ".inf", "-.inf", ".nan", "1e50", "1e-50", "not_a_number"};
+  for (size_t i = 0; i < sizeof(invalidTopoCuts) / sizeof(invalidTopoCuts[0]); ++i) {
+    TemporaryConfig invalid(SetScalar(legacyYaml, "topoChi2NdfCut", invalidTopoCuts[i]));
+    Require(!cuts.LoadFromFile(invalid.path.c_str()),
+            std::string("invalid Lambda Topo threshold accepted: ") + invalidTopoCuts[i]);
+  }
+  {
+    TemporaryConfig invalid(SetScalar(legacyYaml, "applyLambdaGeometryCuts", "not_a_boolean"));
+    Require(!cuts.LoadFromFile(invalid.path.c_str()), "invalid Lambda geometry boolean accepted");
+  }
   {
     TemporaryConfig invalid(yaml + "\nunknownKfTestKey: 1\n");
     Require(!cuts.LoadFromFile(invalid.path.c_str()), "unknown KF configuration key accepted");
@@ -190,6 +221,7 @@ void TestConfiguration(const char* cutsPath, KfParticleCutConfig& cuts) {
     const char* retainedKeys[] = {"selectionProfile", "imp5MinDCAProton", "imp5MinDCAPion",
         "imp5MaxPathLength", "minNHitsFit", "minNHitsRatio", "useHftTracksOnly", "nSigmaPion",
         "nSigmaProton", "useTof", "strictTofPid", "cleanKaonsWithTof", "finderLCut",
+        "topoChi2NdfCut", "applyLambdaGeometryCuts",
         "maxMassError", "maxChi2Ndf", "maxTopoChi2Ndf", "minDecayLength",
         "minDecayLengthSignificance", "minVertexLineSignificance", "minCosPointing"};
     for (size_t i = 0; i < sizeof(retainedKeys) / sizeof(retainedKeys[0]); ++i)
@@ -282,6 +314,8 @@ void ConfigureFixture(KfParticleCutConfig& cuts) {
   cuts.finderChiPrimary2D = 3.;
   cuts.finderChi2Ndf2D = 10.;
   cuts.finderLdL2D = 3.;
+  cuts.topoChi2NdfCut = 3.;
+  cuts.applyLambdaGeometryCuts = kTRUE;
   cuts.reconstructAntiLambda = kTRUE;
   cuts.rejectBadCovariance = kTRUE;
   cuts.maxPositionVariance = 100.;
@@ -471,6 +505,45 @@ void TestEvents(Fixture& fixture, KfParticleCutConfig& cuts) {
   std::cout << "PASS anti-Lambda, multi-PID, event reset, duplicate IDs and covariance errors" << std::endl;
 }
 
+
+void TestLambdaCutSwitches(Fixture& fixture, KfParticleCutConfig& cuts) {
+  for (int sign = -1; sign <= 1; sign += 2) {
+    ConfigureFixture(cuts);
+    fixture.Lambda(sign);
+    {
+      StPicoKFParticleInterface interface(cuts);
+      Require(interface.ProcessEvent(&fixture.dst), interface.LastError());
+      FindLambda(interface, sign, 700, 19);
+    }
+    cuts.topoChi2NdfCut = 0.000001;
+    {
+      StPicoKFParticleInterface interface(cuts);
+      Require(interface.ProcessEvent(&fixture.dst), interface.LastError());
+      Require(interface.Candidates().empty(), "adapter did not apply tight Lambda Topo threshold");
+    }
+    cuts.topoChi2NdfCut = 30.;
+    {
+      StPicoKFParticleInterface interface(cuts);
+      Require(interface.ProcessEvent(&fixture.dst), interface.LastError());
+      FindLambda(interface, sign, 700, 19);
+    }
+    cuts.topoChi2NdfCut = 3.;
+    cuts.finderLCut = 10.;
+    const Bool_t geometryStates[] = {kTRUE, kFALSE, kTRUE};
+    for (size_t i = 0; i < sizeof(geometryStates) / sizeof(geometryStates[0]); ++i) {
+      cuts.applyLambdaGeometryCuts = geometryStates[i];
+      StPicoKFParticleInterface interface(cuts);
+      Require(interface.ProcessEvent(&fixture.dst), interface.LastError());
+      if (geometryStates[i])
+        Require(interface.Candidates().empty(), "enabled adapter geometry ignored tight LCut");
+      else
+        FindLambda(interface, sign, 700, 19);
+    }
+  }
+  ConfigureFixture(cuts);
+  fixture.Lambda();
+  std::cout << "PASS adapter Lambda/anti-Lambda Topo and geometry switch wiring" << std::endl;
+}
 
 void ConfigureImp5Fixture(KfParticleCutConfig& cuts) {
   ConfigureFixture(cuts);
@@ -734,6 +807,7 @@ extern "C" int star_analyzer_kfp_pico_adapter_test(const char* cutsPath) {
     fixture.Lambda();
     TestCovariance(fixture, cuts);
     TestEvents(fixture, cuts);
+    TestLambdaCutSwitches(fixture, cuts);
     TestImp5(fixture, cuts);
     TestTof(fixture, cuts);
     TestDedx(fixture, cuts);

@@ -843,7 +843,9 @@ inline void KFParticleFinder::ConstructV0(KFPTrackVector* vTracks,
     ldlMin = select( (ldl < ldlMin) && saveParticle, ldl, ldlMin);
   }
 
-  saveParticle &= (lMin < 200.f);
+  const mask32_v skipLambdaGeometry = fApplyLambdaGeometryCuts
+      ? (int32_v(0) == int32_v(1)) : (abs(mother.PDG()) == int32_v(3122));
+  saveParticle &= (lMin < 200.f) || skipLambdaGeometry;
 #ifdef NonhomogeneousField  
   KFParticleSIMD motherTopo;
     ldlMin = 1.e8f;
@@ -858,7 +860,7 @@ inline void KFParticleFinder::ConstructV0(KFPTrackVector* vTracks,
 #endif
   saveParticle &= ( ((!isPrimary) && ldlMin > ldlCut) || isPrimary );
   
-  saveParticle &= ((!isPrimary) && isParticleFromVertex) || isPrimary;
+  saveParticle &= ((!isPrimary) && isParticleFromVertex) || isPrimary || skipLambdaGeometry;
   if( saveParticle.isEmpty() ) return;
   
   const mask32_v isK0     = saveParticle && (mother.PDG() == int32_v(310));
@@ -866,7 +868,7 @@ inline void KFParticleFinder::ConstructV0(KFPTrackVector* vTracks,
   const mask32_v isGamma  = saveParticle && (mother.PDG() == int32_v(22));
   const mask32_v isHyperNuclei = saveParticle && (abs(mother.PDG()) > 3000 && abs(mother.PDG()) < 3104);
   
-  saveParticle &= ( ((isK0 || isLambda || isHyperNuclei) && lMin > float32_v(fLCut)) || !(isK0 || isLambda || isHyperNuclei) );
+  saveParticle &= ( ((isK0 || isLambda || isHyperNuclei) && lMin > float32_v(fLCut)) || !(isK0 || isLambda || isHyperNuclei) ) || skipLambdaGeometry;
 
   mask32_v saveMother;
   
@@ -1444,14 +1446,16 @@ void KFParticleFinder::Find2DaughterDecay(KFPTrackVector* vTracks, kfvector_floa
                   float32_v dz = negParameters[2]-posParameters[2];
                   float32_v dr = sqrt(dx*dx+dy*dy+dz*dz);
 
-                  active[iPDGPos] &= (dr < float32_v(fDistanceCut));
+                  const mask32_v skipLambdaGeometry = fApplyLambdaGeometryCuts
+                      ? (int32_v(0) == int32_v(1)) : (abs(motherPDG) == int32_v(3122));
+                  active[iPDGPos] &= (dr < float32_v(fDistanceCut)) || skipLambdaGeometry;
                   if(active[iPDGPos].isEmpty()) continue;
                   
                   float32_v p1p2 = posParameters[3]*negParameters[3] + posParameters[4]*negParameters[4] + posParameters[5]*negParameters[5];
                   float32_v p12  = posParameters[3]*posParameters[3] + posParameters[4]*posParameters[4] + posParameters[5]*posParameters[5];
                   float32_v p22  = negParameters[3]*negParameters[3] + negParameters[4]*negParameters[4] + negParameters[5]*negParameters[5];
-                  active[iPDGPos] &= (p1p2 > -p12);
-                  active[iPDGPos] &= (p1p2 > -p22);
+                  active[iPDGPos] &= (p1p2 > -p12) || skipLambdaGeometry;
+                  active[iPDGPos] &= (p1p2 > -p22) || skipLambdaGeometry;
                 }
                 
                 const float32_v& ptNeg2 = daughterNeg.Px()*daughterNeg.Px() + daughterNeg.Py()*daughterNeg.Py();

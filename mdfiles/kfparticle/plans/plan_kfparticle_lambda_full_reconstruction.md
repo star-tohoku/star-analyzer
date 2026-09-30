@@ -17,7 +17,7 @@ ROOT 6の導入・STAR releaseの変更は前提にしない。
 本書は、以下の既存文書を踏まえ、scalar版に限定されていた実装範囲を改訂する。
 既存解析の保護、`make all` 対応、KF依存の分離という従来の要件は維持する。
 
-- [9月4日の作業ログ](../analysisnote/20260904/summary20260904.md)
+- [9月4日の作業ログ](../../../analysisnote/20260904/summary20260904.md)
 - [Λへの導入計画](plan_kfparticle_lambda.md)
 - [当初の統合計画](plan_kfparticle_pro_integration.md)
 
@@ -450,7 +450,7 @@ wrapperは既定でcleanを実行するため、実装開始時に既存生成�
 - 13p5のTOF係数は`xwu2_lambda_reference_unvalidated_auau13p5`として明示した。
   実行成功とRun20での校正・効率の妥当性は別である。
 - 完了済みの検査、出力件数、未検証項目、再実行コマンドは
-  [実装・検証記録](kfparticle_full_implementation_20260907.md)へ記載する。
+  [実装・検証記録](../implementation/kfparticle_full_implementation_20260907.md)へ記載する。
   0イベントの初期化成功や少数候補を、質量ピーク・参照解析との効率一致の証明とはしない。
 
 ## 10. 2026-09-07 再開: analysis.modeとvertex cutの接続
@@ -476,7 +476,7 @@ XY中心の自動切替は存在しなかった。さらに旧 `StLambdaMaker::P
   旧Event-only診断は階層profileに未対応のため明示的に拒否し、誤った原点中心の診断をさせない。
 - 通常clean `make all` と両人工テストはそれぞれexit 0。13p5先頭1000イベントのKF処理は12→957へ改善し、
   同じ入力ファイルの全1479イベントも正常処理した。詳細・出力QA・非退行の結果は
-  [実装・検証記録](kfparticle_full_implementation_20260907.md)を参照する。
+  [実装・検証記録](../implementation/kfparticle_full_implementation_20260907.md)を参照する。
 
 本節は実装・限定サンプル検証の記録であり、元のPhase Cにある全42ファイル検証、
 同一coreでの独立参照Interface数値比較、Run20 PID／TOF校正の妥当性まで完了したとはしない。

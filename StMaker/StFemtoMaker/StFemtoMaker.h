@@ -22,6 +22,10 @@ class HistManager;
 class CentralityHelper;
 class NuclearIdCutConfig;
 class TVector3;
+class FemtoLambdaProvider;
+class FemtoLambdaLegacy;
+class TTree;
+class TFile;
 
 class StFemtoMaker;
 
@@ -40,7 +44,28 @@ class StFemtoMaker : public StMaker {
 
   void WriteHistograms();
 
+  // Optional owned provider: ordinary Phi/Kaon analyses need no KF library.
+  void SetMainConfigPath(const char* path) { mMainConfigPath = path ? path : ""; }
+  void SetLambdaProvider(FemtoLambdaProvider* provider);
+  void SetProcessingSucceeded(bool value) { mLambdaProcessingSucceeded = value; }
+  Long64_t GetReconstructedEvents() const { return mLambdaReconstructedEvents; }
+
  private:
+  Int_t InitLambda();
+  Int_t MakeLambdaEvent();
+  std::string mMainConfigPath;
+  FemtoLambdaProvider* mLambdaProvider;
+  FemtoLambdaLegacy* mLambdaLegacy;
+  bool mLambdaProcessingSucceeded;
+  Double_t mLambdaMixMinVz, mLambdaMixMaxVz;
+  Int_t mLambdaMaxMixEvents;
+  Long64_t mLambdaReconstructedEvents, mLambdaSelectedTotal, mLambdaMixClampedEvents;
+  TFile* mLambdaOutputFile;
+  TTree* mLambdaEventLedger;
+  TTree* mLambdaCandidateLedger;
+  Int_t mLambdaRunId, mLambdaEventId, mLambdaEventStatus, mLambdaEventSelected;
+  Int_t mLambdaProtonIndex, mLambdaPionIndex;
+  Float_t mLambdaRawMass, mLambdaPx, mLambdaPy, mLambdaPz;
   struct TrackState {
     Float_t pT, eta, phi;
     Short_t charge;

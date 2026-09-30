@@ -366,9 +366,9 @@ Initial validation joblist (10 files): `job/joblist/joblist_auau3p85fxt_anaFemto
 - The runner loads old STAR libraries and then local Config/centrality/KF/helper/Common/Maker libraries. Process-specific ACLiC build directories under `tmp/kf-aclic/` avoid concurrent cache overwrites. Generated caches are retained for diagnostics.
 - Missing input/required branches, skipped list files, invalid configuration, zero successfully reconstructed events and processing/write failures return nonzero. Fatal signals use normal process termination rather than ROOT's recover-and-exit-zero behavior.
 - Output: `KfLambdaCandidates` tree with PDG, original daughter IDs/indices, PID and fit quantities, plus `selected`; signed raw/selected mass histograms; `hKfStages`; configuration, backend fingerprint and `KFRunStatus`. `KFEventSelectionConfiguration` records the selected mode, source paths and effective vertex/event cuts. `hKfEventSelection` partitions read events into rejection reasons or successful KF processing, and vertex XY/radius/Z QA shows before/after event cuts. Existing output files are refused rather than overwritten.
-- “Raw mass” means no **parent mass constraint**, not topology-uncut: adopted upstream Topo already imposes Λ PV χ²/NDF < 3. The older xwu2 copy used < 5. Optional Maker cuts cannot undo this upstream selection.
-- Tests: `make test-kfparticle-full-chain test-kfparticle-pico-adapter KF_TEST_CUTS=config/cuts/kf/kf_auau13p5_anaLambda_KFParticle.yaml`. They run genuine compiled Topo/Finder and synthetic SL24y Pico fixtures through ROOT 5. Output QA: `root4star -b -q 'tests/check_kfparticle_output.C("output.root",true)'` in the same STAR runtime. The Pico fixture also tests both vertex modes, profile precedence, invalid configuration, and shared-config isolation. Current output QA requires mode metadata; older outputs fail explicitly. The old Event-only `inspect_kf_input_events.C` refuses mode-profile YAML to avoid interpreting it as origin-centered cuts. Test results and physics-validation limits are in the [dated implementation record](../mdfiles/kfparticle_full_implementation_20260907.md).
-- Source/API notes: [core README](../StRoot/KFParticle/README.md), [provenance](../StRoot/KFParticle/PROVENANCE.md), [Pico adapter](../StMaker/kfparticle/README.md), [full reconstruction plan](../mdfiles/plan_kfparticle_lambda_full_reconstruction.md).
+- “Raw mass” means no **parent mass constraint**, not topology-uncut: the default Topo selection imposes Λ PV χ²/NDF < 3. The older xwu2 copy used < 5. The explicit `topoChi2NdfCut` study key can change the Lambda-only upstream threshold; optional Maker cuts alone cannot undo upstream selection.
+- Tests: `make test-kfparticle-full-chain test-kfparticle-pico-adapter KF_TEST_CUTS=config/cuts/kf/kf_auau13p5_anaLambda_KFParticle.yaml`. They run genuine compiled Topo/Finder and synthetic SL24y Pico fixtures through ROOT 5. Output QA: `root4star -b -q 'tests/check_kfparticle_output.C("output.root",true)'` in the same STAR runtime. The Pico fixture also tests both vertex modes, profile precedence, invalid configuration, and shared-config isolation. Current output QA requires mode metadata; older outputs fail explicitly. The old Event-only `inspect_kf_input_events.C` refuses mode-profile YAML to avoid interpreting it as origin-centered cuts. Test results and physics-validation limits are in the [dated implementation record](../mdfiles/kfparticle/implementation/kfparticle_full_implementation_20260907.md).
+- Source/API notes: [core README](../StRoot/KFParticle/README.md), [provenance](../StRoot/KFParticle/PROVENANCE.md), [Pico adapter](../StMaker/kfparticle/README.md), [full reconstruction plan](../mdfiles/kfparticle/plans/plan_kfparticle_lambda_full_reconstruction.md).
 
 
 ### Imp5-matched KF Lambda comparison (opt-in)
@@ -387,7 +387,16 @@ Initial validation joblist (10 files): `job/joblist/joblist_auau3p85fxt_anaFemto
 
 - Output stores original daughter DCA/path diagnostics and `imp5PathValid` in `KfLambdaCandidates`. The Imp5 QA checks saved PID/DCA, all configured final cuts, and exact replay of the selected count. Synthetic tests cover boundaries, legacy event behavior and isolation; use the **standard** KF cut file for the existing test target's additional reference-TOF tests.
 - Overlay macro detects the explicit profile metadata and labels the curve `KFParticle (Imp5)`. Matching thresholds does not remove differences in reconstructed states or KF-only requirements: candidate-count ratios are not reconstruction efficiencies and an unfit overlay does not measure S/B.
-- Results and reproducibility: [Imp5 same-input 10,000-event comparison](../mdfiles/lambda_helix_kf_imp5_comparison_10000_20260908.md).
+- Results and reproducibility: [Imp5 same-input 10,000-event comparison](../mdfiles/kfparticle/comparisons/lambda_helix_kf_imp5_comparison_10000_20260908.md).
+
+### KF-specific cut study with reversible Finder geometry (2026-09-14)
+
+- Study mainconf: `config/mainconf/main_auau13p5_anaLambda_KFParticle_KFSpecificStudy.yaml`. It preserves the ordinary Imp5 PID, track, original-gDCA/path, final daughter/PV distance and pointing thresholds.
+- `applyLambdaGeometryCuts: false` bypasses only the Lambda/anti-Lambda Finder daughter-distance prefilter, momentum dot-product conditions, PV–SV distance lower/upper bounds and `isParticleFromVertex`. Other species, covariance/validity checks and KF-specific significance/fit cuts are not disabled by this switch.
+- `topoChi2NdfCut` controls the strict upstream Lambda PV-copy chi2/NDF upper bound. It is distinct from the optional additional Maker `maxTopoChi2Ndf`.
+- Defaults are `topoChi2NdfCut: 3.0` and `applyLambdaGeometryCuts: true`. Restore the full original comparison by running a fresh ROOT process with the unchanged `config/mainconf/main_auau13p5_anaLambda_KFParticle_Imp5.yaml`; a geometry toggle alone does not restore other scan thresholds.
+- New QA: `common/macro/compareLambdaKfSpecificCuts.C` takes the validated existing mass-window TSV, a tab-separated actual-rerun list (`id / ROOT path / English label`), and a new output directory. It verifies active fixed cuts, selects by mass-window candidate count (not S/B), and draws raw counts on the left and full-range unit-area distributions on the right. `tests/compare_kfparticle_default_outputs.C` provides exact histogram and ordered-tree default regression.
+- Results, scan settings and reproducibility: [same-input cut comparison](../mdfiles/kfparticle/comparisons/lambda_helix_kf_imp5_cut_scan_20260913.md). Outputs remain under `rootfile/auau13p5_anaLambda_KFParticle/`. No change to the old Helix Maker or its configuration is required.
 
 ### Cleaned AuAu13p5 Lambda configuration (2026-09-08)
 
@@ -398,7 +407,7 @@ Initial validation joblist (10 files): `job/joblist/joblist_auau3p85fxt_anaFemto
 - The current adapter supplies an external PicoDst PV without PV refitting. `primaryProbCut` does not select candidates in that path: its PV-finder initialization is unused and its Finder side effect is overwritten by `finderChiPrimary2D`. It is removed from these YAMLs/effective-cut displays; compatibility parsing/initialization remains. The active `interfaceChiPrimaryCut` and `finderChiPrimary2D` are unchanged.
 - All three curated mainconfs contain the exact line `# config-generator: manual`. `setup_config_from_analysisinfo.py` refuses regeneration **before any writes**, with or without `--force`, so unused copies are not recreated and custom macros are not overwritten. Edit the referenced YAML directly and run with the existing mainconf. Unmarked configurations keep the generator's existing behavior.
 - The generic `ConfigManager` is unchanged. Its warnings about omitted concerns are expected for these minimal mainconfs; they do not apply fallback PID cuts to these Makers. Use a fresh ROOT process for each configuration: shared legacy singletons do not reset omitted fields on reload.
-- Guard regression: `python3 -B tests/test_manual_config_guard.py` (temporary fixtures only). Full build, sparse-config tests and unchanged-histogram comparisons are recorded in [cleanup results](../mdfiles/unused_lambda_cut_cleanup_20260908.md).
+- Guard regression: `python3 -B tests/test_manual_config_guard.py` (temporary fixtures only). Full build, sparse-config tests and unchanged-histogram comparisons are recorded in [cleanup results](../mdfiles/configuration/unused_lambda_cut_cleanup_20260908.md).
 - Previous comparison logs/ROOT/config archives remain historical snapshots and were not rewritten to conceal removed settings.
 - Stored AuAu13p5 KF outputs are consolidated under `rootfile/auau13p5_anaLambda_KFParticle/`. See the [output-condition index and old-to-new path map](../rootfile/auau13p5_anaLambda_KFParticle/mdfiles/README.md). ROOT binaries remain local artifacts; the text index is versioned.
 
@@ -415,7 +424,7 @@ Initial validation joblist (10 files): `job/joblist/joblist_auau3p85fxt_anaFemto
 - Outputs: PNG, PDF and a ROOT canvas plus four comparison histograms. Left: candidate counts without scaling; right: independently unit-area-normalized shapes over the displayed mass range. Whole source bins only; no fractional-bin redistribution, fit, background subtraction or physics recuts. Existing outputs are refused.
 - The macro requires completed KF output/provenance and matching input-read counts. It uses `hRefMultVsNTOFMatch.GetEntries()`, not legacy `hVz`, which is filled after bad-run rejection. `hN` reports events that completed the respective reconstruction selection. In scripted use, propagate the returned `Int_t` with `gSystem->Exit(result)`; ROOT's default shell exit code alone does not report a macro failure.
 - With the default KF reference profile, event/PID/topology cuts differ between the Makers; this is **not a reconstruction-efficiency comparison**. In particular, current `StLambdaMaker::PassEventCuts` checks track count only before centrality, and its daughter cuts come from `LambdaCutConfig`; generic track-YAML pT/eta/nHitsDedx limits are not applied by that Maker. Do not change old physics code or tune either selection just to match the spectra.
-- Dataset/result record: [AuAu13p5 same-input 10,000-event comparison](../mdfiles/lambda_helix_kf_comparison_10000_20260907.md).
+- Dataset/result record: [AuAu13p5 same-input 10,000-event comparison](../mdfiles/kfparticle/comparisons/lambda_helix_kf_comparison_10000_20260907.md).
 
 ### Centrality (StRefMultCorr)
 
@@ -629,3 +638,74 @@ Each analysis has:
 - **Block pass:** `./script/singularity_run_data006.sh MAINCONF TREE.root OUT.root [maxEvents] [data006Config]` reads the same schema-3 phi reduced tree and checked producer flags, then pairs stored matter p/d rows using the downstream-only YAML (default `config/maker/data006_auau3p85fxt_pp_pd_dd.yaml`). It writes 5 MeV/c k*, native cent9, SE/ME pair-mT, pair rapidity, constituent acceptance, exact fxtMult moments, cut flow, and Δη–Δφ* QA.
 - **Final package:** after `hadd data006_ALL.root data006_block*.root`, run `./script/package_data006.sh MAINCONF data006_ALL.root OUTDIR [productionTag] [data006Config]`. It refuses overwrite and writes fitter-facing ROOT+CSV, native and merged classes, normalization factors/errors, pair-mT tables, QA PDF, invalid-bin inventory, object manifest, config/source snapshots, Git state, regeneration command, and SHA-256 hashes. Merged classes sum SE and ME before a new normalization. The finalizer validates every manifest object and every delivered ROOT/CSV SE, ME, and CF bin before packaging succeeds.
 - **Diagnostic plots:** `./script/singularity_plot_data006.sh MAINCONF PACKAGE_DIR OUTDIR [data006Config] [displayRebin] [cfYMin] [cfYMax] [runLabel] [filePrefix]` writes a multi-page test/QA PDF and PNGs for comparison-class CF overlays, all native centralities, normalization-region SE/ME pair-rapidity acceptance, and pair-mT. Display CFs are rebuilt from rebinned SE/ME with the stored normalization; native 5 MeV/c ROOT/CSV objects are unchanged. `runLabel` and `filePrefix` default to the implementation test's `DATA-006 TEST` / `data006_test`; pass them so a full-statistics figure set does not claim to be the 20k test.
+
+## KF Lambda–nucleus Femto entries (2026-09-30)
+
+The four `anaFemtoLambda_{d,t,3He,4He}` entries now construct `StFemtoMaker` with an
+optional KF provider. The legacy comparison is **original `anaLambdaNuclearId.C`**;
+the intermediate `StFemtoMakerLambdaNuclear` is not a validated reference. Original
+Helix Lambda, NuclearId/Mix Makers and their mainconfs remain untouched.
+
+Use the new explicit mainconfs:
+`config/mainconf/main_auau{13p5,3p85}_anaFemtoLambda_{d,t,3He,4He}_KFParticle_highpurity.yaml`.
+These eight settings share four species maker files and directly reference the two
+saved high-purity KF presets. Both energies are **fixed-target beam energies**;
+the initial 3p85 validation input is **2019 P24iy**, not the older split entry's
+2021 metadata. The 13p5 validation input is 2020 P24iy.
+
+Run from the project root (five mandatory shell arguments, **mainconf first**):
+
+```bash
+bash script/singularity_run_anaFemtoLambda_d.sh \\
+  config/mainconf/main_auau13p5_anaFemtoLambda_d_KFParticle_highpurity.yaml \\
+  config/picoDstList/auau13p5_femtoLambda_validation_20260930.list \\
+  rootfile/auau13p5_anaFemtoLambda_d_KFParticle_highpurity/local10000.root \\
+  local10000 10000
+```
+
+Replace energy/species consistently for the other seven configurations. The direct
+`run_anaFemtoLambda_<species>.sh` wrapper takes the same arguments on a compatible
+SL7/ROOT5 host. ROOT macro arguments remain `input, output, jobid, nEvents, mainconf`.
+The wrappers select the configured STAR release and matching 64-bit ROOT5 without
+reading or modifying `.current_mainconf`; they do not invoke `starver` on the host.
+No runner default, environment-supplied mainconf, existing-output overwrite, or
+silent event-count truncation is allowed. All listed files and required branches
+(including `TrackCovMatrix` and nuclear TOF QA) are checked before processing and
+again when the input tree changes. Partial runs return nonzero and retain an
+`incomplete` status in their ROOT output when Finish can run.
+
+Build with the same new mainconf using `script/singularity_make.sh` before running.
+The Lambda runners load config, centrality, KF core/helper, common, then Femto and
+compile in per-process ACLiC directories. Existing Phi/Kaon paths do not acquire a
+mandatory KF provider or KF library dependency.
+
+Read-only QA on a completed ROOT file (or merged SE/ME file):
+
+```bash
+bash script/singularity_checkHistAnaFemtoLambda.sh \\
+  rootfile/auau13p5_anaFemtoLambda_d_KFParticle_highpurity/local10000.root \\
+  config/mainconf/main_auau13p5_anaFemtoLambda_d_KFParticle_highpurity.yaml \\
+  share/figure/auau13p5_anaFemtoLambda_d_KFParticle_highpurity/local10000_QA.pdf
+```
+
+The PDF contains inclusive/pair-associated Lambda mass, SE/ME full-mass vs k*, and
+signal/left/right sideband SE/ME plus raw CF. Centrality bins are summed before
+normalization and division. Zero-ME CF bins are omitted, and an empty normalization
+region is labelled undefined rather than presented as a measurement. There is no
+Phi-specific mass fit or background subtraction in this Lambda QA. Its rebinning,
+centrality range and normalization window come from maker YAML. Existing PDFs are
+not overwritten. Direct QA is `script/checkHistAnaFemtoLambda.sh`.
+
+New local tests: `python3 tests/test_femto_lambda_entries.py` checks all eight config
+references, entry/provider dispatch, explicit channel windows, runtime guards and
+shell syntax. This static check is not a substitute for ROOT/real-event validation.
+See [the implementation plan](../mdfiles/femto/plans/plan_femto_lambda_nuclei_kfparticle_20260929.md)
+and [Femto naming/selection details](../StMaker/StFemtoMaker/README.md).
+
+Rollback: the original `anaLambdaNuclearId.C` remains a separate usable route. The
+four split-entry mainconfs are deliberately rejected by the new four macros. Their
+pre-migration sources, scripts, configs and untracked specialized Maker are saved
+in `../implementation_backups/femto_lambda_20260930/before.tar.gz`; extract to a
+separate inspection directory first, then restore only explicitly selected files.
+Do not extract the full snapshot over a worktree containing subsequent changes.
+No joblist generation, farm submission, commit, or push is implied by a local run.

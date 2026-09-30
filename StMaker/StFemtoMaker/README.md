@@ -344,3 +344,77 @@ Use `script/singularity_run_data006.sh` per reduced-tree block, merge its ROOT o
 normalization; finished CFs are never averaged.
 For visual checks, run `script/singularity_plot_data006.sh` on the finalized package. Its display
 rebinning recomputes the CF from rebinned SE and ME and never replaces the native 5 MeV/c data.
+
+## KF Lambda–nucleus profile (`anaFemtoLambda_{d,t,3He,4He}`)
+
+This additive path uses actual `StFemtoMaker` with an injected `FemtoLambdaProvider`.
+The neutral provider interface contains no vendor KF/SIMD type. The concrete
+factory `createFemtoLambdaKfProvider()` lives in `libStKfParticleCommon.so` and is
+instantiated by Lambda ACLiC macros; the Maker owns it. Existing Phi/Kaon entries
+run with no provider and no mandatory KF linkage.
+
+| Macro suffix | Species / particleKey | Base channel |
+|---|---|---|
+| `d` | `deuteron` | `lambda_deuteron` |
+| `t` | `triton` | `lambda_triton` |
+| `3He` | `he3` | `lambda_he3` |
+| `4He` | `he4` | `lambda_he4` |
+
+Each maker YAML declares exactly two species: `lambda` with `builderType: resonance`
+/`particleKey: lambda_kf`, and one nucleus with `builderType: track`. It declares
+four enabled channels: base, `_signal`, `_leftSB`, `_rightSB`, with explicit species,
+mass bounds, mixing and normalization keys. Provider absence, incompatible legacy
+mainconf, missing required histograms/settings and unsupported policies fail Init.
+
+- `lambdaEventPolicy: lambda_imp5_compat`: finite PV/maxNTr and centrality; no implicit
+  generic Femto/Phi event or primary-track cuts. `qaVertexByMode` controls QA centers,
+  not event acceptance. An explicit alternative policy is required for vertex cuts.
+- `nuclearSelectionProfile: legacy_nuclearid`: independent global-track collection,
+  original best-species TPC nuclear PID and raw-rigidity upper bound, optional TOF
+  m² selection. `nuclearMinNHitsDedx: 15` and `nuclearMinPt: 0.1` are explicit in
+  nuclearid YAML. Generic Phi-bachelor cuts are not applied. Common PID QA retains
+  all nuclear hypotheses even though only one nucleus species enters pairs.
+- `kf:` directly references the saved energy-specific highpurity preset. Full
+  Finder/Topo reconstruction sees the full PicoDst; its final selector is shared
+  with standalone `StLambdaKFParticleMaker`. Daughter provenance uses Pico array
+  indices and event indices, not track IDs.
+- `lambdaPairMassMode: fixed`, `lambdaPairMass: 1.115683`: fixed-mass Lambda P4 for
+  k*, but `reso.invMass` and mass axes use the unconstrained KF fit. Nuclear masses
+  are explicit in nuclearid YAML; He rigidity is multiplied by Z=2 once.
+- Authoritative mass-window keys: `lambdaSignalMean: 1.11596`,
+  `lambdaSignalSigma: 0.00296`, `lambdaSignalNSigma: 3`,
+  `lambdaSidebandOuterFactor: 4`. Indexed channel boundaries are checked against
+  these values. Signal includes both edges; sidebands exclude their signal edge.
+  The earlier purity-study window [1.110,1.122) is not substituted here.
+- `mergingFieldTesla: 0.5`, `mergingRadiusMeters: 1.4` preserve the legacy QA
+  convention with corrected track-index lookup. Event-field QA has a separate name.
+  This migration adds no close-pair veto; shared-track rejection remains mandatory.
+
+Mainconf keys: `analysis,event,centrality,kf,nuclearid,maker,mixing,femtoHist,nuclearHist`.
+New energy/species mainconfs carry `_KFParticle_highpurity`. The two hist configs are
+`hist_femtoLambda_<species>_kf.yaml` (top-level Lambda/canonical QA) and
+`hist_femtoLambda_<species>_nuclear.yaml` (legacy nuclear and pair keys).
+
+The output preserves original `anaLambdaNuclearId.C` directory/axis contracts:
+Lambda QA at top level; nuclear/SE keys in `true/`; ME keys only in `mix/`.
+`hKstarMass_<S>_CentBin<i>` and `hKstarMass_Mixed_<S>_CentBin<i>` have X=k* (200 bins,
+0–1) and Y=unconstrained mass (200 bins,1.05–1.25). They are filled once per accepted
+pair before narrow signal/sideband classification. Canonical
+`hKstarSE/ME[VsCent]_lambda_<species>[_signal|_leftSB|_rightSB]` use that same pair
+result. The un-debugged intermediate split Maker is **not** the compatibility
+reference; its known double fills/missing reverse fills are not reproduced.
+
+Initial mixing is explicitly `bufferAll`, both directions independently enabled,
+cent9=9 bins, one EP bin, 10 Vz bins, depth20/maxMixEvents20. This is the original
+route's effective depth (old raw maxMixEvents100, buffer20). Mixing `minVz:198` /
+`maxVz:202` are independent of event cuts. `vzOutOfRangePolicy: clamp` is explicit
+and clamping is counted; centrality bins are not clamped together. CF is computed
+only downstream from summed SE/ME, never in Maker Finish.
+
+Operational commands, rollback snapshot, runtime guards and the new
+`checkHistAnaFemtoLambda` QA are documented in
+[REFERENCE](../../docs/REFERENCE.md#kf-lambdanucleus-femto-entries-2026-09-30).
+Static config/entry checks: `python3 tests/test_femto_lambda_entries.py`.
+See [the implementation plan](../../mdfiles/femto/plans/plan_femto_lambda_nuclei_kfparticle_20260929.md)
+for real-data closure gates; these implementation notes do not by themselves claim
+that those runtime gates have passed.

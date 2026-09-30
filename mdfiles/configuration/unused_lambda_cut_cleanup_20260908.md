@@ -12,23 +12,23 @@
 
 クラス・次元・軸・ラベル・entries・全bin内容/誤差（underflow/overflow込み）を比較した。Tree/metadataのバイト一致試験ではない。新しいmetadata形式と候補選別は別途KF出力QAで検査し、こちらも成功した。
 
-Imp5の10,000イベントは引き続きreconstructed=9744、selected Λ=3135。全mass binも一致するため、[直前の質量比較図](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.png) の結果は変わらない。図は上書き・再生成していない。
+Imp5の10,000イベントは引き続きreconstructed=9744、selected Λ=3135。全mass binも一致するため、[直前の質量比較図](../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.png) の結果は変わらない。図は上書き・再生成していない。
 
 ## 1. mainconfを実際に使う設定だけに整理
 
 | mainconf | 現在の参照キー |
 |---|---|
-| [main_auau13p5_anaLambda.yaml](../config/mainconf/main_auau13p5_anaLambda.yaml) | event / centrality / lambda / hist / analysis |
-| [main_auau13p5_anaLambda_KFParticle.yaml](../config/mainconf/main_auau13p5_anaLambda_KFParticle.yaml) | event / centrality / kf / hist / analysis |
-| [main_auau13p5_anaLambda_KFParticle_Imp5.yaml](../config/mainconf/main_auau13p5_anaLambda_KFParticle_Imp5.yaml) | event / centrality / kf / hist / analysis |
+| [main_auau13p5_anaLambda.yaml](../../config/mainconf/main_auau13p5_anaLambda.yaml) | event / centrality / lambda / hist / analysis |
+| [main_auau13p5_anaLambda_KFParticle.yaml](../../config/mainconf/main_auau13p5_anaLambda_KFParticle.yaml) | event / centrality / kf / hist / analysis |
+| [main_auau13p5_anaLambda_KFParticle_Imp5.yaml](../../config/mainconf/main_auau13p5_anaLambda_KFParticle_Imp5.yaml) | event / centrality / kf / hist / analysis |
 
 旧Helixのtrack/PID/topologyは `lambda:`、KFでは `kf:` が唯一の実効参照先。読み込むだけだったgeneric track / PID / V0 / mixingと、KF用の旧Lambda互換設定への参照を削除した。
 
 これからPIDを変更する場合は以下を編集する:
 
-- 旧Helix: [maker_auau13p5_anaLambda.yaml](../config/maker/maker_auau13p5_anaLambda.yaml)。
-- 標準KF: [kf_auau13p5_anaLambda_KFParticle.yaml](../config/cuts/kf/kf_auau13p5_anaLambda_KFParticle.yaml)。
-- Imp5 KF: [kf_auau13p5_anaLambda_KFParticle_Imp5.yaml](../config/cuts/kf/kf_auau13p5_anaLambda_KFParticle_Imp5.yaml)。
+- 旧Helix: [maker_auau13p5_anaLambda.yaml](../../config/maker/maker_auau13p5_anaLambda.yaml)。
+- 標準KF: [kf_auau13p5_anaLambda_KFParticle.yaml](../../config/cuts/kf/kf_auau13p5_anaLambda_KFParticle.yaml)。
+- Imp5 KF: [kf_auau13p5_anaLambda_KFParticle_Imp5.yaml](../../config/cuts/kf/kf_auau13p5_anaLambda_KFParticle_Imp5.yaml)。
 
 **proton/pionの閾値は各3.0のまま。** 旧HelixとImp5は保存済みnSigma、標準KFは従来どおりdedx_pullであり、今回PID定義を変更していない。標準KFのKaon=2.0とTOFは有効なので残した。Imp5ではKaon/TOFを使わない。
 
@@ -46,7 +46,7 @@ Imp5の10,000イベントは引き続きreconstructed=9744、selected Λ=3135。
 - `config/cuts/mixing/mixing_auau13p5_anaLambda_KFParticle.yaml`
 - `config/maker/maker_auau13p5_anaLambda_KFParticle.yaml`
 
-削除前の16設定ファイル（上記9件＋整理した既存7件）を [復元用archive](../share/figure/auau13p5_config_cleanup_20260908/config_before_cleanup_20260908.tar.gz) に保存した。元の相対パスのまま格納している。確認・復元する際は新しい作業用ディレクトリへ展開し、現在のmainconfを不用意に上書きしないこと。
+削除前の16設定ファイル（上記9件＋整理した既存7件）を [復元用archive](../../share/figure/auau13p5_config_cleanup_20260908/config_before_cleanup_20260908.tar.gz) に保存した。元の相対パスのまま格納している。確認・復元する際は新しい作業用ディレクトリへ展開し、現在のmainconfを不用意に上書きしないこと。
 
 archive SHA256: `351a8c75c2140c96876f185859004a1ff3243d85c6a84ce12eb1f961fca645cf`。
 
@@ -56,9 +56,9 @@ archive SHA256: `351a8c75c2140c96876f185859004a1ff3243d85c6a84ce12eb1f961fca645c
 
 ### Event設定
 
-- [旧Helix event](../config/cuts/event/event_auau13p5_anaLambda.yaml): Makerで参照する `maxNTr: 0` だけにした。未使用のminVz/maxVz/maxVr/minRefMult/maxRefMult/maxVzDiff/maxAbsVzVpdを削除。bad-run/pileup/centrality設定は別のcentrality YAMLで従来どおり。
-- [標準KF event](../config/cuts/event/event_auau13p5_anaLambda_KFParticle.yaml): `vertexByMode` に上書きされていたflat minVz/maxVz/maxVrを削除。有効なmode別頂点カット・RefMult/VPD/track数条件は維持。
-- [新設Imp5 event](../config/cuts/event/event_auau13p5_anaLambda_KFParticle_Imp5.yaml): `maxNTr` と `qaVertexByMode.<mode>.center` だけを保持。選別しないVz/半径/RefMult/VPDの閾値を記載しない。FXTのQA中心(-0.4,-2.0) cmは不変で、これはvertex cutではない。
+- [旧Helix event](../../config/cuts/event/event_auau13p5_anaLambda.yaml): Makerで参照する `maxNTr: 0` だけにした。未使用のminVz/maxVz/maxVr/minRefMult/maxRefMult/maxVzDiff/maxAbsVzVpdを削除。bad-run/pileup/centrality設定は別のcentrality YAMLで従来どおり。
+- [標準KF event](../../config/cuts/event/event_auau13p5_anaLambda_KFParticle.yaml): `vertexByMode` に上書きされていたflat minVz/maxVz/maxVrを削除。有効なmode別頂点カット・RefMult/VPD/track数条件は維持。
+- [新設Imp5 event](../../config/cuts/event/event_auau13p5_anaLambda_KFParticle_Imp5.yaml): `maxNTr` と `qaVertexByMode.<mode>.center` だけを保持。選別しないVz/半径/RefMult/VPDの閾値を記載しない。FXTのQA中心(-0.4,-2.0) cmは不変で、これはvertex cutではない。
 
 ### KF設定
 
@@ -116,13 +116,13 @@ ROOT 5.34/38 / STAR SL24y / GCC4.8.5 / 既存Singularity環境で、以下が正
 
 検証用出力（以前の解析ROOTは上書きしていない）:
 
-- [Helix20](../rootfile/auau13p5_config_cleanup_validation_20260908/helix20_after_cleanup.root)
-- [標準KF1000](../rootfile/auau13p5_config_cleanup_validation_20260908/standard_kf1000_after_cleanup.root)
-- [Imp5 KF10000](../rootfile/auau13p5_config_cleanup_validation_20260908/imp5_10000_after_cleanup.root)
+- [Helix20](../../rootfile/auau13p5_anaLambda_KFParticle/validation_20260908_config_cleanup/helix20_after_cleanup.root)
+- [標準KF1000](../../rootfile/auau13p5_anaLambda_KFParticle/validation_20260908_config_cleanup/standard_kf1000_after_cleanup.root)
+- [Imp5 KF10000](../../rootfile/auau13p5_anaLambda_KFParticle/validation_20260908_config_cleanup/imp5_10000_after_cleanup.root)
 
 Helix20は再構成17イベント。標準KF1000は957イベント、Λ3189個＋anti-Λ463個。Imp5 KF10000は9744イベント、Λ3135個。これらは整理前と一致した。
 
-[整理後設定・ソース・検証ログarchive](../share/figure/auau13p5_config_cleanup_20260908/cleanup_validation_20260908.tar.gz) に使用設定、変更コード、実行ログ、差分監査、ハッシュを保存。元ログは `/tmp/star-cut-cleanup-20260908.CpAMYN/`。入力は前回と同じ `/tmp/star-kf-compare-input-20260907.c7jFYa/local.list` で、前回の入力manifest・ID監査を再利用した。
+[整理後設定・ソース・検証ログarchive](../../share/figure/auau13p5_config_cleanup_20260908/cleanup_validation_20260908.tar.gz) に使用設定、変更コード、実行ログ、差分監査、ハッシュを保存。元ログは `/tmp/star-cut-cleanup-20260908.CpAMYN/`。入力は前回と同じ `/tmp/star-kf-compare-input-20260907.c7jFYa/local.list` で、前回の入力manifest・ID監査を再利用した。
 
 再実行例（出力名は新しいものを指定）:
 

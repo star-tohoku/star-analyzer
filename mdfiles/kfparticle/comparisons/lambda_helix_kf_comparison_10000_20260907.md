@@ -17,12 +17,12 @@
 
 候補数は信号フィット・背景差し引き後のΛ収量ではない。範囲は `1.05 <= M < 1.25 GeV/c²`、bin幅は1 MeV/c²。新KFのanti-Λ 4731件は比較に含めない。KF側の互換histogram `hLambda_InvMass` はΛとanti-Λを合わせた35979件なので、旧側とそのまま重ねない。
 
-- [比較図 PNG](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/lambda_mass_compare_10000_20260907.png)
-- [比較図 PDF](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/lambda_mass_compare_10000_20260907.pdf)
-- [比較canvasと4本のhistogram ROOT](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/lambda_mass_compare_10000_20260907.root)
-- [旧Helix解析ROOT](../rootfile/auau13p5_anaLambda/local_compare_10000_20260907.root)
-- [新KFParticle解析ROOT](../rootfile/auau13p5_anaLambda_KFParticle/local_compare_10000_20260907.root)
-- [入力監査・設定snapshot・実行ログ](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/comparison_provenance_20260907.tar.gz)
+- [比較図 PNG](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/lambda_mass_compare_10000_20260907.png)
+- [比較図 PDF](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/lambda_mass_compare_10000_20260907.pdf)
+- [比較canvasと4本のhistogram ROOT](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/lambda_mass_compare_10000_20260907.root)
+- [旧Helix解析ROOT](../../../rootfile/auau13p5_anaLambda/local_compare_10000_20260907.root)
+- [新KFParticle解析ROOT](../../../rootfile/auau13p5_anaLambda_KFParticle/local_compare_10000_20260907.root)
+- [入力監査・設定snapshot・実行ログ](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle/comparison_provenance_20260907.tar.gz)
 
 図は青実線がHelix、赤破線がKFParticle。`Draw("HIST SAME")` で重ね描きした。左は候補実数、右はそれぞれの図示範囲の積分で面積規格化した形状比較。追加cut・mass fit・背景差し引き・効率補正は行っていない。両方にΛ質量付近のピークが見える一方、現設定のKF側はピーク外の候補が多い。定量的なsignal/backgroundや質量分解能は今回フィットしていない。
 
@@ -78,7 +78,7 @@
 ./script/singularity_run_anaLambda_KFParticle.sh /tmp/star-kf-compare-input-20260907.c7jFYa/local.list rootfile/auau13p5_anaLambda_KFParticle/local_compare_10000_20260907.root compareKF10000 10000 config/mainconf/main_auau13p5_anaLambda_KFParticle.yaml
 ```
 
-比較macro: [common/macro/compareLambdaHelixKF.C](../common/macro/compareLambdaHelixKF.C)。既存の出力を読むだけで、元ROOTを変更しない。
+比較macro: [common/macro/compareLambdaHelixKF.C](../../../common/macro/compareLambdaHelixKF.C)。既存の出力を読むだけで、元ROOTを変更しない。
 
 ```cpp
 compareLambdaHelixKF(

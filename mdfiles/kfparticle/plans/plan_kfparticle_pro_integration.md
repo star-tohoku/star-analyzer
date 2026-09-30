@@ -2,7 +2,7 @@
 
 Handoff for whoever implements Kalman-filter Λ / Ξ reconstruction in this repo. Motivation: replace or supplement helix V0 (`StLambdaMaker`) with KF topology fits, especially for **Λ (PDG 3122)** and **Ξ (PDG 3312)**.
 
-Related principles: [`PHILOSOPHY.md`](../PHILOSOPHY.md), [`docs/ai/skills/reuse-star-stroot.md`](ai/skills/reuse-star-stroot.md), [`StRoot/StRefMultCorr/`](../StRoot/StRefMultCorr/).
+Related principles: [`PHILOSOPHY.md`](../../../PHILOSOPHY.md), [`docs/ai/skills/reuse-star-stroot.md`](../../../docs/ai/skills/reuse-star-stroot.md), [`StRoot/StRefMultCorr/`](../../../StRoot/StRefMultCorr).
 
 ---
 
@@ -64,7 +64,7 @@ StChain
 
 ## Implementation method
 
-Follow [`docs/ai/skills/reuse-star-stroot.md`](ai/skills/reuse-star-stroot.md) Part C.
+Follow [`docs/ai/skills/reuse-star-stroot.md`](../../../docs/ai/skills/reuse-star-stroot.md) Part C.
 
 ### 1. Vendor source
 

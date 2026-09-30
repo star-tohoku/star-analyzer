@@ -317,6 +317,8 @@ class KFParticleFinder
   
   //Functionality to change cuts, all cuts have default values set in the constructor
   void SetMaxDistanceBetweenParticlesCut(float cut) { fDistanceCut = cut; } ///< Sets cut on the distance between secondary tracks at the DCA point.
+  void SetApplyLambdaGeometryCuts(bool apply) { fApplyLambdaGeometryCuts = apply; }
+  bool GetApplyLambdaGeometryCuts() const { return fApplyLambdaGeometryCuts; }
   void SetLCut(float cut) { fLCut = cut; } ///< Sets cut on the distance to the primary vertex from the decay vertex.
   
   void SetChiPrimaryCut2D(float cut) { fCuts2D[0] = cut; } ///< Sets cut on \f$\chi^2_{prim}\f$ of each track for 2-daughter decays.
@@ -358,6 +360,7 @@ class KFParticleFinder
      **/
     fDistanceCut = finder->fDistanceCut;
     fLCut = finder->fLCut;
+    fApplyLambdaGeometryCuts = finder->fApplyLambdaGeometryCuts;
     for(int iCut=0; iCut<3; iCut++)
       fCuts2D[iCut] = finder->fCuts2D[iCut];
     for(int iCut=0; iCut<3; iCut++)
@@ -513,6 +516,9 @@ class KFParticleFinder
   /** \brief Map defines if the reconstruction of the decay with a certain PDG hypothesis should be run. If the map is empty - all decays are reconstructed. If at least one decay is added - only those decays will be reconstructed which are specified in the list. **/
   std::map<int,bool> fDecayReconstructionList;
   
+  // Appended local study switch: only Lambda/anti-Lambda geometry gates.
+  bool fApplyLambdaGeometryCuts = true;
+
   KFParticleFinder(const KFParticleFinder&); ///< Copying is disabled for this class.
   KFParticleFinder& operator=(const KFParticleFinder&); ///< Copying is disabled for this class.
 };

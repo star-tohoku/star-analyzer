@@ -11,12 +11,12 @@
 | 図示質量範囲のΛ候補 | 4914 | 3135 |
 | 比較範囲 / bin幅 | 1.05 <= M < 1.25 GeV/c² / 1 MeV/c² | 同左 |
 
-- [比較PNG](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.png)
-- [比較PDF](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.pdf)
-- [比較canvas / histogram ROOT](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.root)
-- [新KF解析ROOT](../rootfile/auau13p5_anaLambda_KFParticle_Imp5/local_compare_10000_20260908.root)
-- [旧Helix解析ROOT（変更なし）](../rootfile/auau13p5_anaLambda/local_compare_10000_20260907.root)
-- [設定・ソース・ログ・入力監査の保存archive](../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/comparison_provenance_20260908.tar.gz)
+- [比較PNG](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.png)
+- [比較PDF](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.pdf)
+- [比較canvas / histogram ROOT](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/lambda_mass_compare_10000_20260908.root)
+- [新KF解析ROOT](../../../rootfile/auau13p5_anaLambda_KFParticle/Imp5/local_compare_10000_20260908.root)
+- [旧Helix解析ROOT（変更なし）](../../../rootfile/auau13p5_anaLambda/local_compare_10000_20260907.root)
+- [設定・ソース・ログ・入力監査の保存archive](../../../share/figure/auau13p5_Lambda_Helix_vs_KFParticle_Imp5/comparison_provenance_20260908.tar.gz)
 
 青実線がHelix、赤破線がKFParticle (Imp5)。左は無規格化の候補数、右は図示範囲をそれぞれ面積1へ規格化した形状比較。旧 `hLambda_InvMass` と新 `hKfLambdaMassSelected` を `Draw("HIST SAME")` で重ねており、anti-Lambdaは含めない。
 
@@ -24,15 +24,15 @@
 
 ## Imp5の基準と実装方針
 
-ユーザーから「現在のanaLambdaがImp5、proton/piはnSigmaのみ、TOFなし」と指定された。そのため基準は、実際の [StLambdaMaker](../StMaker/StLambdaMaker/StLambdaMaker.cxx) と [maker_auau13p5_anaLambda.yaml](../config/maker/maker_auau13p5_anaLambda.yaml) の**実行時に使われる条件**とした。
+ユーザーから「現在のanaLambdaがImp5、proton/piはnSigmaのみ、TOFなし」と指定された。そのため基準は、実際の [StLambdaMaker](../../../StMaker/StLambdaMaker/StLambdaMaker.cxx) と [maker_auau13p5_anaLambda.yaml](../../../config/maker/maker_auau13p5_anaLambda.yaml) の**実行時に使われる条件**とした。
 
 参照指定の [Notionページ](https://app.notion.com/p/2026-07-01-3902284fda2880c4b97cd2fa9798edb3?source=copy_link) はアクセスを試みたが本文を取得できなかった。したがってNotionの記載を独立に照合したとはしていない。もし同ページと現行コードに相違があれば、今回の比較の基準は現行コードである。
 
 既存の `StLambdaMaker` / `StLambda` / Helix設定、標準KF設定は変更せず、明示的な `selectionProfile: lambda_imp5` を新設した。通常は `kf_reference` がデフォルトで従来動作を保つ。
 
-- [新mainconf](../config/mainconf/main_auau13p5_anaLambda_KFParticle_Imp5.yaml)
-- [新KFカット](../config/cuts/kf/kf_auau13p5_anaLambda_KFParticle_Imp5.yaml)
-- [新analysis-info](../config/analysis/analysis_info_auau13p5_anaLambda_KFParticle_Imp5.yaml)
+- [新mainconf](../../../config/mainconf/main_auau13p5_anaLambda_KFParticle_Imp5.yaml)
+- [新KFカット](../../../config/cuts/kf/kf_auau13p5_anaLambda_KFParticle_Imp5.yaml)
+- [新analysis-info](../../../config/analysis/analysis_info_auau13p5_anaLambda_KFParticle_Imp5.yaml)
 
 新mainconfのその他のconcernファイルは既存のKF専用コピーを読み取り専用で参照する。通常KFやHelix設定へ比較用の変更を混入させない。
 
@@ -162,4 +162,4 @@ gSystem->Exit(result);
 
 比較macroは `common/macro/compareLambdaHelixKF.C`。完全な実行driver、QA、build/runログ、終了コード、使用設定/ソースとSHA256をarchiveに保存した。元ログは `/tmp/star-kf-imp5-20260908.BB8dyv/`。今回KFのRealTime=35.5334秒だが、前回と選別が異なるため純粋な速度比較ではない。
 
-参照: [前回の標準KF比較](lambda_helix_kf_comparison_10000_20260907.md)、[実行手順](../docs/REFERENCE.md)、[adapter仕様](../StMaker/kfparticle/README.md)。
+参照: [前回の標準KF比較](lambda_helix_kf_comparison_10000_20260907.md)、[実行手順](../../../docs/REFERENCE.md)、[adapter仕様](../../../StMaker/kfparticle/README.md)。

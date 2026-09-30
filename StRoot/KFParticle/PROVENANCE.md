@@ -30,7 +30,7 @@ EMC reconstruction in the Λ analysis. No `Performance`, MC/embedding I/O,
 The old scalar import's four implementations are reimported together with the
 seven additions, not retained as an unverified different version.
 
-## Reproducible local namespace patch
+## Reproducible local namespace and Lambda study patches
 
 [`tools/kfparticle/import_core.py`](../../tools/kfparticle/import_core.py)
 performs the import and can verify it without modifying files:
@@ -43,7 +43,7 @@ Paths in that command are relative to the project root. Re-import is explicit,
 not a build-time download. The script refuses to overwrite unrecorded local
 changes. An updated upstream snapshot must be reviewed as a new dependency.
 
-These local compatibility changes are applied to C++ sources:
+These local compatibility changes and opt-in study controls are applied to C++ sources:
 
 1. Put declarations, definitions, helper functions, allocator and bundled SIMD
    namespaces inside `star_analyzer_kfp`.
@@ -59,9 +59,24 @@ These local compatibility changes are applied to C++ sources:
    undefined at link time. Its TObject inheritance and all STAR data members
    remain intact. This patch changes reflection only, not reconstruction.
 
-The arithmetic, fit algorithm, upstream cuts, order of operations and STAR
-conditional branches are not rewritten. Keep the transformation script and
-manifest in sync rather than editing a generated vendor file by hand.
+5. Since 2026-09-14, add two reversible Lambda-only study controls. The
+   `topoChi2NdfCut` setting defaults to 3 and is passed to
+   `SetLambdaTopoChi2NdfCut`; only Lambda/anti-Lambda use this configured
+   PV-copy chi2/NDF threshold. Other species retain the upstream threshold 3.
+   `applyLambdaGeometryCuts` defaults to true. When false, only Lambda and
+   anti-Lambda bypass the Finder two-daughter transported-distance gate,
+   daughter momentum dot-product gates, PV-SV length lower/200 cm upper
+   bounds, and `isParticleFromVertex`. The independent L/sigmaL and fit chi2
+   gates, covariance validity, and additional Maker distance/pointing cuts
+   remain active. Set the flag to true and the Topo threshold to 3 (or omit
+   both YAML keys) to restore the prior defaults.
+
+The fit arithmetic and STAR conditional branches are unchanged. Study controls
+are appended to the existing member layouts and copied with `CopyCuts`; their
+addition still requires rebuilding all core/adapter consumers. The source ID
+identifies unchanged upstream files; manifest transform v3 and the backend
+`lambda-study-controls-v1` label identify this local patch. Keep the
+transformation script and manifest in sync rather than editing generated files.
 
 Why this is needed: SL24y `StarRoot.so` contains an incompatible, global old
 `KFParticle` implementation, including an 8-byte `KFParticle::fgBz`; the
@@ -102,7 +117,7 @@ rebuild all KF ABI consumers consistently; compiler-generated dependencies
 track indirect includes. A new ROOT process must be used after rebuilding
 this ABI, not a process still holding the 9月4日 scalar library.
 
-## Upstream selection conditions deliberately preserved
+## Upstream selection conditions and explicit study overrides
 
 These are engine conditions, not newly invented analysis cuts. Source line
 numbers below refer to the untransformed upstream snapshot.
@@ -115,15 +130,20 @@ numbers below refer to the untransformed upstream snapshot.
   `chi2TopoMin < 500` is active.
 - `KFParticleTopoReconstructor::ReconstructParticles()` calls
   `SelectParticleCandidates()`. Its active `UseParticleInCompetition` species
-  include both Λ signs. Each retained Λ must have a copy with
-  `SetProductionVertex(PV)` and `Chi2()/NDF() < 3` for at least one PV; a
-  candidate failing that requirement is marked for deletion. The older
+  include both Λ signs. By default, each retained Λ must have a copy with
+  `SetProductionVertex(PV)` and `Chi2()/NDF() < 3` for at least one PV; the
+  explicit `topoChi2NdfCut` setting changes this bound for Λ and anti-Λ only.
+  A candidate failing that requirement is marked for deletion. The older
   mass-based candidate-competition block is disabled with `#if 0`.
 
 Consequently `GetParticles()` after the full Topo call is already an
 upstream-topology-selected collection. Its Λ mass has not been constrained to
 the parent PDG mass, but it must not be described as a topology-uncut inclusive
-sample. Loosening a later YAML cut cannot undo the upstream χ²/NDF < 3 step.
+sample. Loosening the later Maker `maxTopoChi2Ndf` cannot undo this upstream
+step; the separate `topoChi2NdfCut` changes that upstream threshold. The
+`applyLambdaGeometryCuts: false` opt-in additionally bypasses the five
+Finder geometry conditions listed above, without relaxing fit/covariance
+validity or the final Maker cuts.
 
 ## Verification and limitations
 

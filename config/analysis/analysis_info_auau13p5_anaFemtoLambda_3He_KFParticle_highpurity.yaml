@@ -1,0 +1,40 @@
+# Same production/input order as purity_upstream_20260928 (verified run 21033026).
+# Energy label is beam energy in fixed-target mode, not collider sqrt(sNN).
+starTag:
+  triggerSets: "production_13p5GeV_fixedTarget_2020"
+  stream: "st_physics"
+  collision: "auau13p5"
+  year: "year2020"
+  productionTag: "P24iy"
+  libraryTag: "SL24y"
+  filetype: "daq_reco_picoDst"
+  filenameFilter: "st_physics"
+  filenameNotFilter: ""
+  storage: "local"
+dataset:
+  collisionSystem: "Au+Au"
+  allPicoDstList: "picoDstList/auau13p5_femtoLambda_validation_20260930.list"
+  runRange:
+    min: 21000000
+    max: 21999999
+  goodRunList: ""
+  dataQuality: "production"
+  dataFormat: "picoDst"
+analysis:
+  anaName: &anaName "auau13p5_anaFemtoLambda_3He_KFParticle_highpurity"
+  name: *anaName
+  mode: "fxtmult"
+  type: "femto"
+  targetParticle: "Lambda-he3"
+  decayChannel: "p+pi-"
+  workDir: "/star/u/yichikawa/pwg/git_STAR_3/star-analyzer"
+  baseRunMacro: "run_anaFemtoLambda_3He"
+  baseAnaMacro: "anaFemtoLambda_3He"
+  jobName: *anaName
+  scratchSubdir: *anaName
+  outputFileStem: *anaName
+  nFiles: 20
+analyst:
+  name: "Yudai Ichikawa"
+  institute: "Tohoku University"
+  email: "yudai.ichikawa.d3@tohoku.ac.jp"

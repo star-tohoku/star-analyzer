@@ -161,6 +161,48 @@ int CountLambda(const kfp::KFParticleTopoReconstructor& topo)
   return count;
 }
 
+void TestLambdaCutSwitches()
+{
+  for (int sign = -1; sign <= 1; sign += 2) {
+    kfp::KFParticleTopoReconstructor topo;
+    Configure(topo);
+    kfp::KFParticleFinder* finder = topo.GetKFParticleFinder();
+    Require(topo.GetLambdaTopoChi2NdfCut() == 3.f && finder->GetApplyLambdaGeometryCuts(),
+            "Lambda cut defaults changed");
+    std::vector<kfp::KFParticle> input;
+    std::vector<int> pdgs;
+    Fixture(sign, 101, 7, input, pdgs);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 1, "default Lambda cut fixture was rejected");
+
+    topo.SetLambdaTopoChi2NdfCut(0.000001f);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 0, "tight Lambda Topo threshold was ignored");
+    topo.SetLambdaTopoChi2NdfCut(30.f);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 1, "loose Lambda Topo threshold did not restore candidate");
+    topo.SetLambdaTopoChi2NdfCut(3.f);
+
+    // The fixture has L=5 cm. Tighten only geometry, retaining all KF cuts.
+    finder->SetLCut(10.f);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 0, "enabled Lambda geometry ignored LCut");
+    finder->SetApplyLambdaGeometryCuts(false);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 1 && !finder->GetApplyLambdaGeometryCuts(),
+            "disabled Lambda geometry did not bypass LCut across Clear");
+    finder->SetApplyLambdaGeometryCuts(true);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 0 && finder->GetApplyLambdaGeometryCuts(),
+            "Lambda geometry was not restored after false/true toggle");
+    finder->SetLCut(1.f);
+    Reconstruct(topo, input, pdgs, 0.f);
+    Require(CountLambda(topo) == 1 && topo.GetLambdaTopoChi2NdfCut() == 3.f,
+            "restoring default Lambda cuts did not restore candidate");
+  }
+  std::cout << "PASS Lambda/anti-Lambda Topo tight/loose/default and geometry true/false/true" << '\n';
+}
+
 float CheckLambda(const kfp::KFParticleTopoReconstructor& topo,
                   int expectedPdg, int protonId, int pionId, float field)
 {
@@ -285,6 +327,7 @@ static int RunStarAnalyzerFullChainTest(const char* starRootArgument)
             "Cannot load legacy StarRoot: " + starRoot);
     std::cout << "Loaded legacy StarRoot before full-chain fixture execution: " << starRoot << '\n';
 
+    TestLambdaCutSwitches();
     kfp::KFParticleTopoReconstructor topo;
     Configure(topo);
     std::vector<kfp::KFParticle> input;

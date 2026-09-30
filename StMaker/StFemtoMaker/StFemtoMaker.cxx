@@ -2,6 +2,17 @@
 #include "ConfigManager.h"
 #include "HistManager.h"
 #include "FemtoMixingSampler.h"
+#include "FemtoLambdaProvider.h"
+#include "FemtoLambdaLegacy.h"
+#include "cuts/KfParticleCutConfig.h"
+#include "yaml-cpp/yaml.h"
+#include "TTree.h"
+#include "TNamed.h"
+#include "TObjString.h"
+#include "TParameter.h"
+#include <cmath>
+#include <set>
+#include <algorithm>
 #include "FemtoPhiMixSampler.h"
 #include "kinematics.h"
 #include "cuts/EventCutConfig.h"
@@ -60,6 +71,13 @@ Bool_t ComputePhiBetaGamma(Bool_t tofPlus, Float_t betaPlus, Bool_t tofMinus, Fl
 
 StFemtoMaker::StFemtoMaker(const char* name, StPicoDstMaker* picoMaker, const char* outName)
     : StMaker(name),
+      mLambdaProvider(0), mLambdaLegacy(0), mLambdaProcessingSucceeded(false),
+      mLambdaMixMinVz(0), mLambdaMixMaxVz(0), mLambdaMaxMixEvents(0),
+      mLambdaReconstructedEvents(0), mLambdaSelectedTotal(0), mLambdaMixClampedEvents(0),
+      mLambdaOutputFile(0), mLambdaEventLedger(0), mLambdaCandidateLedger(0),
+      mLambdaRunId(0), mLambdaEventId(0), mLambdaEventStatus(0), mLambdaEventSelected(0),
+      mLambdaProtonIndex(-1), mLambdaPionIndex(-1),
+      mLambdaRawMass(0), mLambdaPx(0), mLambdaPy(0), mLambdaPz(0),
       mPicoDstMaker(picoMaker),
       mPicoDst(0),
       mOutName(outName),
@@ -75,6 +93,11 @@ StFemtoMaker::StFemtoMaker(const char* name, StPicoDstMaker* picoMaker, const ch
       m_phiMixSeedUsed(0) {}
 
 StFemtoMaker::~StFemtoMaker() {
+  delete mLambdaProvider;
+  if (mLambdaLegacy) { m_histManager = 0; delete mLambdaLegacy; }
+  if (mLambdaOutputFile) {
+    mLambdaOutputFile->Close(); delete mLambdaOutputFile;
+  }
   if (m_centrality) {
     delete m_centrality;
     m_centrality = 0;
@@ -93,7 +116,230 @@ extern "C" void* createStFemtoMakerC(const char* name, void* picoMaker, const ch
   return (void*)createStFemtoMaker(name, (StPicoDstMaker*)picoMaker, outName);
 }
 
+
+void StFemtoMaker::SetLambdaProvider(FemtoLambdaProvider* provider) {
+  if (provider == mLambdaProvider) return;
+  delete mLambdaProvider;
+  mLambdaProvider = provider;
+}
+
+Int_t StFemtoMaker::InitLambda() {
+  try {
+    if (mMainConfigPath.empty() || !mLambdaProvider)
+      throw std::runtime_error("Lambda requires explicit mainconf and an injected KF provider");
+    if (mOutName.IsNull() || !gSystem->AccessPathName(mOutName.Data()))
+      throw std::runtime_error("Lambda output must be new (refusing overwrite)");
+    const YAML::Node main = YAML::LoadFile(mMainConfigPath);
+    auto reference = [&](const char* key) {
+      if (!main[key].IsScalar()) throw std::runtime_error(std::string("mainconf requires ") + key);
+      const std::string value = main[key].as<std::string>();
+      if (value.empty()) throw std::runtime_error(std::string("empty config reference ") + key);
+      if (value[0] == '/') return value;
+      const size_t pos = mMainConfigPath.find("/config/");
+      return (pos == std::string::npos ? "" : mMainConfigPath.substr(0, pos + 1)) + "config/" + value;
+    };
+    const YAML::Node maker = YAML::LoadFile(reference("maker"));
+    const YAML::Node mixNode = YAML::LoadFile(reference("mixing"));
+    const char* references[] = {"analysis", "event", "centrality", "kf", "nuclearid", "femtoHist", "nuclearHist"};
+    for (size_t i = 0; i < sizeof(references)/sizeof(references[0]); ++i) {
+      const std::string path = reference(references[i]);
+      if (gSystem->AccessPathName(path.c_str())) throw std::runtime_error("missing config: " + path);
+      std::cout << "[Femto Lambda config] " << references[i] << ": " << path << std::endl;
+    }
+    const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+    if (!maker["speciesKeys"].IsScalar() || !maker["nChannels"].IsScalar() ||
+        maker["nChannels"].as<int>() != 4 || fc.channels.size() != 4 || fc.species.size() != 2)
+      throw std::runtime_error("Lambda requires exactly two explicit species and four channels");
+    const FemtoConfig::SpeciesDef* lambda = fc.FindSpecies("lambda");
+    if (!lambda || lambda->builderType != "resonance" || lambda->particleKey != "lambda_kf")
+      throw std::runtime_error("Lambda species must use resonance/lambda_kf");
+    std::string nucleus;
+    for (std::map<std::string, FemtoConfig::SpeciesDef>::const_iterator it = fc.species.begin();
+         it != fc.species.end(); ++it) {
+      const FemtoConfig::SpeciesDef& sp = it->second;
+      const std::string prefix = "species_" + sp.key;
+      if (!maker[prefix + "_builderType"].IsScalar() || !maker[prefix + "_particleKey"].IsScalar() ||
+          !sp.cutsRef.empty()) throw std::runtime_error("missing builder key or unsupported cutsRef");
+      if (sp.key == "lambda") continue;
+      if ((sp.key != "deuteron" && sp.key != "triton" && sp.key != "he3" && sp.key != "he4") ||
+          sp.builderType != "track" || sp.particleKey != sp.key)
+        throw std::runtime_error("unsupported Lambda bachelor/builder");
+      nucleus = sp.key;
+    }
+    const char* suffix[] = {"", "_signal", "_leftSB", "_rightSB"};
+    std::set<std::string> expected;
+    for (size_t i = 0; i < 4; ++i) expected.insert("lambda_" + nucleus + suffix[i]);
+    for (size_t i = 0; i < fc.channels.size(); ++i) {
+      std::ostringstream prefix; prefix << "channel_" << i << "_";
+      const char* required[] = {"name","partA","partB","enabled","doMixing","signalMin","signalMax","normQMin","normQMax"};
+      for (size_t j = 0; j < sizeof(required)/sizeof(required[0]); ++j)
+        if (!maker[prefix.str() + required[j]].IsScalar())
+          throw std::runtime_error("missing explicit Lambda channel field: " + prefix.str() + required[j]);
+      const FemtoConfig::ChannelDef& ch = fc.channels[i];
+      if (!expected.erase(ch.name) || ch.partA != "lambda" || ch.partB != nucleus ||
+          !ch.enabled || !ch.doMixing || !std::isfinite(ch.signalMin) ||
+          !std::isfinite(ch.signalMax) || ch.signalMin >= ch.signalMax)
+        throw std::runtime_error("invalid/duplicate Lambda channel");
+    }
+    if (!expected.empty() || fc.rotationEnabled || fc.fullyMixedEnabled ||
+        fc.closePairEnabled || fc.enableHKaonTwoBody || fc.enableKuboTriplet)
+      throw std::runtime_error("unsupported extra reconstruction/pair cuts in Lambda legacy profile");
+    const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();
+    std::set<std::string> mixingKeys;
+    if (!mixNode.IsMap()) throw std::runtime_error("mixing must be a mapping");
+    for (YAML::const_iterator it = mixNode.begin(); it != mixNode.end(); ++it)
+      if (!mixingKeys.insert(it->first.as<std::string>()).second)
+        throw std::runtime_error("duplicate mixing key");
+    const char* mixRequired[] = {"nVzBins", "nCentralityBins", "nEventPlaneBins", "bufferSize",
+      "mixingMode", "mixBothDirections", "minVz", "maxVz", "maxMixEvents", "vzOutOfRangePolicy"};
+    for (size_t i = 0; i < sizeof(mixRequired)/sizeof(mixRequired[0]); ++i)
+      if (!mixNode[mixRequired[i]].IsScalar())
+        throw std::runtime_error(std::string("missing explicit mixing key: ") + mixRequired[i]);
+    if (mixNode["nVzBins"].as<int>() != mix.nVzBins ||
+        mixNode["nCentralityBins"].as<int>() != mix.nCentralityBins ||
+        mixNode["nEventPlaneBins"].as<int>() != mix.nEventPlaneBins ||
+        mixNode["bufferSize"].as<int>() != mix.bufferSize ||
+        mixNode["mixingMode"].as<std::string>() != mix.mixingMode ||
+        mixNode["mixBothDirections"].as<bool>() != bool(mix.mixBothDirections))
+      throw std::runtime_error("mixing loader differs from explicit typed configuration");
+    mLambdaMixMinVz = mixNode["minVz"].as<double>();
+    mLambdaMixMaxVz = mixNode["maxVz"].as<double>();
+    mLambdaMaxMixEvents = mixNode["maxMixEvents"].as<int>();
+    if (mixNode["vzOutOfRangePolicy"].as<std::string>() != "clamp" ||
+        !std::isfinite(mLambdaMixMinVz) || !std::isfinite(mLambdaMixMaxVz) ||
+        mLambdaMixMinVz >= mLambdaMixMaxVz ||
+        mix.mixingMode != "bufferAll" || !mix.mixBothDirections ||
+        mix.nCentralityBins != 9 || mix.nEventPlaneBins != 1 || mix.nVzBins <= 0 ||
+        mix.bufferSize <= 0 || mLambdaMaxMixEvents <= 0 || mLambdaMaxMixEvents > mix.bufferSize)
+      throw std::runtime_error("invalid Lambda mixing: requires explicit clamp, bufferAll, both directions, cent9");
+    if (!ConfigManager::GetInstance().GetCentralityCuts().enabled)
+      throw std::runtime_error("Lambda mixing requires enabled centrality");
+    if (!mLambdaProvider->Init(mMainConfigPath.c_str(), std::cerr)) return kStErr;
+    mLambdaLegacy = new FemtoLambdaLegacy();
+    if (!mLambdaLegacy->Init(mMainConfigPath.c_str(), std::cerr)) return kStErr;
+    m_histManager = mLambdaLegacy->RootHistograms();
+    m_centrality = new CentralityHelper();
+    if (!m_centrality->Init(ConfigManager::GetInstance().GetCentralityCuts())) return kStErr;
+    // Stream ledgers into the new output, rather than retaining an entire production in RAM.
+    mLambdaOutputFile = TFile::Open(mOutName.Data(), "CREATE");
+    if (!mLambdaOutputFile || mLambdaOutputFile->IsZombie()) return kStErr;
+    mLambdaOutputFile->cd();
+    mLambdaEventLedger = new TTree("eventLedger", "Input events; status 0 bad run,1 event,2 pileup,3 centrality,4 reconstructed,-1 error");
+    mLambdaEventLedger->SetDirectory(mLambdaOutputFile);
+    mLambdaEventLedger->Branch("inputIndex", &mEventCounter, "inputIndex/I");
+    mLambdaEventLedger->Branch("runId", &mLambdaRunId, "runId/I");
+    mLambdaEventLedger->Branch("eventId", &mLambdaEventId, "eventId/I");
+    mLambdaEventLedger->Branch("status", &mLambdaEventStatus, "status/I");
+    mLambdaEventLedger->Branch("cent9", &m_cent9, "cent9/I");
+    mLambdaEventLedger->Branch("selectedLambda", &mLambdaEventSelected, "selectedLambda/I");
+    mLambdaCandidateLedger = new TTree("selectedLambda", "Unconstrained KF Lambda; Pico array indices");
+    mLambdaCandidateLedger->SetDirectory(mLambdaOutputFile);
+    mLambdaCandidateLedger->Branch("inputIndex", &mEventCounter, "inputIndex/I");
+    mLambdaCandidateLedger->Branch("runId", &mLambdaRunId, "runId/I");
+    mLambdaCandidateLedger->Branch("eventId", &mLambdaEventId, "eventId/I");
+    mLambdaCandidateLedger->Branch("protonIndex", &mLambdaProtonIndex, "protonIndex/I");
+    mLambdaCandidateLedger->Branch("pionIndex", &mLambdaPionIndex, "pionIndex/I");
+    mLambdaCandidateLedger->Branch("mass", &mLambdaRawMass, "mass/F");
+    mLambdaCandidateLedger->Branch("px", &mLambdaPx, "px/F");
+    mLambdaCandidateLedger->Branch("py", &mLambdaPy, "py/F");
+    mLambdaCandidateLedger->Branch("pz", &mLambdaPz, "pz/F");
+    std::cout << "[StFemtoMaker Lambda] original reference=anaLambdaNuclearId; mix Vz=["
+              << mLambdaMixMinVz << "," << mLambdaMixMaxVz << "] clamp"
+              << " maxMixEvents=" << mLambdaMaxMixEvents << std::endl;
+    return kStOK;
+  } catch (const std::exception& error) {
+    std::cerr << "[StFemtoMaker Lambda] Init failed: " << error.what() << std::endl;
+    return kStErr;
+  }
+}
+
+Int_t StFemtoMaker::MakeLambdaEvent() {
+  m_cent9 = m_cent16 = -1;
+  m_refMultCorr = -1.; m_centWeight = 1.; m_psi2 = -1.;
+  m_eventCandidates.clear();
+  mLambdaProvider->Clear();
+  if (!mPicoDstMaker || !(mPicoDst = mPicoDstMaker->picoDst()) || !mPicoDst->event()) return kStErr;
+  StPicoEvent* event = mPicoDst->event();
+  mLambdaRunId = event->runId(); mLambdaEventId = event->eventId();
+  const TVector3 pv = event->primaryVertex();
+  const Int_t nTracks = mPicoDst->numberOfTracks();
+  const Int_t nTof = event->nBTOFMatch();
+  const CentralityCutConfig& cent = ConfigManager::GetInstance().GetCentralityCuts();
+  TString mode(cent.mode.c_str()); mode.ToLower();
+  const Int_t rawMult = mode == "fxtmult" ? event->fxtMult() : event->refMult();
+  m_histManager->Fill("hRefMultVsNTOFMatch", nTof, rawMult);
+  m_histManager->Fill("hVz", pv.Z());
+  m_histManager->Fill("hRefMult", event->refMult());
+  CentralityRejectReason reason = kCentralityOk;
+  mLambdaEventStatus = 0;
+  if (!m_centrality->CheckBadRun(event->runId(), reason)) return kStOK;
+  mLambdaEventStatus = 1;
+  if (!mLambdaProvider->AcceptEvent(*event, nTracks)) return kStOK;
+  if (cent.fillCentralityQA) m_histManager->Fill("hRawMult", rawMult);
+  mLambdaEventStatus = 2;
+  if (!m_centrality->CheckPileup(rawMult, nTof, pv.Z(), reason)) return kStOK;
+  mLambdaEventStatus = 3;
+  if (!m_centrality->ComputeBins(event, rawMult, pv.Z(), m_cent9, m_cent16, m_refMultCorr, m_centWeight, reason))
+    return kStOK;
+  m_histManager->Fill("hCentralityRaw", m_cent9);
+  m_histManager->Fill("hRefMultCorr", m_refMultCorr);
+  m_histManager->Fill("hCentralityVsVz", pv.Z(), m_cent9);
+  m_histManager->Fill("hRefMultWeight", m_centWeight);
+  m_histManager->Fill("hRefMultVsNTOFMatchAfter", nTof, rawMult);
+  if (!m_centrality->AcceptCentBin(m_cent9, m_refMultCorr, reason)) return kStOK;
+  if (m_cent9 < 0 || m_cent9 > 8) return kStErr;
+  m_centralityPercent = CentralityHelper::Cent9ToPercentile(m_cent9);
+  const Double_t weight = cent.useWeight ? m_centWeight : 1.;
+  TH1* h = m_histManager->Get("hCentrality"); if (h) h->Fill(m_cent9, weight);
+  h = m_histManager->Get("hCentrality16"); if (h) h->Fill(m_cent16, weight);
+  mLambdaEventStatus = -1;
+  if (!mLambdaProvider->Process(mPicoDst, mEventCounter)) {
+    std::cerr << "[StFemtoMaker Lambda] run=" << mLambdaRunId << " event=" << mLambdaEventId
+              << ": " << mLambdaProvider->LastError() << std::endl;
+    return kStErr;
+  }
+  ++mLambdaReconstructedEvents;
+  const std::vector<FemtoLambdaCandidate>& lambdas = mLambdaProvider->Candidates();
+  for (size_t i = 0; i < lambdas.size(); ++i) {
+    const FemtoLambdaCandidate& c = lambdas[i];
+    m_eventCandidates["lambda"].push_back(c.candidate);
+    mLambdaLegacy->FillLambda(c, m_cent9, m_refMultCorr, pv);
+    mLambdaProtonIndex = c.protonIndex; mLambdaPionIndex = c.pionIndex;
+    mLambdaRawMass = c.mass; mLambdaPx = c.candidate.px; mLambdaPy = c.candidate.py; mLambdaPz = c.candidate.pz;
+    if (mLambdaCandidateLedger->Fill() < 0) return kStErr;
+    ++mLambdaSelectedTotal;
+    ++mLambdaEventSelected;
+  }
+  mLambdaLegacy->CollectNuclei(mPicoDst, mEventCounter, m_cent9, m_eventCandidates);
+  // Each base channel is evaluated once; its helper fans out all mass classes.
+  const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+  for (size_t i = 0; i < fc.channels.size(); ++i) {
+    const FemtoConfig::ChannelDef& ch = fc.channels[i];
+    if (ch.name != "lambda_" + ch.partB) continue;
+    FillSameEventPairs(ch);
+    FillMixedEventPairs(ch, static_cast<Int_t>(i), pv.Z(), m_cent9, m_psi2);
+  }
+  if (pv.Z() < mLambdaMixMinVz || pv.Z() > mLambdaMixMaxVz) ++mLambdaMixClampedEvents;
+  StoreEventForMixing(pv.Z(), m_cent9, m_psi2);
+  if (cent.fillCentralityQA) {
+    const FemtoLambdaEventStats& stats = mLambdaProvider->Stats();
+    m_histManager->Fill("hRawMult_vs_Cent9", m_cent9, rawMult);
+    m_histManager->Fill("hRefMultCorr_vs_Cent9", m_cent9, m_refMultCorr);
+    m_histManager->Fill("hRawMult_vs_RefMultCorr", m_refMultCorr, rawMult);
+    m_histManager->Fill("hNTracks_vs_Cent9", m_cent9, nTracks);
+    m_histManager->Fill("hTofMatchMult_vs_Cent9", m_cent9, nTof);
+    m_histManager->Fill("hNProtonCand_vs_Cent9", m_cent9, stats.protonHypotheses);
+    m_histManager->Fill("hNPionCand_vs_Cent9", m_cent9, stats.pionHypotheses);
+    m_histManager->Fill("hNLambdaPairs_vs_Cent9", m_cent9, stats.lambdaParticles);
+  }
+  m_histManager->Fill("hN", 0.);
+  mLambdaEventStatus = 4;
+  return kStOK;
+}
+
 Int_t StFemtoMaker::Init() {
+  const FemtoConfig& requested = ConfigManager::GetInstance().GetFemtoConfig();
+  if (requested.FindSpecies("lambda") || mLambdaProvider) return InitLambda();
   std::string histPath = ConfigManager::GetInstance().GetHistConfigPath(GetName());
   if (histPath.empty()) {
     std::cerr << "[StFemtoMaker] GetHistConfigPath() returned empty; no histograms will be filled." << std::endl;
@@ -159,6 +405,7 @@ Int_t StFemtoMaker::Init() {
 void StFemtoMaker::Clear(Option_t* opt) {
   (void)opt;
   m_eventCandidates.clear();
+  if (mLambdaProvider) mLambdaProvider->Clear();
   m_phiQaLoose.clear();
   m_phiQaPreMassLoose.clear();
   m_phiQaPreMassTofStrict.clear();
@@ -166,6 +413,15 @@ void StFemtoMaker::Clear(Option_t* opt) {
 }
 
 Int_t StFemtoMaker::Make() {
+  if (mLambdaLegacy) {
+    ++mEventCounter;
+    mLambdaEventSelected = 0; mLambdaEventStatus = -1;
+    mLambdaRunId = mLambdaEventId = 0;
+    const Int_t status = MakeLambdaEvent();
+    if (status != kStOK) mLambdaProcessingSucceeded = false;
+    if (!mLambdaEventLedger || mLambdaEventLedger->Fill() < 0) return kStErr;
+    return status;
+  }
   if (!mPicoDstMaker) return kStWarn;
   mPicoDst = mPicoDstMaker->picoDst();
   if (!mPicoDst) return kStWarn;
@@ -538,6 +794,40 @@ Int_t StFemtoMaker::Make() {
 }
 
 Int_t StFemtoMaker::Finish() {
+  if (mLambdaLegacy) {
+    if (!mLambdaOutputFile || mLambdaOutputFile->IsZombie()) return kStErr;
+    TFile& output = *mLambdaOutputFile;
+    bool ok = mLambdaLegacy->Write(&output);
+    output.cd();
+    if (mLambdaEventLedger && mLambdaEventLedger->Write() <= 0) ok = false;
+    if (mLambdaCandidateLedger && mLambdaCandidateLedger->Write() <= 0) ok = false;
+    std::ostringstream cuts;
+    ConfigManager::GetInstance().GetKfParticleCuts().Dump(cuts);
+    TObjString config(cuts.str().c_str());
+    if (config.Write("KFParticleEffectiveConfiguration") <= 0) ok = false;
+    TNamed mainconf("FemtoLambdaMainconf", mMainConfigPath.c_str());
+    if (mainconf.Write() <= 0) ok = false;
+    TParameter<Long64_t> nRead("inputEvents", mEventCounter);
+    TParameter<Long64_t> nReco("reconstructedEvents", mLambdaReconstructedEvents);
+    TParameter<Long64_t> nSelected("selectedLambdaCandidates", mLambdaSelectedTotal);
+    TParameter<Long64_t> nClamped("mixingVzClampedEvents", mLambdaMixClampedEvents);
+    if (nRead.Write() <= 0 || nReco.Write() <= 0 || nSelected.Write() <= 0 || nClamped.Write() <= 0) ok = false;
+    output.Flush();
+    ok = ok && !output.TestBit(TFile::kWriteError);
+    TNamed status("FemtoLambdaRunStatus", mLambdaProcessingSucceeded && ok ? "completed" : "incomplete");
+    if (status.Write() <= 0) ok = false;
+    output.Close();
+    ok = ok && !output.TestBit(TFile::kWriteError);
+    delete mLambdaOutputFile; mLambdaOutputFile = 0;
+    mLambdaEventLedger = mLambdaCandidateLedger = 0;
+    std::cout << "[StFemtoMaker Lambda] inputEvents=" << mEventCounter
+              << " reconstructedEvents=" << mLambdaReconstructedEvents
+              << " selectedLambda=" << mLambdaSelectedTotal
+              << " mixingVzClamped=" << mLambdaMixClampedEvents
+              << " status=" << (mLambdaProcessingSucceeded && ok ? "completed" : "incomplete") << std::endl;
+    if (m_centrality) m_centrality->Finish();
+    return ok && mLambdaProcessingSucceeded ? kStOK : kStErr;
+  }
   if (mOutName != "") {
     TFile* fout = new TFile(mOutName.Data(), "RECREATE");
     fout->cd();
@@ -554,6 +844,7 @@ Int_t StFemtoMaker::Finish() {
 }
 
 void StFemtoMaker::WriteHistograms() {
+  if (mLambdaLegacy) { mLambdaLegacy->Write(gDirectory); return; }
   if (m_histManager) m_histManager->Write();
 }
 
@@ -2335,6 +2626,11 @@ void StFemtoMaker::FillSameEventPairs(const FemtoConfig::ChannelDef& ch) {
       const FemtoCandidate& b = candsB[j];
       if (TracksOverlap(a, b)) continue;
       Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
+      if (mLambdaLegacy) {
+        const Double_t qlab = (CandidateP4(a).Vect() - CandidateP4(b).Vect()).Mag();
+        mLambdaLegacy->FillPair(a, b, kstar, qlab, m_cent9, false, mPicoDst);
+        continue;
+      }
       if (m_histManager && a.source == kFemtoCandResonance && !hMkkWide.empty()) {
         if (m_histManager->Get(hMkkWide.c_str())) {
           m_histManager->Fill(hMkkWide.c_str(), a.reso.invMass, kstar, centX);
@@ -2364,13 +2660,16 @@ Int_t StFemtoMaker::GetMixingBin(Float_t vz, Int_t cent9, Double_t psi2) const {
   const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();
   Int_t vzBin = 0;
   if (mix.nVzBins > 0) {
-    Double_t vzSpan = ev.maxVz - ev.minVz;
+    const Double_t minVz = mLambdaLegacy ? mLambdaMixMinVz : ev.minVz;
+    const Double_t maxVz = mLambdaLegacy ? mLambdaMixMaxVz : ev.maxVz;
+    Double_t vzSpan = maxVz - minVz;
     if (vzSpan > 0) {
-      vzBin = (Int_t)((vz - ev.minVz) / vzSpan * mix.nVzBins);
+      vzBin = (Int_t)((vz - minVz) / vzSpan * mix.nVzBins);
       if (vzBin < 0) vzBin = 0;
       if (vzBin >= mix.nVzBins) vzBin = mix.nVzBins - 1;
     }
   }
+  if (mLambdaLegacy && (cent9 < 0 || cent9 > 8)) return -1;
   Int_t centBin = 0;
   if (mix.nCentralityBins > 0 && cent9 >= 0) {
     centBin = cent9;
@@ -2416,6 +2715,11 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
   auto fillMixedPair = [&](const FemtoCandidate& a, const FemtoCandidate& b) {
     if (TracksOverlap(a, b)) return kMixedPairSkippedOverlap;
     Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
+    if (mLambdaLegacy) {
+      const Double_t qlab = (CandidateP4(a).Vect() - CandidateP4(b).Vect()).Mag();
+      return mLambdaLegacy->FillPair(a, b, kstar, qlab, cent9, true)
+          ? kMixedPairFilled : kMixedPairSkippedOverlap;
+    }
     if (m_histManager && a.source == kFemtoCandResonance && !hMkkWide.empty()) {
       if (m_histManager->Get(hMkkWide.c_str())) {
         m_histManager->Fill(hMkkWide.c_str(), a.reso.invMass, kstar, centX);
@@ -2443,14 +2747,18 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
     typedef femto_mixing::PairCount PairCount;
     const std::deque<FemtoMixingEvent>& pool = poolIt->second;
     std::vector<femto_mixing::EventCandidateCounts> bufferedCounts;
-    bufferedCounts.reserve(pool.size());
-    for (size_t ie = 0; ie < pool.size(); ++ie) {
+    const size_t poolLimit = mLambdaLegacy ? std::min(pool.size(), static_cast<size_t>(mLambdaMaxMixEvents)) : pool.size();
+    bufferedCounts.reserve(poolLimit);
+    for (size_t ie = 0; ie < poolLimit; ++ie) {
       size_t nA = 0;
       size_t nB = 0;
-      FemtoCandidateStore::const_iterator mixA = pool[ie].candidates.find(ch.partA);
-      FemtoCandidateStore::const_iterator mixB = pool[ie].candidates.find(ch.partB);
-      if (mixA != pool[ie].candidates.end()) nA = mixA->second.size();
-      if (mixB != pool[ie].candidates.end()) nB = mixB->second.size();
+      // Original anaLambdaNuclearId mixes the most recent maxMixEvents.
+      // Preserve the pre-existing Phi/Kaon ordering.
+      const size_t sourceIndex = mLambdaLegacy ? pool.size() - 1 - ie : ie;
+      FemtoCandidateStore::const_iterator mixA = pool[sourceIndex].candidates.find(ch.partA);
+      FemtoCandidateStore::const_iterator mixB = pool[sourceIndex].candidates.find(ch.partB);
+      if (mixA != pool[sourceIndex].candidates.end()) nA = mixA->second.size();
+      if (mixB != pool[sourceIndex].candidates.end()) nB = mixB->second.size();
       bufferedCounts.push_back(femto_mixing::EventCandidateCounts(nA, nB));
     }
 
@@ -2476,7 +2784,8 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
         ++selectedEmptyBufferDirections;
         return;
       }
-      const FemtoMixingEvent& mixEvt = pool[ref.poolEventIndex];
+      const size_t sourceIndex = mLambdaLegacy ? pool.size() - 1 - ref.poolEventIndex : ref.poolEventIndex;
+      const FemtoMixingEvent& mixEvt = pool[sourceIndex];
       MixedPairFillResult result = kMixedPairSkippedOverlap;
       if (ref.reverse) {
         FemtoCandidateStore::const_iterator mixA = mixEvt.candidates.find(ch.partA);
@@ -2551,6 +2860,12 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
 
 void StFemtoMaker::StoreEventForMixing(Float_t vz, Int_t cent9, Double_t psi2) {
   if (m_eventCandidates.empty()) return;
+  if (mLambdaLegacy) {
+    bool any = false;
+    for (FemtoCandidateStore::const_iterator it = m_eventCandidates.begin(); it != m_eventCandidates.end(); ++it)
+      any = any || !it->second.empty();
+    if (!any) return;
+  }
   Int_t mixBin = GetMixingBin(vz, cent9, psi2);
   FemtoMixingEvent evt;
   evt.candidates = m_eventCandidates;

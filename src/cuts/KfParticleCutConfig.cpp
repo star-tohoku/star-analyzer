@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <stdexcept>
 
@@ -67,6 +68,8 @@ void KfParticleCutConfig::SetDefaults() {
   minVertexLineSignificance = -1.;
   minCosPointing = -2.;
   reconstructAntiLambda = kTRUE;
+  topoChi2NdfCut = 3.;
+  applyLambdaGeometryCuts = kTRUE;
 }
 
 Bool_t KfParticleCutConfig::LoadFromFile(const Char_t* filename) {
@@ -121,6 +124,8 @@ Bool_t KfParticleCutConfig::LoadFromFile(const Char_t* filename) {
       if (key == "finderChiPrimary2D") { finderChiPrimary2D = value.as<Double_t>(); continue; }
       if (key == "finderChi2Ndf2D") { finderChi2Ndf2D = value.as<Double_t>(); continue; }
       if (key == "finderLdL2D") { finderLdL2D = value.as<Double_t>(); continue; }
+      if (key == "topoChi2NdfCut") { topoChi2NdfCut = value.as<Double_t>(); continue; }
+      if (key == "applyLambdaGeometryCuts") { applyLambdaGeometryCuts = value.as<bool>(); continue; }
       if (key == "minMass") { minMass = value.as<Double_t>(); continue; }
       if (key == "maxMass") { maxMass = value.as<Double_t>(); continue; }
       if (key == "maxMassError") { maxMassError = value.as<Double_t>(); continue; }
@@ -186,6 +191,10 @@ Bool_t KfParticleCutConfig::Validate(std::ostream& errors) const {
   REQUIRE(std::isfinite(finderChiPrimary2D), "finderChiPrimary2D must be finite");
   REQUIRE(std::isfinite(finderChi2Ndf2D), "finderChi2Ndf2D must be finite");
   REQUIRE(std::isfinite(finderLdL2D), "finderLdL2D must be finite");
+  REQUIRE(std::isfinite(topoChi2NdfCut) && topoChi2NdfCut > 0. &&
+          topoChi2NdfCut <= std::numeric_limits<Float_t>::max() &&
+          static_cast<Float_t>(topoChi2NdfCut) > 0.f,
+          "topoChi2NdfCut must be finite and positive when converted to float");
   REQUIRE(std::isfinite(minMass), "minMass must be finite");
   REQUIRE(std::isfinite(maxMass), "maxMass must be finite");
   REQUIRE(std::isfinite(maxMassError), "maxMassError must be finite");
@@ -278,6 +287,8 @@ void KfParticleCutConfig::Dump(std::ostream& output) const {
   output << "finderChiPrimary2D: " << finderChiPrimary2D << "\n";
   output << "finderChi2Ndf2D: " << finderChi2Ndf2D << "\n";
   output << "finderLdL2D: " << finderLdL2D << "\n";
+  output << "topoChi2NdfCut: " << topoChi2NdfCut << "\n";
+  output << "applyLambdaGeometryCuts: " << applyLambdaGeometryCuts << "\n";
   output << "minMass: " << minMass << "\n";
   output << "maxMass: " << maxMass << "\n";
   // Keep explicit disabled-state values for backward-compatible output QA.

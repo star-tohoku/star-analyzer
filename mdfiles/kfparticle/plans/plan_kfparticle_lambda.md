@@ -16,10 +16,10 @@ creates a separate `StLambdaKFParticleMaker` rather than replacing it.
 
 References:
 
-- [`../PHILOSOPHY.md`](../PHILOSOPHY.md)
-- [`../docs/ai/AGENT_RULES.md`](../docs/ai/AGENT_RULES.md)
-- [`../docs/ai/skills/add-new-analysis.md`](../docs/ai/skills/add-new-analysis.md)
-- [`../docs/ai/skills/reuse-star-stroot.md`](../docs/ai/skills/reuse-star-stroot.md)
+- [`../../../PHILOSOPHY.md`](../../../PHILOSOPHY.md)
+- [`../../../docs/ai/AGENT_RULES.md`](../../../docs/ai/AGENT_RULES.md)
+- [`../../../docs/ai/skills/add-new-analysis.md`](../../../docs/ai/skills/add-new-analysis.md)
+- [`../../../docs/ai/skills/reuse-star-stroot.md`](../../../docs/ai/skills/reuse-star-stroot.md)
 - [`plan_kfparticle_pro_integration.md`](plan_kfparticle_pro_integration.md)
 
 ## Non-regression requirements

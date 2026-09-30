@@ -723,7 +723,9 @@ void KFParticleTopoReconstructor::SelectParticleCandidates()
     {
       KFParticle tmp = fParticles[iParticle];
       tmp.SetProductionVertex(GetPrimVertex(iPV));
-      if(tmp.Chi2()/tmp.NDF()<3.)
+      const float topoCut = abs(fParticles[iParticle].GetPDG()) == 3122
+          ? fLambdaTopoChi2NdfCut : 3.f;
+      if(tmp.Chi2()/tmp.NDF()<topoCut)
         isSecondary=0;
     }
     if(isSecondary)

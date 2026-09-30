@@ -98,6 +98,8 @@ class KFParticleTopoReconstructor{
     fKFParticleFinder->SetNThreads(fNThreads);
   }
   ~KFParticleTopoReconstructor();
+  void SetLambdaTopoChi2NdfCut(float cut) { fLambdaTopoChi2NdfCut = cut; }
+  float GetLambdaTopoChi2NdfCut() const { return fLambdaTopoChi2NdfCut; }
 
 #ifdef KFPWITHTRACKER
   /** Copies tracks from the standalone CA track finder to the vector KFParticleTopoReconstructor::fTracks
@@ -247,6 +249,7 @@ class KFParticleTopoReconstructor{
     fTracks = 0;
     
     fNThreads = a.fNThreads;
+    fLambdaTopoChi2NdfCut = a.fLambdaTopoChi2NdfCut;
     
     return *this;
   }
@@ -257,10 +260,11 @@ class KFParticleTopoReconstructor{
   ,fTime(0.),timer()
 #endif
   {
+    fLambdaTopoChi2NdfCut = a.fLambdaTopoChi2NdfCut;
   }
   
   /** Copy cuts from KF Particle Finder of another topology reconstructor object topo. */
-  void CopyCuts(const KFParticleTopoReconstructor* topo) { fKFParticleFinder->CopyCuts(topo->fKFParticleFinder); }
+  void CopyCuts(const KFParticleTopoReconstructor* topo) { fKFParticleFinder->CopyCuts(topo->fKFParticleFinder); fLambdaTopoChi2NdfCut = topo->fLambdaTopoChi2NdfCut; }
  private:
 
   void GetChiToPrimVertex(KFParticleSIMD* pv, const int nPV);
@@ -298,6 +302,8 @@ class KFParticleTopoReconstructor{
   Stopwatch timer; ///< Timer.
 #endif // USE_TIMERS
 
+  // Appended local study setting; the upstream default is unchanged.
+  float fLambdaTopoChi2NdfCut = 3.f;
 }__attribute__((aligned(sizeof(float32_v)))); // class KFParticleTopoReconstructor
 
 
