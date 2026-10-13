@@ -54,4 +54,8 @@ Python実行後のcache再生成は許容し、以後ignoreする。現在変更
 
 ## GitHub反映
 
-本報告作成時点ではcommit/push待ち。[cleanupだけのstage候補](task1_stage_candidates.txt)を親担当へ渡した。既存変更やTask 2/3を一括stageしない。通常commitで現行treeから除き、force push/履歴改変は行わない。
+GitHubへの通常commit/pushは完了した。cleanup commit は [a9d63d6](https://github.com/star-tohoku/star-analyzer/commit/a9d63d62cdf0601db720de5e6b01965a9fd5b171)（`a9d63d62cdf0601db720de5e6b01965a9fd5b171`）。`origin/main` のremote HEADがこのcommitと一致することを `git ls-remote` で確認した。
+
+開始時stagingが空であることを確認し、[stage候補](task1_stage_candidates.txt)の20パス（既追跡15件のuntrack/削除、`.gitignore`、Task 1記録4件）だけをcommitした。再生成したPythonキャッシュは `git rm --cached` で追跡を外し、現在のローカルファイルは保持する。既存変更やTask 2/3は含めていない。force push/履歴改変は行っていない。
+
+実行logは `Todo/20261013/task1_git_push.log` に保存する（ローカル記録、`.gitignore` の `*.log` 対象）。本節はcleanupのpush成功後に追補し、報告だけの通常commitで反映する。
