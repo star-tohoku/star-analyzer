@@ -3,6 +3,27 @@
 *.dylib
 *.pcm
 *.d
+# Regenerable Python / ROOT / TeX artifacts (not their source files)
+__pycache__/
+*.py[cod]
+/AutoDict_*.cxx
+/AutoDict_*.h
+*.aux
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bak
+
+# Accidental shell-output files and old private-workspace link
+/0.52
+/1
+/Get
+/Write
+/⚠️
+/tmp_Nuclear_id
 CMakeCache.txt
 CMakeFiles/
 # Makefile
