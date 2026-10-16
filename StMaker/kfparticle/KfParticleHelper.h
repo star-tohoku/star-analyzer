@@ -17,6 +17,11 @@ struct KfLambdaCandidate {
   Float_t decayLength, decayLengthError, decayLengthSignificance;
   Float_t vertexLineLength, vertexLineLengthError, vertexLineLengthSignificance;
   Float_t cosPointing;
+  // Daughter-to-PV deviation (KFParticle GetDeviationFromVertex) and distance
+  // (KFParticle GetDistanceFromVertex), computed for every profile. Not to be
+  // confused with the Imp5-only protonDcaToPv/pionDcaToPv below.
+  Float_t protonChi2Prim, pionChi2Prim;
+  Float_t protonDistanceToPv, pionDistanceToPv;
   Float_t protonPidPull, pionPidPull;
   Float_t protonTofPull, pionTofPull, protonTofM2, pionTofM2;
   // Imp5-only diagnostics, zero/false for the default reference profile.
@@ -25,6 +30,34 @@ struct KfLambdaCandidate {
   Bool_t imp5PathValid;
   Bool_t protonHasTof, pionHasTof;
   Int_t protonId, pionId, protonIndex, pionIndex, pdg;
+};
+
+// Cascade Ξ → Λπ. Kinematics follow the parent Ξ; IDs recover Λ daughters + bachelor.
+struct KfXiCandidate {
+  KfXiCandidate();
+  Float_t x, y, z, px, py, pz;
+  Float_t mass, massError, chi2Ndf, topoChi2Ndf;
+  // daughterDistance = DCA(Λ, bachelor); distanceToPv = Ξ DCA to PV
+  Float_t daughterDistance, distanceToPv;
+  Float_t decayLength, decayLengthError, decayLengthSignificance;
+  Float_t vertexLineLength, vertexLineLengthError, vertexLineLengthSignificance;
+  Float_t cosPointing;
+  Float_t lambdaMass, lambdaMassError;
+  Float_t lambdaDecayLength, lambdaDecayLengthSignificance;
+  Float_t lambdaDaughterDistance;  // DCA(p, π) inside Λ
+  // Daughter-to-PV deviation (KFParticle GetDeviationFromVertex) and distance
+  // (KFParticle GetDistanceFromVertex) for each of the three final-state tracks, for a
+  // fake-Lambda / fake-Xi veto analogous to K0short's daughter chi2prim/DCA cuts.
+  // Defaults are -1 (not computed / daughter recovery unavailable).
+  Float_t protonChi2Prim, pionChi2Prim, bachelorChi2Prim;
+  Float_t protonDistanceToPv, pionDistanceToPv, bachelorDistanceToPv;
+  Float_t protonPidPull, pionPidPull, bachelorPidPull;
+  Float_t protonTofPull, pionTofPull, bachelorTofPull;
+  Float_t protonTofM2, pionTofM2, bachelorTofM2;
+  Bool_t protonHasTof, pionHasTof, bachelorHasTof;
+  Int_t protonId, pionId, bachelorId;
+  Int_t protonIndex, pionIndex, bachelorIndex;
+  Int_t lambdaPdg, pdg;
 };
 
 class KfParticleHelper {

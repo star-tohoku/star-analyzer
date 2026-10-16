@@ -28,12 +28,34 @@ KfLambdaCandidate::KfLambdaCandidate()
       decayLengthError(0.f), decayLengthSignificance(0.f),
       vertexLineLength(0.f), vertexLineLengthError(0.f),
       vertexLineLengthSignificance(0.f), cosPointing(-1.f),
+      protonChi2Prim(0.f), pionChi2Prim(0.f),
+      protonDistanceToPv(0.f), pionDistanceToPv(0.f),
       protonPidPull(0.f), pionPidPull(0.f), protonTofPull(0.f),
       pionTofPull(0.f), protonTofM2(0.f), pionTofM2(0.f),
       protonDcaToPv(0.), pionDcaToPv(0.),
       protonHelixPathLength(0.), pionHelixPathLength(0.), imp5PathValid(kFALSE),
       protonHasTof(kFALSE), pionHasTof(kFALSE), protonId(-1), pionId(-1),
       protonIndex(-1), pionIndex(-1), pdg(0) {}
+
+KfXiCandidate::KfXiCandidate()
+    : x(0.f), y(0.f), z(0.f), px(0.f), py(0.f), pz(0.f),
+      mass(0.f), massError(0.f), chi2Ndf(0.f), topoChi2Ndf(0.f),
+      daughterDistance(-1.f), distanceToPv(0.f), decayLength(0.f),
+      decayLengthError(0.f), decayLengthSignificance(0.f),
+      vertexLineLength(0.f), vertexLineLengthError(0.f),
+      vertexLineLengthSignificance(0.f), cosPointing(-1.f),
+      lambdaMass(0.f), lambdaMassError(-1.f),
+      lambdaDecayLength(-1.f), lambdaDecayLengthSignificance(-1.f),
+      lambdaDaughterDistance(-1.f),
+      protonChi2Prim(-1.f), pionChi2Prim(-1.f), bachelorChi2Prim(-1.f),
+      protonDistanceToPv(-1.f), pionDistanceToPv(-1.f), bachelorDistanceToPv(-1.f),
+      protonPidPull(0.f), pionPidPull(0.f), bachelorPidPull(0.f),
+      protonTofPull(0.f), pionTofPull(0.f), bachelorTofPull(0.f),
+      protonTofM2(0.f), pionTofM2(0.f), bachelorTofM2(0.f),
+      protonHasTof(kFALSE), pionHasTof(kFALSE), bachelorHasTof(kFALSE),
+      protonId(-1), pionId(-1), bachelorId(-1),
+      protonIndex(-1), pionIndex(-1), bachelorIndex(-1),
+      lambdaPdg(0), pdg(0) {}
 
 KfParticleHelper::KfParticleHelper(const KfParticleCutConfig& cuts) : mCuts(cuts) {}
 

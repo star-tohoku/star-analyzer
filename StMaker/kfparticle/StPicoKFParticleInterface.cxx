@@ -60,8 +60,11 @@ KfParticleEventStats::KfParticleEventStats()
     : rawTracks(0), qualityTracks(0), covarianceTracks(0), pidTracks(0),
       pidHypotheses(0), protonHypotheses(0), pionHypotheses(0),
       unknownHypotheses(0), primaryHypotheses(0), finderParticles(0),
-      lambdaParticles(0), validCandidates(0), invalidCandidates(0),
-      invalidCovariance(0), invalidPid(0), invalidTrackIds(0), tofTracks(0) {}
+      lambdaParticles(0), validCandidates(0), xiParticles(0),
+      validXiCandidates(0), invalidXiCandidates(0), xiDaughterRecovered(0),
+      k0Particles(0), validK0Candidates(0), invalidK0Candidates(0),
+      invalidCandidates(0), invalidCovariance(0), invalidPid(0),
+      invalidTrackIds(0), tofTracks(0) {}
 
 class StPicoKFParticleInterface::Impl {
 public:
@@ -84,20 +87,35 @@ public:
     finder->SetChi2Cut2D(cuts.finderChi2Ndf2D);
     finder->SetLdLCut2D(cuts.finderLdL2D);
     finder->SetApplyLambdaGeometryCuts(cuts.applyLambdaGeometryCuts);
-    finder->AddDecayToReconstructionList(3122);
-    if (cuts.reconstructAntiLambda) finder->AddDecayToReconstructionList(-3122);
+    finder->SetLdLCutXiOmega(cuts.finderLdLXiOmega);
+    finder->SetChi2TopoCutXiOmega(cuts.finderChi2TopoXiOmega);
+    finder->SetChi2CutXiOmega(cuts.finderChi2XiOmega);
+    // Whitelist: empty list reconstructs everything; any entry restricts.
+    // Ξ requires Λ in the Finder list. K0S is PDG 310 only (self-conjugate).
+    if (cuts.reconstructLambda) finder->AddDecayToReconstructionList(3122);
+    if (cuts.reconstructAntiLambda || cuts.reconstructAntiXi)
+      finder->AddDecayToReconstructionList(-3122);
+    if (cuts.reconstructXi) finder->AddDecayToReconstructionList(3312);
+    if (cuts.reconstructAntiXi) finder->AddDecayToReconstructionList(-3312);
+    if (cuts.reconstructK0short) finder->AddDecayToReconstructionList(310);
   }
 
   void Clear() {
     stats = KfParticleEventStats();
     candidates.clear();
+    xiCandidates.clear();
+    k0Candidates.clear();
     error.clear();
     trackPid.clear();
     topo.Clear();
+    rawTrackPt.clear();
+    rawTrackEta.clear();
   }
 
   bool Fail(const std::string& reason) {
     candidates.clear();
+    xiCandidates.clear();
+    k0Candidates.clear();
     error = reason;
     return false;
   }
@@ -255,6 +273,10 @@ public:
       else return false;
     }
     if (!proton || !pion) return false;
+    // A single-daughter wrapper particle's DaughterIds() can be empty (same condition
+    // documented for the Xi bachelor path, see ResolveXiDaughters()); guard identically
+    // rather than indexing an empty vector.
+    if (proton->DaughterIds().empty() || pion->DaughterIds().empty()) return false;
     out.protonId = proton->DaughterIds()[0];
     out.pionId = pion->DaughterIds()[0];
     const std::map<int, TrackPid>::const_iterator protonInput = trackPid.find(out.protonId);
@@ -286,6 +308,10 @@ public:
     if (raw.GetMass(out.mass, out.massError) != 0 || out.massError <= 0.f) return false;
     out.daughterDistance = proton->GetDistanceFromParticle(*pion);
     out.distanceToPv = raw.GetDistanceFromVertex(pv);
+    out.protonChi2Prim = proton->GetDeviationFromVertex(pv);
+    out.pionChi2Prim = pion->GetDeviationFromVertex(pv);
+    out.protonDistanceToPv = proton->GetDistanceFromVertex(pv);
+    out.pionDistanceToPv = pion->GetDistanceFromVertex(pv);
     raw.GetDistanceToVertexLine(pv, out.vertexLineLength, out.vertexLineLengthError);
     if (out.vertexLineLengthError <= 0.f) return false;
     out.vertexLineLengthSignificance = out.vertexLineLength / out.vertexLineLengthError;
@@ -307,7 +333,320 @@ public:
     const float values[] = {out.mass, out.massError, out.chi2Ndf, out.topoChi2Ndf,
       out.daughterDistance, out.distanceToPv, out.vertexLineLength,
       out.vertexLineLengthError, out.vertexLineLengthSignificance, out.decayLength,
-      out.decayLengthError, out.decayLengthSignificance, out.cosPointing};
+      out.decayLengthError, out.decayLengthSignificance, out.cosPointing,
+      out.protonChi2Prim, out.pionChi2Prim, out.protonDistanceToPv, out.pionDistanceToPv};
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+      if (!std::isfinite(values[i])) return false;
+    return true;
+  }
+
+  // K0S → π+ π-. Reuses KfLambdaCandidate: proton* = π+, pion* = π-.
+  bool K0shortCandidate(const kfp::KFParticle& raw,
+                        const std::vector<kfp::KFParticle>& particles,
+                        const kfp::KFVertex& pv, const TVector3& picoPv,
+                        KfLambdaCandidate& out) {
+    if (raw.NDaughters() != 2 || !FiniteParticle(raw) || raw.GetNDF() <= 0 ||
+        raw.GetChi2() < 0.f || raw.GetPDG() != 310) return false;
+    const kfp::KFParticle* pionPlus = 0;
+    const kfp::KFParticle* pionMinus = 0;
+    for (int daughter = 0; daughter < 2; ++daughter) {
+      const int particleIndex = raw.DaughterIds()[daughter];
+      if (particleIndex < 0 || static_cast<size_t>(particleIndex) >= particles.size())
+        return false;
+      const kfp::KFParticle& particle = particles[particleIndex];
+      if (particle.NDaughters() != 1) return false;
+      if (particle.GetPDG() == 211 && particle.GetQ() > 0)
+        pionPlus = &particle;
+      else if (particle.GetPDG() == -211 && particle.GetQ() < 0)
+        pionMinus = &particle;
+      else return false;
+    }
+    if (!pionPlus || !pionMinus) return false;
+    // See the identical guard/comment in Candidate() above.
+    if (pionPlus->DaughterIds().empty() || pionMinus->DaughterIds().empty()) return false;
+    out.protonId = pionPlus->DaughterIds()[0];
+    out.pionId = pionMinus->DaughterIds()[0];
+    const std::map<int, TrackPid>::const_iterator plusInput = trackPid.find(out.protonId);
+    const std::map<int, TrackPid>::const_iterator minusInput = trackPid.find(out.pionId);
+    if (out.protonId == out.pionId || plusInput == trackPid.end() ||
+        minusInput == trackPid.end()) return false;
+    const TrackPid& plusPid = plusInput->second;
+    const TrackPid& minusPid = minusInput->second;
+    out.protonIndex = plusPid.index;
+    out.pionIndex = minusPid.index;
+    if (out.protonIndex == out.pionIndex) return false;
+    out.protonPidPull = plusPid.tpc[0];
+    out.pionPidPull = minusPid.tpc[0];
+    out.protonHasTof = plusPid.hasTof;
+    out.pionHasTof = minusPid.hasTof;
+    out.protonTofPull = plusPid.tof[0];
+    out.pionTofPull = minusPid.tof[0];
+    out.protonTofM2 = plusPid.m2;
+    out.pionTofM2 = minusPid.m2;
+    out.pdg = raw.GetPDG();
+    out.x = raw.GetX(); out.y = raw.GetY(); out.z = raw.GetZ();
+    out.px = raw.GetPx(); out.py = raw.GetPy(); out.pz = raw.GetPz();
+    out.chi2Ndf = raw.GetChi2() / raw.GetNDF();
+    if (raw.GetMass(out.mass, out.massError) != 0 || out.massError <= 0.f) return false;
+    out.daughterDistance = pionPlus->GetDistanceFromParticle(*pionMinus);
+    out.distanceToPv = raw.GetDistanceFromVertex(pv);
+    out.protonChi2Prim = pionPlus->GetDeviationFromVertex(pv);
+    out.pionChi2Prim = pionMinus->GetDeviationFromVertex(pv);
+    out.protonDistanceToPv = pionPlus->GetDistanceFromVertex(pv);
+    out.pionDistanceToPv = pionMinus->GetDistanceFromVertex(pv);
+    raw.GetDistanceToVertexLine(pv, out.vertexLineLength, out.vertexLineLengthError);
+    if (out.vertexLineLengthError <= 0.f) return false;
+    out.vertexLineLengthSignificance = out.vertexLineLength / out.vertexLineLengthError;
+    kfp::KFParticle topological = raw;
+    topological.SetProductionVertex(pv);
+    if (!FiniteParticle(topological) || topological.GetNDF() <= 0 ||
+        topological.GetChi2() < 0.f) return false;
+    out.topoChi2Ndf = topological.GetChi2() / topological.GetNDF();
+    if (topological.GetDecayLength(out.decayLength, out.decayLengthError) != 0 ||
+        out.decayLengthError <= 0.f) return false;
+    out.decayLengthSignificance = out.decayLength / out.decayLengthError;
+    const TVector3 flight(out.x - picoPv.X(), out.y - picoPv.Y(), out.z - picoPv.Z());
+    const TVector3 momentum(out.px, out.py, out.pz);
+    const double denominator = flight.Mag() * momentum.Mag();
+    if (!std::isfinite(denominator) || denominator <= 0.) return false;
+    out.cosPointing = std::max(-1., std::min(1., flight.Dot(momentum) / denominator));
+    const float values[] = {out.mass, out.massError, out.chi2Ndf, out.topoChi2Ndf,
+      out.daughterDistance, out.distanceToPv, out.vertexLineLength,
+      out.vertexLineLengthError, out.vertexLineLengthSignificance, out.decayLength,
+      out.decayLengthError, out.decayLengthSignificance, out.cosPointing,
+      out.protonChi2Prim, out.pionChi2Prim, out.protonDistanceToPv, out.pionDistanceToPv};
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
+      if (!std::isfinite(values[i])) return false;
+    return true;
+  }
+
+  bool IsBachelorPion(const kfp::KFParticle& part, int sign) const {
+    return part.NDaughters() == 1 && part.GetPDG() == -211 * sign &&
+           part.GetQ() == -sign;
+  }
+
+  bool IsLambdaParticle(const kfp::KFParticle& part, int sign) const {
+    return part.NDaughters() == 2 && part.GetPDG() == 3122 * sign;
+  }
+
+  // Prefer Finder convention: both DaughterIds are particles[] indices (as for Λ).
+  // Fallback: one slot is Λ index, the other is bachelor track id.
+  bool ResolveXiDaughters(const kfp::KFParticle& raw,
+                          const std::vector<kfp::KFParticle>& particles, int sign,
+                          const kfp::KFParticle*& lambda,
+                          const kfp::KFParticle*& bachelorPart,
+                          int& bachelorTrackId) const {
+    lambda = 0;
+    bachelorPart = 0;
+    bachelorTrackId = -1;
+    if (raw.NDaughters() != 2) return false;
+    const int id0 = raw.DaughterIds()[0];
+    const int id1 = raw.DaughterIds()[1];
+    const bool id0Ok = id0 >= 0 && static_cast<size_t>(id0) < particles.size();
+    const bool id1Ok = id1 >= 0 && static_cast<size_t>(id1) < particles.size();
+
+    // Primary: both DaughterIds are particles[] indices (Construct uses Daughter.Id()).
+    if (id0Ok && id1Ok) {
+      const kfp::KFParticle& p0 = particles[id0];
+      const kfp::KFParticle& p1 = particles[id1];
+      // Accept Λ by PDG (±3122) or by 2-daughter topology if PDG was remapped.
+      const bool lam0 = (std::abs(p0.GetPDG()) == 3122 && p0.NDaughters() == 2) ||
+                        (p0.NDaughters() == 2 && p1.NDaughters() == 1 &&
+                         std::abs(p0.GetPDG()) != 211 && std::abs(p0.GetPDG()) != 321);
+      const bool lam1 = (std::abs(p1.GetPDG()) == 3122 && p1.NDaughters() == 2) ||
+                        (p1.NDaughters() == 2 && p0.NDaughters() == 1 &&
+                         std::abs(p1.GetPDG()) != 211 && std::abs(p1.GetPDG()) != 321);
+      const bool bach0 = p0.NDaughters() == 1;
+      const bool bach1 = p1.NDaughters() == 1;
+      if (lam0 && bach1) {
+        lambda = &p0;
+        bachelorPart = &p1;
+      } else if (lam1 && bach0) {
+        lambda = &p1;
+        bachelorPart = &p0;
+      } else if (bach0 && bach1) {
+        // Both look like tracks: one id may already be a track id — try PDG.
+        if (IsBachelorPion(p0, sign) && IsLambdaParticle(p1, sign)) {
+          bachelorPart = &p0;
+          lambda = &p1;
+        } else if (IsBachelorPion(p1, sign) && IsLambdaParticle(p0, sign)) {
+          bachelorPart = &p1;
+          lambda = &p0;
+        }
+      }
+      if (lambda && bachelorPart) {
+        bachelorTrackId = bachelorPart->DaughterIds().empty()
+                              ? -1
+                              : bachelorPart->DaughterIds()[0];
+        // If bachelor Id itself is the track (NDaughters==1 but DaughterIds empty),
+        // fall back to particle Id as track key used in some snapshots.
+        if (bachelorTrackId < 0) bachelorTrackId = bachelorPart->Id();
+        return bachelorTrackId >= 0;
+      }
+    }
+
+    // Legacy fallback: Λ via PDG at a particles[] index; other id = track id.
+    int lambdaIndex = -1;
+    int trackId = -1;
+    if (id1Ok && (IsLambdaParticle(particles[id1], sign) ||
+                  (particles[id1].NDaughters() == 2 &&
+                   std::abs(particles[id1].GetPDG()) == 3122))) {
+      lambdaIndex = id1;
+      trackId = id0;
+    } else if (id0Ok && (IsLambdaParticle(particles[id0], sign) ||
+                         (particles[id0].NDaughters() == 2 &&
+                          std::abs(particles[id0].GetPDG()) == 3122))) {
+      lambdaIndex = id0;
+      trackId = id1;
+    }
+    if (lambdaIndex < 0 || trackId < 0) return false;
+    lambda = &particles[lambdaIndex];
+    for (size_t ip = 0; ip < particles.size(); ++ip) {
+      const kfp::KFParticle& part = particles[ip];
+      if (part.NDaughters() == 1 && !part.DaughterIds().empty() &&
+          part.DaughterIds()[0] == trackId) {
+        bachelorPart = &part;
+        bachelorTrackId = trackId;
+        return true;
+      }
+      // Also match particle Id == trackId (Id set to Particles.size at creation).
+      if (part.NDaughters() == 1 && part.Id() == trackId) {
+        bachelorPart = &part;
+        bachelorTrackId =
+            part.DaughterIds().empty() ? trackId : part.DaughterIds()[0];
+        return true;
+      }
+    }
+    // Last resort: bachelor KFParticle may not be in the vector; DCA(Λ,bach)
+    // needs a particle. Cannot recover without it.
+    return false;
+  }
+
+  bool XiCandidate(const kfp::KFParticle& raw,
+                   const std::vector<kfp::KFParticle>& particles,
+                   const kfp::KFVertex& pv, const TVector3& picoPv,
+                   KfXiCandidate& out, StPicoDst* dst, bool& daughtersRecovered) {
+    // Parent kinematics always; optional daughter recovery fills DCA / Λ L.
+    daughtersRecovered = false;
+    if (!FiniteParticle(raw) || raw.GetNDF() <= 0 || raw.GetChi2() < 0.f) return false;
+    const int sign = raw.GetPDG() > 0 ? 1 : -1;
+    out = KfXiCandidate();
+    out.pdg = raw.GetPDG();
+    out.lambdaPdg = 3122 * sign;
+    out.x = raw.GetX(); out.y = raw.GetY(); out.z = raw.GetZ();
+    out.px = raw.GetPx(); out.py = raw.GetPy(); out.pz = raw.GetPz();
+    out.chi2Ndf = raw.GetChi2() / raw.GetNDF();
+    if (raw.GetMass(out.mass, out.massError) != 0 || out.massError <= 0.f) return false;
+    out.distanceToPv = raw.GetDistanceFromVertex(pv);
+    raw.GetDistanceToVertexLine(pv, out.vertexLineLength, out.vertexLineLengthError);
+    if (out.vertexLineLengthError <= 0.f) return false;
+    out.vertexLineLengthSignificance = out.vertexLineLength / out.vertexLineLengthError;
+    kfp::KFParticle topological = raw;
+    topological.SetProductionVertex(pv);
+    if (!FiniteParticle(topological) || topological.GetNDF() <= 0 ||
+        topological.GetChi2() < 0.f) return false;
+    out.topoChi2Ndf = topological.GetChi2() / topological.GetNDF();
+    if (topological.GetDecayLength(out.decayLength, out.decayLengthError) != 0 ||
+        out.decayLengthError <= 0.f) return false;
+    out.decayLengthSignificance = out.decayLength / out.decayLengthError;
+    const TVector3 flight(out.x - picoPv.X(), out.y - picoPv.Y(), out.z - picoPv.Z());
+    const TVector3 momentum(out.px, out.py, out.pz);
+    const double denominator = flight.Mag() * momentum.Mag();
+    if (!std::isfinite(denominator) || denominator <= 0.) return false;
+    out.cosPointing = std::max(-1., std::min(1., flight.Dot(momentum) / denominator));
+    out.daughterDistance = -1.f;
+    out.lambdaMass = 0.f;
+    out.lambdaMassError = -1.f;
+    out.lambdaDecayLength = -1.f;
+    out.lambdaDecayLengthSignificance = -1.f;
+    out.lambdaDaughterDistance = -1.f;
+
+    if (dst) {
+      const kfp::KFParticle* lambda = 0;
+      const kfp::KFParticle* bachelorPart = 0;
+      int bachelorTrackId = -1;
+      if (ResolveXiDaughters(raw, particles, sign, lambda, bachelorPart, bachelorTrackId) &&
+          lambda && bachelorPart && FiniteParticle(*bachelorPart)) {
+        float unused = 0.f;
+        if (lambda->GetMass(out.lambdaMass, unused) == 0) {
+          out.lambdaMassError = unused;
+        }
+        kfp::KFParticle lambdaTopo = *lambda;
+        lambdaTopo.SetProductionVertex(pv);
+        float lambdaLErr = 0.f;
+        if (FiniteParticle(lambdaTopo) && lambdaTopo.GetNDF() > 0 &&
+            lambdaTopo.GetChi2() >= 0.f &&
+            lambdaTopo.GetDecayLength(out.lambdaDecayLength, lambdaLErr) == 0 &&
+            lambdaLErr > 0.f) {
+          out.lambdaDecayLengthSignificance = out.lambdaDecayLength / lambdaLErr;
+        } else {
+          out.lambdaDecayLength = -1.f;
+          out.lambdaDecayLengthSignificance = -1.f;
+        }
+        out.daughterDistance = lambda->GetDistanceFromParticle(*bachelorPart);
+        if (!std::isfinite(out.daughterDistance)) out.daughterDistance = -1.f;
+
+        out.bachelorChi2Prim = bachelorPart->GetDeviationFromVertex(pv);
+        out.bachelorDistanceToPv = bachelorPart->GetDistanceFromVertex(pv);
+        if (!std::isfinite(out.bachelorChi2Prim)) out.bachelorChi2Prim = -1.f;
+        if (!std::isfinite(out.bachelorDistanceToPv)) out.bachelorDistanceToPv = -1.f;
+
+        const kfp::KFParticle* proton = 0;
+        const kfp::KFParticle* pion = 0;
+        if (lambda->NDaughters() == 2) {
+          for (int daughter = 0; daughter < 2; ++daughter) {
+            const int particleIndex = lambda->DaughterIds()[daughter];
+            if (particleIndex < 0 || static_cast<size_t>(particleIndex) >= particles.size())
+              continue;
+            const kfp::KFParticle& particle = particles[particleIndex];
+            if (particle.NDaughters() != 1) continue;
+            if (particle.GetPDG() == 2212 * sign && particle.GetQ() == sign)
+              proton = &particle;
+            else if (particle.GetPDG() == -211 * sign && particle.GetQ() == -sign)
+              pion = &particle;
+          }
+        }
+        if (proton && pion) {
+          out.lambdaDaughterDistance = proton->GetDistanceFromParticle(*pion);
+          if (!std::isfinite(out.lambdaDaughterDistance)) out.lambdaDaughterDistance = -1.f;
+          out.protonChi2Prim = proton->GetDeviationFromVertex(pv);
+          out.pionChi2Prim = pion->GetDeviationFromVertex(pv);
+          out.protonDistanceToPv = proton->GetDistanceFromVertex(pv);
+          out.pionDistanceToPv = pion->GetDistanceFromVertex(pv);
+          if (!std::isfinite(out.protonChi2Prim)) out.protonChi2Prim = -1.f;
+          if (!std::isfinite(out.pionChi2Prim)) out.pionChi2Prim = -1.f;
+          if (!std::isfinite(out.protonDistanceToPv)) out.protonDistanceToPv = -1.f;
+          if (!std::isfinite(out.pionDistanceToPv)) out.pionDistanceToPv = -1.f;
+          const std::map<int, TrackPid>::const_iterator bachelorInput =
+              trackPid.find(bachelorTrackId);
+          if (bachelorInput != trackPid.end() &&
+              !proton->DaughterIds().empty() && !pion->DaughterIds().empty()) {
+            out.protonId = proton->DaughterIds()[0];
+            out.pionId = pion->DaughterIds()[0];
+            out.bachelorId = bachelorTrackId;
+            const std::map<int, TrackPid>::const_iterator protonInput =
+                trackPid.find(out.protonId);
+            const std::map<int, TrackPid>::const_iterator pionInput =
+                trackPid.find(out.pionId);
+            if (protonInput != trackPid.end() && pionInput != trackPid.end()) {
+              out.protonIndex = protonInput->second.index;
+              out.pionIndex = pionInput->second.index;
+              out.bachelorIndex = bachelorInput->second.index;
+              out.protonPidPull = protonInput->second.tpc[2];
+              out.pionPidPull = pionInput->second.tpc[0];
+              out.bachelorPidPull = bachelorInput->second.tpc[0];
+            }
+          }
+        }
+        daughtersRecovered =
+            out.daughterDistance >= 0.f && out.lambdaDaughterDistance >= 0.f;
+      }
+    }
+
+    const float values[] = {out.mass, out.massError, out.chi2Ndf, out.topoChi2Ndf,
+      out.distanceToPv, out.vertexLineLength, out.vertexLineLengthError,
+      out.vertexLineLengthSignificance, out.decayLength, out.decayLengthError,
+      out.decayLengthSignificance, out.cosPointing};
     for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i)
       if (!std::isfinite(values[i])) return false;
     return true;
@@ -358,6 +697,15 @@ public:
       if (!originalIds.insert(std::make_pair(track->id(), index)).second) {
         ++stats.invalidTrackIds;
         return Fail("Duplicate StPicoTrack::id(): cannot unambiguously recover daughters");
+      }
+      // Diagnostic only: raw kinematics before the Quality() cut (minPt/maxPt/
+      // minEta/maxEta), see the Impl members' comment above.
+      {
+        const TVector3 rawP = track->gMom();
+        if (FiniteVector(rawP) && rawP.Mag2() > 0. && std::isfinite(rawP.Eta())) {
+          rawTrackPt.push_back(static_cast<Float_t>(rawP.Pt()));
+          rawTrackEta.push_back(static_cast<Float_t>(rawP.Eta()));
+        }
       }
       if (!Quality(*track)) continue;
       const int nHft = static_cast<int>(track->hasPxl1Hit()) +
@@ -417,16 +765,39 @@ public:
     const std::vector<kfp::KFParticle>& particles = topo.GetParticles();
     stats.finderParticles = particles.size();
     for (size_t i = 0; i < particles.size(); ++i) {
-      if (std::abs(particles[i].GetPDG()) != 3122) continue;
-      ++stats.lambdaParticles;
-      KfLambdaCandidate candidate;
-      if (!Candidate(particles[i], particles, pv, position, candidate, dst)) {
-        ++stats.invalidCandidates;
-        continue;
+      const int pdg = particles[i].GetPDG();
+      if (std::abs(pdg) == 3122) {
+        ++stats.lambdaParticles;
+        KfLambdaCandidate candidate;
+        if (!Candidate(particles[i], particles, pv, position, candidate, dst)) {
+          ++stats.invalidCandidates;
+          continue;
+        }
+        candidates.push_back(candidate);
+      } else if (std::abs(pdg) == 3312) {
+        ++stats.xiParticles;
+        KfXiCandidate candidate;
+        bool daughtersRecovered = false;
+        if (!XiCandidate(particles[i], particles, pv, position, candidate, dst,
+                         daughtersRecovered)) {
+          ++stats.invalidXiCandidates;
+          continue;
+        }
+        if (daughtersRecovered) ++stats.xiDaughterRecovered;
+        xiCandidates.push_back(candidate);
+      } else if (pdg == 310) {
+        ++stats.k0Particles;
+        KfLambdaCandidate candidate;
+        if (!K0shortCandidate(particles[i], particles, pv, position, candidate)) {
+          ++stats.invalidK0Candidates;
+          continue;
+        }
+        k0Candidates.push_back(candidate);
       }
-      candidates.push_back(candidate);
     }
     stats.validCandidates = candidates.size();
+    stats.validXiCandidates = xiCandidates.size();
+    stats.validK0Candidates = k0Candidates.size();
     return true;
   }
 
@@ -435,9 +806,16 @@ public:
   kfp::KFParticleTopoReconstructor topo;
   KfParticleEventStats stats;
   std::vector<KfLambdaCandidate> candidates;
+  std::vector<KfXiCandidate> xiCandidates;
+  std::vector<KfLambdaCandidate> k0Candidates;
   std::map<int, TrackPid> trackPid;
   std::string error;
   std::string configurationError;
+  // Diagnostic only: raw StPicoTrack gPt/gEta filled before the Quality()
+  // (minPt/maxPt/minEta/maxEta) cut so Makers can histogram what Stage A rejects.
+  // No selection change; filled regardless of Quality() outcome.
+  std::vector<Float_t> rawTrackPt;
+  std::vector<Float_t> rawTrackEta;
 };
 
 StPicoKFParticleInterface::StPicoKFParticleInterface(const KfParticleCutConfig& cuts)
@@ -448,13 +826,22 @@ void StPicoKFParticleInterface::Clear() { mImpl->Clear(); }
 const std::vector<KfLambdaCandidate>& StPicoKFParticleInterface::Candidates() const {
   return mImpl->candidates;
 }
+const std::vector<KfXiCandidate>& StPicoKFParticleInterface::XiCandidates() const {
+  return mImpl->xiCandidates;
+}
+const std::vector<KfLambdaCandidate>& StPicoKFParticleInterface::K0shortCandidates() const {
+  return mImpl->k0Candidates;
+}
 const KfParticleEventStats& StPicoKFParticleInterface::Stats() const { return mImpl->stats; }
 const std::string& StPicoKFParticleInterface::LastError() const { return mImpl->error; }
+const std::vector<Float_t>& StPicoKFParticleInterface::RawTrackPt() const { return mImpl->rawTrackPt; }
+const std::vector<Float_t>& StPicoKFParticleInterface::RawTrackEta() const { return mImpl->rawTrackEta; }
 
 const char* StPicoKFParticleInterface::BackendDescription() {
   return "finder_topo; core=.DEV2 sha256=" STAR_ANALYZER_KFP_SOURCE_ID
       "; snapshot=" STAR_ANALYZER_KFP_SNAPSHOT_DATE
       "; namespace=star_analyzer_kfp; __ROOT__,KFParticleStandalone,HomogeneousField,SSE4.1"
       "; Pico source=xwu2/KFTree_lambda/StKFParticleInterface"
-      "; local=lambda-study-controls-v1; Lambda PV chi2/NDF and Finder geometry use effective config; parent mass unconstrained";
+      "; local=lambda-study-controls-v1; Lambda PV chi2/NDF and Finder geometry use effective config"
+      "; Lambda, optional Xi (+/-3312), optional K0S (310); parent mass unconstrained";
 }
