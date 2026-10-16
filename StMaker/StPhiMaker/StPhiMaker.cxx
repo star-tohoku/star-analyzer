@@ -155,13 +155,11 @@ Int_t StPhiMaker::Make() {
   CentralityRejectReason centReason = kCentralityOk;
   static Int_t s_centDebugCount = 0;
 
-  if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckBadRun(runId, centReason)) {
-      if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
-        std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
-      }
-      return kStOK;
+  if (m_centrality && !m_centrality->CheckBadRun(runId, centReason)) {
+    if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
+      std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
     }
+    return kStOK;
   }
 
   // Event-level fills
@@ -201,14 +199,14 @@ Int_t StPhiMaker::Make() {
     m_histManager->Fill("hRawMult", (Double_t)rawMult);
   }
 
-  if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) {
-      if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
-        std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
-      }
-      return kStOK;
+  if (m_centrality && !m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) {
+    if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
+      std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;
     }
+    return kStOK;
+  }
 
+  if (m_centrality && m_centrality->IsEnabled()) {
     if (!m_centrality->ComputeBins(event, rawMult, vz, m_cent9, m_cent16, m_refMultCorr, m_centWeight, centReason)) {
       if (kDebugPhiMaker && s_centDebugCount++ < kDebugPhiMakerMaxEvents) {
         std::cout << "[StPhiMaker] event=" << mEventCounter << " CENT: " << CentralityHelper::RejectReasonString(centReason) << std::endl;

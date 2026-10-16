@@ -480,9 +480,7 @@ Int_t StFemtoMaker::Make() {
   }
 
   CentralityRejectReason centReason = kCentralityOk;
-  if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckBadRun(runId, centReason)) return kStOK;
-  }
+  if (m_centrality && !m_centrality->CheckBadRun(runId, centReason)) return kStOK;
 
   if (!PassEventCuts(pVtx.Z(), vr, refMult, vzVpd)) return kStOK;
 
@@ -501,8 +499,8 @@ Int_t StFemtoMaker::Make() {
     m_histManager->Fill("hRawMult", (Double_t)rawMult);
   }
 
+  if (m_centrality && !m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) return kStOK;
   if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) return kStOK;
     if (!m_centrality->ComputeBins(event, rawMult, vz, m_cent9, m_cent16, m_refMultCorr, m_centWeight, centReason)) {
       return kStOK;
     }

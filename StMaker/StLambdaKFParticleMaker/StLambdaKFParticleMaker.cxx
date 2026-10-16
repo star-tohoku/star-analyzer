@@ -253,8 +253,7 @@ Int_t StLambdaKFParticleMaker::Make() {
   }
 
   CentralityRejectReason reason = kCentralityOk;
-  if (mCentrality && mCentrality->IsEnabled() &&
-      !mCentrality->CheckBadRun(runId, reason)) { ++mEventSelectionCounts[1]; return kStOK; }
+  if (mCentrality && !mCentrality->CheckBadRun(runId, reason)) { ++mEventSelectionCounts[1]; return kStOK; }
   const KfEventSelection::Result eventResult = mEventSelection->Check(*event, nTracks);
   if (eventResult != KfEventSelection::kAccepted) {
     ++mEventSelectionCounts[static_cast<Int_t>(eventResult) + 1];
@@ -267,8 +266,8 @@ Int_t StLambdaKFParticleMaker::Make() {
   if (mHistManager && cent.fillCentralityQA)
     mHistManager->Fill("hRawMult", rawMult);
 
+  if (mCentrality && !mCentrality->CheckPileup(rawMult, nBTofMatch, vz, reason)) { ++mEventSelectionCounts[8]; return kStOK; }
   if (mCentrality && mCentrality->IsEnabled()) {
-    if (!mCentrality->CheckPileup(rawMult, nBTofMatch, vz, reason)) { ++mEventSelectionCounts[8]; return kStOK; }
     if (!mCentrality->ComputeBins(event, rawMult, vz, mCent9, mCent16,
                                   mRefMultCorr, mCentWeight, reason)) { ++mEventSelectionCounts[9]; return kStOK; }
     if (mHistManager) {

@@ -2,6 +2,7 @@
 #define CENTRALITY_HELPER_H
 
 #include "Rtypes.h"
+#include "TString.h"
 #include <vector>
 
 class StRefMultCorr;
@@ -51,6 +52,7 @@ public:
 
 private:
   StRefMultCorr* m_rmc;
+  TString m_mode;
   Bool_t m_enabled;
   Bool_t m_rejectBadRun;
   Bool_t m_rejectPileup;

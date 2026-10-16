@@ -1173,21 +1173,19 @@ Int_t StFemtoPhiTreeMaker::Make() {
   Double_t refMultCorr = -1.0, centWeight = 1.0, centralityPercent = -1.0, psi2 = -1.0;
 
   CentralityRejectReason centReason = kCentralityOk;
-  if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckBadRun(runId, centReason)) {
-      mNBadRun++;
-      return kStOK;
-    }
+  if (m_centrality && !m_centrality->CheckBadRun(runId, centReason)) {
+    mNBadRun++;
+    return kStOK;
   }
   if (!PassEventCuts(pVtx.Z(), vr, refMult, vzVpd)) {
     mNFailEventCuts++;
     return kStOK;
   }
+  if (m_centrality && !m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) {
+    mNPileup++;
+    return kStOK;
+  }
   if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckPileup(rawMult, nBTOFMatch, vz, centReason)) {
-      mNPileup++;
-      return kStOK;
-    }
     if (!m_centrality->ComputeBins(event, rawMult, vz, cent9, cent16, refMultCorr, centWeight, centReason)) {
       mNFailCent++;
       return kStOK;

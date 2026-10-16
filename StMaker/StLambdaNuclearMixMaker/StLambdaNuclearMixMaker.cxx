@@ -127,9 +127,9 @@ Int_t StLambdaNuclearMixMaker::Make() {
   }
 
   CentralityRejectReason centReason = kCentralityOk;
+  if (m_centrality && !m_centrality->CheckBadRun(event->runId(), centReason)) return kStOK;
+  if (m_centrality && !m_centrality->CheckPileup(rawMult, event->nBTOFMatch(), vz, centReason)) return kStOK;
   if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckBadRun(event->runId(), centReason)) return kStOK;
-    if (!m_centrality->CheckPileup(rawMult, event->nBTOFMatch(), vz, centReason)) return kStOK;
     if (!m_centrality->ComputeBins(event, rawMult, vz, m_cent9, m_cent16, m_refMultCorr, m_centWeight, centReason)) return kStOK;
     if (!m_centrality->AcceptCentBin(m_cent9, m_refMultCorr, centReason)) return kStOK;
   } else {

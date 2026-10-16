@@ -31,8 +31,11 @@ CentralityHelper::~CentralityHelper() {
 Bool_t CentralityHelper::Init(const CentralityCutConfig& cfg) {
   Finish();
   m_enabled = cfg.enabled;
-  if (!m_enabled) return kTRUE;
 
+  // Bad-run and pile-up checks are data-quality filters, independent of
+  // centrality binning (ComputeBins), which stays gated on m_enabled.
+  // Always construct m_rmc so CheckBadRun/CheckPileup work when
+  // rejectBadRun/rejectPileup are true even if centrality.enabled is false.
   m_rejectBadRun = cfg.rejectBadRun;
   m_rejectPileup = cfg.rejectPileup;
   m_useWeight = cfg.useWeight;
@@ -41,6 +44,7 @@ Bool_t CentralityHelper::Init(const CentralityCutConfig& cfg) {
 
   TString modeName(cfg.mode.c_str());
   modeName.ToLower();
+  m_mode = modeName;
   m_rmc = new StRefMultCorr(modeName, "Def", "Def");
   m_rmc->setVerbose(cfg.verbose);
   m_currentRunId = -1;
@@ -56,7 +60,7 @@ void CentralityHelper::Finish() {
 }
 
 Bool_t CentralityHelper::InitRun(Int_t runId) {
-  if (!m_enabled || !m_rmc) return kTRUE;
+  if (!m_rmc) return kTRUE;
   if (runId == m_currentRunId) return kTRUE;
   m_currentRunId = runId;
   m_rmc->init(runId);
@@ -81,7 +85,7 @@ const char* CentralityHelper::RejectReasonString(CentralityRejectReason reason) 
 
 Bool_t CentralityHelper::CheckBadRun(Int_t runId, CentralityRejectReason& reason) {
   reason = kCentralityOk;
-  if (!m_enabled || !m_rmc) return kTRUE;
+  if (!m_rmc) return kTRUE;
   InitRun(runId);
   if (m_rejectBadRun && m_rmc->isBadRun(runId)) {
     reason = kCentralityBadRun;
@@ -93,7 +97,7 @@ Bool_t CentralityHelper::CheckBadRun(Int_t runId, CentralityRejectReason& reason
 
 Bool_t CentralityHelper::CheckPileup(Int_t rawMult, Int_t nTofMatch, Double_t vz, CentralityRejectReason& reason) {
   reason = kCentralityOk;
-  if (!m_enabled || !m_rmc) return kTRUE;
+  if (!m_rmc) return kTRUE;
   if (m_rejectPileup && m_rmc->isPileUpEvent(rawMult, nTofMatch, vz)) {
     reason = kCentralityPileup;
     m_nPileup++;

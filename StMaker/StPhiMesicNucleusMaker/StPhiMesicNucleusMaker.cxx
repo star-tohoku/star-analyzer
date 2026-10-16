@@ -172,9 +172,9 @@ Bool_t StPhiMesicNucleusMaker::BuildEventContext(EventContext& ctx) {
   if (ev.ComputeVr(ctx.pv.X(), ctx.pv.Y()) > ev.maxVr) return kTRUE;
 
   CentralityRejectReason reason = kCentralityOk;
+  if (m_centrality && !m_centrality->CheckBadRun(ctx.runId, reason)) return kTRUE;
+  if (m_centrality && !m_centrality->CheckPileup(ctx.rawMult, event->nBTOFMatch(), ctx.pv.Z(), reason)) return kTRUE;
   if (m_centrality && m_centrality->IsEnabled()) {
-    if (!m_centrality->CheckBadRun(ctx.runId, reason)) return kTRUE;
-    if (!m_centrality->CheckPileup(ctx.rawMult, event->nBTOFMatch(), ctx.pv.Z(), reason)) return kTRUE;
     if (!m_centrality->ComputeBins(event, ctx.rawMult, ctx.pv.Z(), ctx.cent9, ctx.cent16, ctx.refMultCorr,
                                    ctx.centWeight, reason)) {
       return kTRUE;
