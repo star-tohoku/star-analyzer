@@ -424,9 +424,12 @@ void KfParticleCutConfig::Dump(std::ostream& output) const {
   output << "finderLdL2D: " << finderLdL2D << "\n";
   output << "topoChi2NdfCut: " << topoChi2NdfCut << "\n";
   output << "applyLambdaGeometryCuts: " << applyLambdaGeometryCuts << "\n";
-  output << "finderLdLXiOmega: " << finderLdLXiOmega << "\n";
-  output << "finderChi2TopoXiOmega: " << finderChi2TopoXiOmega << "\n";
-  output << "finderChi2XiOmega: " << finderChi2XiOmega << "\n";
+  const bool xi = reconstructXi || reconstructAntiXi;
+  if (xi) {
+    output << "finderLdLXiOmega: " << finderLdLXiOmega << "\n";
+    output << "finderChi2TopoXiOmega: " << finderChi2TopoXiOmega << "\n";
+    output << "finderChi2XiOmega: " << finderChi2XiOmega << "\n";
+  }
   output << "minMass: " << minMass << "\n";
   output << "maxMass: " << maxMass << "\n";
   // Keep explicit disabled-state values for backward-compatible output QA.
@@ -435,17 +438,19 @@ void KfParticleCutConfig::Dump(std::ostream& output) const {
   output << "maxChi2Ndf: " << maxChi2Ndf << "\n";
   output << "maxTopoChi2Ndf: " << maxTopoChi2Ndf << "\n";
   output << "maxDaughterDistance: " << maxDaughterDistance << "\n";
-  output << "maxLambdaDaughterDistance: " << maxLambdaDaughterDistance << "\n";
+  if (xi) output << "maxLambdaDaughterDistance: " << maxLambdaDaughterDistance << "\n";
   output << "maxDistanceToPv: " << maxDistanceToPv << "\n";
   output << "minDecayLength: " << minDecayLength << "\n";
   output << "minDecayLengthSignificance: " << minDecayLengthSignificance << "\n";
   output << "minVertexLineSignificance: " << minVertexLineSignificance << "\n";
   output << "minCosPointing: " << minCosPointing << "\n";
-  output << "requireDecayLengthOrder: " << (requireDecayLengthOrder ? "true" : "false") << "\n";
-  output << "minLambdaDaughterChi2Prim: " << minLambdaDaughterChi2Prim << "\n";
-  output << "minLambdaDaughterDistanceToPv: " << minLambdaDaughterDistanceToPv << "\n";
-  output << "minBachelorChi2Prim: " << minBachelorChi2Prim << "\n";
-  output << "minBachelorDistanceToPv: " << minBachelorDistanceToPv << "\n";
+  if (xi) {
+    output << "requireDecayLengthOrder: " << (requireDecayLengthOrder ? "true" : "false") << "\n";
+    output << "minLambdaDaughterChi2Prim: " << minLambdaDaughterChi2Prim << "\n";
+    output << "minLambdaDaughterDistanceToPv: " << minLambdaDaughterDistanceToPv << "\n";
+    output << "minBachelorChi2Prim: " << minBachelorChi2Prim << "\n";
+    output << "minBachelorDistanceToPv: " << minBachelorDistanceToPv << "\n";
+  }
   if (HasK0StageBOverride() || reconstructK0short) {
     output << "k0MinMass: " << k0MinMass << "\n";
     output << "k0MaxMass: " << k0MaxMass << "\n";
@@ -468,11 +473,15 @@ void KfParticleCutConfig::Dump(std::ostream& output) const {
       output << "k0LambdaVetoAntiLambda: " << k0LambdaVetoAntiLambda << "\n";
     }
   }
-  output << "reconstructLambda: " << reconstructLambda << "\n";
+  // The Xi/K0S species keys are printed only when used, so a Lambda-only dump has the Lambda keys only.
+  const bool otherSpecies = xi || reconstructK0short || !reconstructLambda;
+  if (otherSpecies) output << "reconstructLambda: " << reconstructLambda << "\n";
   output << "reconstructAntiLambda: " << reconstructAntiLambda << "\n";
-  output << "reconstructXi: " << reconstructXi << "\n";
-  output << "reconstructAntiXi: " << reconstructAntiXi << "\n";
-  output << "reconstructK0short: " << reconstructK0short << "\n";
+  if (otherSpecies) {
+    output << "reconstructXi: " << reconstructXi << "\n";
+    output << "reconstructAntiXi: " << reconstructAntiXi << "\n";
+    output << "reconstructK0short: " << reconstructK0short << "\n";
+  }
   if (officialEventSelection) {
     output << "officialEventSelection: true\n";
     output << "officialBadRunFile: " << officialBadRunFile << "\n";
