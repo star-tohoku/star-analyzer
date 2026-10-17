@@ -124,7 +124,7 @@ Rules: [`docs/ai/AGENT_RULES.md`](../../docs/ai/AGENT_RULES.md) "Candidate BDT";
   source variables), computed once per candidate and used for both the tree and the score. The flags
   `sharedTrackRemoved_<channel>` are not model variables: a model's selections define where the Maker
   scores, and one score serves every channel, so it must not depend on one channel's decision (the Maker
-  refuses such a model). Recipes must exclude the flags from `inputs` (`inputs.exclude`). Flagged candidates
+  refuses such a model). The toolkit never uses the flags as inputs (`inputs.use: all` leaves them out). Flagged candidates
   are excluded from the training sample with the toolkit's `data.trainingSelection` (training only; the
   scoring domain is unchanged).
 - **Score axes.** `<s>_scoreEdges`: first bin around `outsideTrainingScore`, the others cover [-1, 1].
@@ -169,6 +169,15 @@ pair stage (any number of times)    same macro, the store file(s) as input
 # two stages: reconstruction (PicoDst once) and pair stage (stores, no PicoDst)
 ./script/singularity_run_anaCandidateFemto.sh <picoDst list> <store.root> <jobid> -1 config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi_candidateStore.yaml
 ./script/singularity_run_anaCandidateFemto.sh <store.root or list of stores> <out.root> <jobid> -1 config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi_bdt.yaml
+# farm: joblists from a file list (a directory of stores gives its non-empty files); then cd job/run && ./submit.sh <joblist>
+V=rootfile/auau3_anaCandidateFemto_k0sXiKaonXi/<major>
+./script/generate_joblist_from_list.py --mainconf config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi_candidateStore.yaml \
+    --input <picoDst list> --files-per-subjob 3 --label candidateStore --output-dir $V/<store version>/store
+./script/generate_joblist_from_list.py --mainconf config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi_bdtTraining.yaml \
+    --input $V/<store version>/store --files-per-subjob 100 --label bdtTrainingTrees \
+    --output-dir $V/<version>/hist --tree-output-dir $V/<version>/tree
+./script/generate_joblist_from_list.py --mainconf config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi_bdt.yaml \
+    --input $V/<store version>/store --files-per-subjob 100 --label bdtAnalysis --output-dir $V/<version>/hist
 ./script/singularity_purityCorrectedCorrelation.sh <out.root> <mainconf> k0s_xi_minus <out/prefix> 2 "4,5,6,7,8"
 ./script/singularity_checkHistCandidateFemto.sh <out.root> <mainconf> <out.pdf> "8;6,7;4,5"
 ```
@@ -181,8 +190,6 @@ What the current code is known to satisfy (rerun the relevant check after changi
   job that does both (every histogram, THnSparse and candidate tree; 5 PicoDst files, 150k events).
 - **Pairing rules as written here.** An independent implementation of this README (shared-track rule, pools, mixing,
   k*, BDT scores) reproduces every bin of every pair THnSparse (100 stores, 5M events).
-- **Same result as the previous dedicated K0S–Ξ⁻ implementation**: every histogram bin by bin, ME included,
-  on the same input.
 - **BDT scores.** `datadriven_bdt check`: every in-domain Maker score equals the offline score (to 1e-6), every
   candidate outside the domain gets the outside-training score. Without a BDT the output does not depend on the BDT code.
 - **Expressions.** `CandidateExpression` equals `TTreeFormula` on every candidate (21 expressions); malformed

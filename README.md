@@ -58,6 +58,7 @@ decisions depend on, and the downstream refuses to run on a mismatch. See
 | [docs/ai/README.md](docs/ai/README.md) | AI guidance map. Includes `AGENT_RULES.md`, task skills, and migration policy. |
 | [CLAUDE.md](CLAUDE.md) | Antigravity / Claude Code entrypoint. Points to shared source-of-truth docs. |
 | [docs/REFERENCE.md](docs/REFERENCE.md) | Full reference: prerequisites, analysis_info tables, how to run, batch, QA scripts, adding an analysis, config, joblists, and submit-time reproducibility artifacts. |
+| [docs/ai/candidate-bdt-guide.md](docs/ai/candidate-bdt-guide.md) | Candidate BDTs: design principles and how to add a data-driven BDT for a new particle (worked example: K0S, Ξ⁻). |
 | [job/run/README.md](job/run/README.md) | Submit, `configlog`, `runmeta`, and cleaning up `job/run/`. |
 
 Only **template/sample** content under `config/` and `job/joblist/` is tracked in git; built `.so` files under `lib/` are git-ignored.
@@ -71,9 +72,10 @@ Successful `job/run/submit.sh` submissions now save per-`jobid` reproducibility 
 | **analysis/** | `run_anaXxx.C` (runner) + `anaXxx.C` (chain; ACLiC). One pair per analysis. |
 | **config/** | `mainconf/`, `cuts/`, `maker/`, `hist/`, `analysis/` (analysis_info), `picoDstList/`. |
 | **StMaker/** | Maker sources (`St*Maker/`) → `lib/libStXXXMaker.so`; shared helpers in `common/` → `lib/libStCommon.so`. |
-| **script/** | `setup.sh`, `run_ana*.sh`, `run_fitCorrelation.sh` (LL/KP femto fit helper for ROOT CF histograms), `singularity_make.sh`, `singularity_run_ana*.sh`, `generate_joblist.sh`, `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh`, `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, helpers. |
+| **script/** | `setup.sh`, `run_ana*.sh`, `run_fitCorrelation.sh` (LL/KP femto fit helper for ROOT CF histograms), `singularity_make.sh`, `singularity_run_ana*.sh`, `generate_joblist.sh`, `generate_joblist_from_list.py` (input from a file list), `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh`, `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, candidate femto wrappers (`singularity_run_anaCandidateFemto.sh`, `singularity_purityCorrectedCorrelation.sh`, `singularity_checkHistCandidateFemto.sh`), `run_datadriven_bdt.sh` (data-driven BDT, host Python), helpers. |
 | **job/** | `joblist/` templates; `job/run/` for submit and logs. |
 | **include/** / **src/** | Framework (`ConfigManager`, cuts, yaml-cpp build). |
+| **common/macro/** | QA / correlation-function macros; `candidate_femto/` holds the CF, purity-correction and QA macros of `StCandidateFemtoMaker`; `datadriven_bdt/` is a generic data-driven (window vs side-band) BDT toolkit (Python + xgboost, YAML recipes). Each has its own README. |
 
 See [docs/REFERENCE.md](docs/REFERENCE.md) for a longer directory table and script list.
 

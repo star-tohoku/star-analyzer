@@ -21,7 +21,7 @@ Only **template/sample** content under `config/` and `job/joblist/` is tracked; 
 | **job/** | Job submission: `job/joblist/` = **template** job XMLs (tracked); `job/run/` = submit directory (`submit.sh`, `cleanup_job_run.sh`, `archive_job_run.sh`, `snapshot_runmeta.sh`, generated/copied files). On successful submit, `submit.sh` saves `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`, `job/run/configlog/config_<anaName>_<jobid>.txt`, and `job/run/runmeta/runmeta_<anaName>_<jobid>.json` plus sidecars (`gitstatus`, `gitdiff`, `gitsubmodules`, `runtime_bundle`, `sums_artifacts`, `submit_stdout`). Files under `job/run/*.xml` and generated job artifacts are git-ignored. |
 | **lib/** | Built shared libraries (`libStarAnaConfig.so`, `libStXXXMaker.so`). **Contents git-ignored**; produced by `make`. |
 | **StMaker/** | One subdir per Maker (e.g. `StLambdaMaker/`, `StPhiMaker/`, `StFemtoMaker/`). Each has `.h` and `.cxx`; built into `lib/libStXXXMaker.so`. Femto naming rules: `StMaker/StFemtoMaker/README.md`. |
-| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `run_anaFemtoPhiProton.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh`, `singularity_run_anaFemtoPhiProton.sh` (local analysis via the same singularity runtime), `run_fitCorrelation.sh` (runs `share/femtocalc/fitCorrelation.C+` with safe quoting for ROOT file and histogram name), `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh` (QA PDF from Maker output ROOT), `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, `singularity_checkHistAnaFemtoPhiProton.sh` (QA PDF via the same singularity runtime; **recommended on AL9**), `merge_root_files.csh` (hadd merge of subjob ROOT by jobid), `watch_job_and_merge.sh` (poll batch output and auto-merge; started by `submit.sh --watch-merge`), `check_disk_quota.sh` (remaining NFS home + GPFS quota), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction, watch-merge path helpers), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
+| **script/** | Environment and run scripts: `setup.sh` (bash/zsh setup), `setup.csh` (csh/tcsh setup), `generate_joblist.sh` (joblist XML from mainconf), `generate_joblist_from_list.py` (joblist XML whose input is a list of files), `singularity_make.sh` (build `lib/` via batch-like singularity runtime), `run_anaLambda.sh`, `run_anaPhi.sh`, `run_anaFemtoPhiProton.sh`, `singularity_run_anaLambda.sh`, `singularity_run_anaPhi.sh`, `singularity_run_anaFemtoPhiProton.sh` (local analysis via the same singularity runtime), `run_fitCorrelation.sh` (runs `share/femtocalc/fitCorrelation.C+` with safe quoting for ROOT file and histogram name), `checkHistAnaPhi.sh`, `checkHistAnaLambda.sh` (QA PDF from Maker output ROOT), `singularity_checkHistAnaPhi.sh`, `singularity_checkHistAnaLambda.sh`, `singularity_checkHistAnaFemtoPhiProton.sh` (QA PDF via the same singularity runtime; **recommended on AL9**), `merge_root_files.csh` (hadd merge of subjob ROOT by jobid), `watch_job_and_merge.sh` (poll batch output and auto-merge; started by `submit.sh --watch-merge`), `check_disk_quota.sh` (remaining NFS home + GPFS quota), `analysis_info_helper.py` (libraryTag, joblist generation, embedded-mainconf extraction, watch-merge path helpers), `sync_cursor_skills.py` / `check_cursor_skill_sync.py` (sync and validate `docs/ai/skills/*.md` ↔ `.cursor/skills/*/SKILL.md` parity), `sync_and_check_skills.sh` (single command to run sync + parity check), `time_NYT_to_JST.py` (NY time → JST), `time_now_NY_to_JST.py` (current NY server time → JST), and helpers (e.g. `get_file_list_*.sh`). |
 
 ## Prerequisites and setup
 
@@ -299,6 +299,39 @@ After running the Lambda analysis (locally or after merging batch output), produ
 ```
 
 On **AL9**, use **`./script/singularity_checkHistAnaLambda.sh`** with the same arguments (recommended during the SL7→AL9 transition). PDF naming: `share/figure/<anaName>/<anaName>_checkHistAnaLambda[_<jobid>].pdf`. Pages **1b–1d** show centrality QA when `centrality:` is enabled in mainconf and the ROOT file contains the corresponding histograms. Page **1d** shows `hLambda_InvMass_CentBin0`–`8`.
+
+### Candidate femto: StCandidateFemtoMaker (K0S–Xi-, K+–Xi-)
+
+Femto pairing of candidates from independent reconstruction parts: the analysis macro creates the
+parts (event selection, KFParticle source, identified-track source) and hands them to
+`StCandidateFemtoMaker`, which does not depend on KFParticle. Design, configuration keys and output:
+[`StMaker/StCandidateFemtoMaker/README.md`](../StMaker/StCandidateFemtoMaker/README.md). Analysis
+macros (CF, purity correction, QA): [`common/macro/candidate_femto/README.md`](../common/macro/candidate_femto/README.md).
+
+```bash
+MAINCONF=config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi.yaml
+./script/singularity_make.sh $MAINCONF
+./script/singularity_run_anaCandidateFemto.sh <picoDst list> <out.root> <jobid> <nEvents|-1> $MAINCONF
+./script/singularity_purityCorrectedCorrelation.sh <merged.root> $MAINCONF k0s_xi_minus <out/prefix> 2 "4,5,6,7,8"
+./script/singularity_checkHistCandidateFemto.sh <merged.root> $MAINCONF <out.pdf> "8;6,7;4,5"
+# hist YAML after changing species/channels:
+env -u PYTHONPATH python3 script/generate_hist_anaCandidateFemto.py config/cuts/femto/candidateFemto_auau3_k0sXiKaonXi.yaml \
+  config/hist/hist_auau3_anaXiK0short_KFParticle.yaml config/hist/hist_auau3_anaCandidateFemto_k0sXiKaonXi.yaml
+```
+
+- mainconf keys: `candidateFemto` (species, channels, axes), `trackPid` (track particles), optional
+  `candidateBdt` (in-Maker BDT scores from model files), `candidateFemtoHist`; `kf`, `event`, `centrality`, `mixing` as usual.
+- BDT: train with `script/run_datadriven_bdt_chain.sh <recipe.yaml>` (inspect, train, apply, study, report) and `script/run_datadriven_bdt.sh <recipe.yaml> model|check` (Python + xgboost) on the candidate
+  trees (`writeCandidateTrees: true`); procedure `docs/ai/skills/candidate-bdt.md`, rules `docs/ai/AGENT_RULES.md` "Candidate BDT", design and new particles `docs/ai/candidate-bdt-guide.md`.
+- All wrappers take every input as an argument (no environment fallback, no default output path).
+- Output: `THnSparseF hPair{SE,ME}_<channel>` (k*, cent9, mass classes, masses, BDT scores); windows,
+  sidebands, BDT thresholds and centrality are selected in the macros above.
+- Production reads the PicoDst once: reconstruction stage with `..._candidateStore.yaml` (writes candidate stores), then
+  the pair stage with `..._bdt.yaml` on the store files (BDT scores, pairs, mixing). The pair stage can be rerun at will.
+- BDT thresholds are chosen afterwards from the `_bdt` output (scan, criteria: `common/macro/candidate_femto/README.md`);
+  the chosen selection is `..._bdtSelection_k0s0.5_xi0.3.yaml` (give it to the CF and QA macros, not to a job).
+- Batch: `./script/generate_joblist.sh $MAINCONF` (catalog input) or `./script/generate_joblist_from_list.py` (a PicoDst list, or
+  the candidate stores for the pair stage; see "Creating a joblist"), then `job/run/submit.sh` as for any analysis.
 
 ### Result QA (Phi-p femto): checkHistAnaFemtoPhiProton.sh
 
@@ -622,6 +655,15 @@ Each analysis has:
    ```
    This fills **job/joblist/job_template_from_conf.xml** from the analysis info and writes **job/joblist/joblist_<anaName>.xml**. The batch command inside the XML receives the same mainconf path you passed to `generate_joblist.sh`, and if `analysis.maxEvents` is set it is forwarded to batch `root4star`.
 3. Submit from `job/run`: `./submit.sh ../joblist/joblist_<anaName>.xml`. Preflight uses the mainconf embedded in the joblist, not a basename-derived `main_<anaName>.yaml`.
+
+**From a list of files**
+
+When the input files are already known (a PicoDst list of your own, e.g. without bad runs, or the outputs of an earlier stage such as the candidate stores of `StCandidateFemtoMaker`), use
+```bash
+./script/generate_joblist_from_list.py --mainconf <mainconf> --input <list file or directory> --files-per-subjob <n> \
+    --label <whatThisJobIs> --output-dir <dir> [--tree-output-dir <dir>]
+```
+It fills the same template from the same analysis info, then takes the input from the list (`filelist:`; a directory gives its non-empty `*.root` files), puts at most `<n>` files in a subjob, writes the outputs to the given directories (`--tree-output-dir` also copies `<stem>_$JOBID.tree.root`) and zips the sandbox at submission, so later edits of the working tree do not reach idle subjobs. Output: `job/joblist/joblist_<anaName>_<label>.xml`, submitted like any joblist. `--help` shows examples.
 
 **Manual edit**
 
