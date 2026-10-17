@@ -308,8 +308,6 @@ parts (event selection, KFParticle source, identified-track source) and hands th
 [`StMaker/StCandidateFemtoMaker/README.md`](../StMaker/StCandidateFemtoMaker/README.md). Analysis
 macros (CF, purity correction, QA): [`common/macro/candidate_femto/README.md`](../common/macro/candidate_femto/README.md).
 
-The mainconf and its YAML files are the analyst's own (`config/` is git-ignored).
-
 ```bash
 MAINCONF=config/mainconf/main_<anaName>.yaml
 ./script/singularity_make.sh $MAINCONF

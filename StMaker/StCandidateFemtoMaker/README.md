@@ -2,8 +2,7 @@
 
 Femtoscopic pairing of particle candidates produced by independent **reconstruction parts**.
 The Maker does not know how a candidate was reconstructed (KFParticle, track PID, ...); the
-analysis macro creates the parts and hands them to it. The configuration of an analysis (mainconf and
-the YAML files it names) is the analyst's own and lives in `config/`, which is git-ignored.
+analysis macro creates the parts and hands them to it.
 
 ```text
 analysis macro (anaCandidateFemto.C)
