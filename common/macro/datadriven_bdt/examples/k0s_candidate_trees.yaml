@@ -1,0 +1,51 @@
+# Template: K0S BDT on the candidate trees of StCandidateFemtoMaker (docs/ai/skills/candidate-bdt.md).
+# Copy it, set data.trees and output. K0S is plentiful: a few percent of the events reach the plateau of the training-size
+# study (data.eventFraction), and the full statistics do not fit in memory on a typical node (inspect shows it).
+# Same learner settings as the Xi- template. lambdaVetoDeviation (Lambda-hypothesis mass) is built from the daughter momenta:
+# watch its mass-correlation warning and the sculpting pages, or exclude it.
+name: k0s_bdt
+particle: "K0S -> pi+ pi- (KFParticle)"
+validation: "none: not validated yet"
+data:
+  trees: rootfile/<anaName>/<major>/<version>/tree/all_trees.tree.root   # the merged tree files (hadd)
+  tree: candidates_k0s
+  eventSelection: "cent9>=4"
+  preselection: "1"
+  trainingSelection: "sharedTrackRemoved_k0s_xi_minus==0"   # training only: drop K0S removed by the shared-track rule in the channel this model serves (k0s_xi_minus)
+  folds: runParity
+  eventFraction: 0.03   # fraction of the events used (deterministic by runId, eventId)
+labels:
+  method: massSidebands
+  mass: mass
+  window: [0.48636, 0.50844]
+  # side bands >= 6 sigma68 from the peak, so the peak tails stay out of the training background
+  sidebands: [[0.4509, 0.4729], [0.5217, 0.5437]]
+inputs:
+  use: all
+  exclude: [massError]
+  log10: [decayLength, decayLengthSignificance, vertexLineLengthSignificance, pionPlusChi2Prim, pionMinusChi2Prim,
+          pionPlusDistanceToPv, pionMinusDistanceToPv]
+  massCorrelationWarning: 0.1
+reweight:
+  variables: ["sqrt(px*px+py*py)", pz]
+  bins: [[30, 0, 3], [30, -3, 0.5]]
+learner:
+  type: xgboost
+  seed: 20261010
+  testFraction: 0.2
+  parameters: {n_estimators: 600, max_depth: 3, learning_rate: 0.02, min_child_weight: 50, subsample: 0.7, colsample_bytree: 0.7,
+               tree_method: hist, n_jobs: 4}
+evaluation:
+  massRange: [0.44, 0.556]
+  binWidth: 0.0005
+  purities: [0.75, 0.87, 0.95, 0.98, 0.99]
+  sculptingPurity: 0.95
+  windowScan: [1.0, 0.7, 0.55, 0.4]
+  checks: [sculpting, overtraining, importance, backgroundModels, trainingSize]
+  trainingSize: {fractions: [0.01, 0.03, 0.1, 0.3, 1.0], purity: 0.95}
+  purityBins:
+    pt: [0, 0.4, 0.6, 0.8, 1.0, 1.3, 3.0]
+    y: [-2.0, -1.2, -1.0, -0.8, -0.6, -0.4, 0.5]
+    cent9: [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]
+  shapCandidates: 2000
+output: share/figure/<data>_<anaName>/<major>/<version>/studies/<topic>/data/k0s_bdt

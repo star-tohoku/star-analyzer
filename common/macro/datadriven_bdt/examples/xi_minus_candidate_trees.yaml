@@ -1,0 +1,51 @@
+# Template: Xi- BDT on the candidate trees of StCandidateFemtoMaker (docs/ai/skills/candidate-bdt.md).
+# Copy it, set data.trees and output, then: train -> apply -> study -> report -> (validation) -> model -> Maker -> check.
+# The trees should be written with the loose BDT training preselection
+# (config/cuts/kf/kf_auau3_anaCandidateFemto_bdtPreselection.yaml); the Maker has then applied it already, so preselection is "1".
+# Learner settings: regularised (shallow trees, small learning rate, subsampling), chosen by comparison on a 10% sample
+# (toolkit README, "Lessons").
+name: xi_minus_bdt
+particle: "Xi- -> Lambda pi- (KFParticle)"
+validation: "none: not validated yet"
+data:
+  trees: rootfile/<anaName>/<major>/<version>/tree/all_trees.tree.root   # the merged tree files (hadd)
+  tree: candidates_xi_minus
+  eventSelection: "cent9>=4"
+  preselection: "1"
+  trainingSelection: "sharedTrackRemoved_k0s_xi_minus==0 && sharedTrackRemoved_kaon_plus_xi_minus==0"   # training only: drop Xi- removed in any channel this model serves (one Xi- model scores Xi- for every channel)
+  folds: runParity
+  eventFraction: 1   # fraction of the events used (deterministic by runId, eventId); < 1 to sample a large merged input
+labels:
+  method: massSidebands
+  mass: mass
+  window: [1.31563, 1.32823]
+  sidebands: [[1.29463, 1.31353], [1.33033, 1.34923]]
+inputs:
+  use: all                      # every variable of the reconstruction part ...
+  exclude: [massError]          # ... except these
+  log10: [decayLength, decayLengthSignificance, vertexLineLengthSignificance, lambdaDecayLength, lambdaDecayLengthSignificance,
+          protonChi2Prim, pionChi2Prim, bachelorChi2Prim, protonDistanceToPv, pionDistanceToPv, bachelorDistanceToPv]
+  massCorrelationWarning: 0.1
+reweight:                       # side bands reweighted to the window in (pT, pz); pT is never an input
+  variables: ["sqrt(px*px+py*py)", pz]
+  bins: [[30, 0, 3], [30, -3, 0.5]]
+learner:
+  type: xgboost
+  seed: 20261010
+  testFraction: 0.2
+  parameters: {n_estimators: 600, max_depth: 3, learning_rate: 0.02, min_child_weight: 50, subsample: 0.7, colsample_bytree: 0.7,
+               tree_method: hist, n_jobs: 4}
+evaluation:
+  massRange: [1.294, 1.351]
+  binWidth: 0.0005
+  purities: [0.62, 0.75, 0.87, 0.95, 0.98, 0.99]
+  sculptingPurity: 0.87
+  windowScan: [1.0, 0.7, 0.55, 0.4]
+  checks: [sculpting, overtraining, importance, backgroundModels, trainingSize]
+  trainingSize: {fractions: [0.05, 0.1, 0.25, 0.5, 1.0], purity: 0.87}
+  purityBins:
+    pt: [0, 0.4, 0.6, 0.8, 1.0, 1.3, 3.0]
+    y: [-2.0, -1.2, -1.0, -0.8, -0.6, -0.4, 0.5]
+    cent9: [-0.5, 0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]
+  shapCandidates: 2000
+output: share/figure/<data>_<anaName>/<major>/<version>/studies/<topic>/data/xi_minus_bdt
