@@ -22,7 +22,7 @@ CENT_GROUPS="${4:-}"
 if [[ -z "$ROOT_FILE" || -z "$MAINCONF" || -z "$OUT_PDF" || -z "$CENT_GROUPS" ]]; then
   echo "Usage: $0 <root_file> <mainconf> <out_pdf> <centGroups>" >&2
   echo "  root_file   ROOT file written by StCandidateFemtoMaker" >&2
-  echo "  mainconf    main config (e.g. config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi.yaml)" >&2
+  echo "  mainconf    main config (e.g. config/mainconf/main_<anaName>.yaml)" >&2
   echo "  out_pdf     output PDF path (a .root with the CFs is written next to it)" >&2
   echo "  centGroups  cent9 groups, e.g. \"8;6,7;4,5\"" >&2
   exit 1

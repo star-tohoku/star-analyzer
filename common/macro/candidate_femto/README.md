@@ -27,22 +27,15 @@ headroom, rebinning of QA displays).
 
 ```bash
 ./script/singularity_purityCorrectedCorrelation.sh <file.root> <mainconf> <channel> <out/prefix> <kstarRebin> [cent9List] [options]
-# e.g. K0S - Xi-, 0-40 %, BDT thresholds from species_<s>_scoreMin of the YAML:
-./script/singularity_purityCorrectedCorrelation.sh merged.root config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi.yaml k0s_xi_minus out/k0s_xi 2 "4,5,6,7,8"
+# e.g. 0-40 % (cent9 4-8), BDT thresholds from species_<s>_scoreMin of the YAML:
+./script/singularity_purityCorrectedCorrelation.sh merged.root config/mainconf/main_<anaName>_bdtSelection_<thresholds>.yaml <channel> out/<channel> 2 "4,5,6,7,8"
 ```
 Options (`;`-separated, scans only; a chosen value belongs in the YAML): `purityA=config|fit|unit`, `windowA=lo,hi`,
 `slideHalfWidth=N`, `scoreMinA=x` / `scoreMinB=x` (BDT thresholds of species A / B; must be score-axis edges).
 
-Which mainconf gives which CF (Au+Au 3 GeV K0S–Ξ⁻ / K⁺–Ξ⁻):
-
-| mainconf `main_auau3_anaCandidateFemto_k0sXiKaonXi...` | Selection |
-|---|---|
-| `.yaml` | standard rectangular cuts, no BDT |
-| `_bdt.yaml` | BDT preselection and BDT scores on the score axes, no thresholds (input of the threshold choice) |
-| `_bdtSelection_k0s0.5_xi0.3.yaml` | **the chosen selection:** K0S score ≥ 0.5, Ξ⁻ score ≥ 0.3 (both channels; K⁺ has no BDT) |
-| `_bdtSelection_k0s{0.7_xi0.3,0.7_xi0.5,0.8_xi0.3}.yaml` | alternative thresholds, for comparisons |
-
-The `_bdtSelection_*` mainconfs differ from `_bdt` only by `species_<s>_scoreMin`; use them on the output of a `_bdt` job.
+With BDTs, the job runs a `_bdt` mainconf (scores on the score axes, no thresholds). A `_bdtSelection_<thresholds>`
+mainconf differs from it only by `species_<s>_scoreMin` in its candidateFemto YAML; give it to the macros together with the
+output of the `_bdt` job.
 
 ## Choosing BDT thresholds
 
@@ -66,23 +59,22 @@ Normalisation: `purityCorrectedCorrelation.C` normalises each CF by the inverse-
 integrated); `checkHistCandidateFemto.C` fits the mass of each species in the channel's SE pairs whose partner is in
 its signal window, with the score thresholds of both species. The channel candidate histograms
 `hChannelMassVsCent9[VsScore]_<channel>_<s>` are not used for purities: they hold every candidate of the events with
-both species, without the partner's threshold (K0S purity 0.63 there vs 0.94 in the pairs in a 10% sample). Without
+both species, without the partner's threshold, and their purity can be much lower than in the pairs. Without
 `hPairSE`, or with a threshold that is not a pair score edge, checkHist falls back, with a warning and a "FALLBACK"
 label, to the per-species spectra (`hCandidateMass*_<s>`), which the species pages show for information. One species and one
 charge each (Ξ⁻ and Ξ⁺ are separate species); the reconstruction QA histograms of the KF part are split by charge
 too (`hXiMinus_*`, `hXiPlus_*`).
 
 - `species_<s>_purityModel` decides the fit of each species: `invariantMassGausPol2`, `invariantMassStudentTPol2`
-  (Student-t peak; used for K0S and Ξ⁻ because their peaks have non-Gaussian tails that a Gaussian counts as
-  background),
+  (Student-t peak, for peaks with non-Gaussian tails that a Gaussian counts as background),
   `invariantMassDoubleGausPol2` (purity macro only) or `tofMassSquaredKaonPion`. `purityByDefinition: true` sets the
-  purity to 1 (K⁺: TOF m² and dE/dx give a clean sample); the fits are then drawn as QA only. Species B needs an invariant-mass
+  purity to 1 (a species whose selection gives a clean sample); the fits are then drawn as QA only. Species B needs an invariant-mass
   model. checkHist supports the Gaussian and Student-t models (its "±nσ" lines use the Student-t scale for the latter).
   The shape parameters (Student-t ν) come from the k*-integrated fit and are fixed in the k*-resolved fits.
-- Fit ranges: `species_<s>_purityFitRange` (Ξ⁻: 1.295–1.351).
+- Fit ranges: `species_<s>_purityFitRange`.
 - SE and ME purities are fitted separately: the ME events are not the SE events (see the Maker README, "ME purity
   differs from SE purity"), so one purity for both would bias the CF.
-- TOF m² model (`purityA=fit` for K⁺): mean and width float in every k*-resolved fit (per bin, sliding window,
+- TOF m² model (`purityA=fit` for a TOF-identified species): mean and width float in every k*-resolved fit (per bin, sliding window,
   merged bins), started from the k*-integrated fit of the same sample; a fit is valid only if it converged and
   its width is not at a limit (0.3 or 3 times the start value).
 - Output names (`<prefix>.root`): `cfRaw`, `cfConstantPurity`, `cfPurityCorrected`,

@@ -10,7 +10,7 @@
 
 // Configuration of StCandidateFemtoMaker: the YAML referenced by the mainconf key
 // "candidateFemto" (flat keys, StFemtoMaker-style species/channel layout). Every key is
-// required unless noted. Example: config/cuts/femto/candidateFemto_auau3_k0sXiKaonXi.yaml.
+// required unless noted.
 //
 // Species (speciesKeys: k0s, xi_minus, kaon_plus; lower_snake_case):
 //   species_<s>_source:          name of the CandidateSource that provides it (kfparticle, track_pid)
@@ -26,11 +26,11 @@
 // Keys used only by the analysis macros (common/macro/candidate_femto/); the Maker reads and checks
 // them too (same file), so a malformed value stops the Maker job:
 //   species_<s>_purityModel:     peak shape of the purity fits: invariantMassGausPol2 (Gaussian + polynomial in the
-//                                mass variable), invariantMassStudentTPol2 (Student-t + polynomial; the K0S and Xi-
-//                                peaks have non-Gaussian tails), invariantMassDoubleGausPol2 (two
+//                                mass variable), invariantMassStudentTPol2 (Student-t + polynomial, for peaks with
+//                                non-Gaussian tails), invariantMassDoubleGausPol2 (two
 //                                Gaussians, common mean + polynomial) or tofMassSquaredKaonPion (K Gaussian + pion
 //                                Gaussian + pol1 in TOF m^2)
-//   species_<s>_purityByDefinition: true = purity 1 by definition (e.g. a clean K+ selection), false = fitted
+//   species_<s>_purityByDefinition: true = purity 1 by definition (a clean selection), false = fitted
 //   species_<s>_purityFitRange:  min, max of the purity fits of the purity-correction macro (inside the mass axis)
 //   species_<s>_purityFitSeed:   mean, sigma start values of the purity fits
 //   species_<s>_qaPurityFitSigmaRange / species_<s>_qaPurityBackgroundOrder: QA macro (checkHist) purity fit,

@@ -16,8 +16,8 @@ training-size study before any full-statistics training.
 ## 1. Training trees
 
 1. Mainconf for the training run: the analysis mainconf with a candidateFemto YAML that has
-   `writeCandidateTrees: true` and `candidateTreeSpecies` (the species that get a tree), and **no** `candidateBdt` key (example:
-   `config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi_bdtTraining.yaml`).
+   `writeCandidateTrees: true` and `candidateTreeSpecies` (the species that get a tree), and **no** `candidateBdt` key
+   (`config/mainconf/main_<anaName>_bdtTraining.yaml`).
 2. Local test first (`script/singularity_run_anaCandidateFemto.sh`), then the farm. Generate the joblist with
    `script/generate_joblist_from_list.py ... --tree-output-dir <dir>` (it also copies `<stem>_$JOBID.tree.root`).
    If candidate stores exist (reconstruction stage, `writeCandidateStore: true`), run this as a pair stage on the stores:

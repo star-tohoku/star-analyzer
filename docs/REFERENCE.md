@@ -300,7 +300,7 @@ After running the Lambda analysis (locally or after merging batch output), produ
 
 On **AL9**, use **`./script/singularity_checkHistAnaLambda.sh`** with the same arguments (recommended during the SL7→AL9 transition). PDF naming: `share/figure/<anaName>/<anaName>_checkHistAnaLambda[_<jobid>].pdf`. Pages **1b–1d** show centrality QA when `centrality:` is enabled in mainconf and the ROOT file contains the corresponding histograms. Page **1d** shows `hLambda_InvMass_CentBin0`–`8`.
 
-### Candidate femto: StCandidateFemtoMaker (K0S–Xi-, K+–Xi-)
+### Candidate femto: StCandidateFemtoMaker
 
 Femto pairing of candidates from independent reconstruction parts: the analysis macro creates the
 parts (event selection, KFParticle source, identified-track source) and hands them to
@@ -308,15 +308,16 @@ parts (event selection, KFParticle source, identified-track source) and hands th
 [`StMaker/StCandidateFemtoMaker/README.md`](../StMaker/StCandidateFemtoMaker/README.md). Analysis
 macros (CF, purity correction, QA): [`common/macro/candidate_femto/README.md`](../common/macro/candidate_femto/README.md).
 
+The mainconf and its YAML files are the analyst's own (`config/` is git-ignored).
+
 ```bash
-MAINCONF=config/mainconf/main_auau3_anaCandidateFemto_k0sXiKaonXi.yaml
+MAINCONF=config/mainconf/main_<anaName>.yaml
 ./script/singularity_make.sh $MAINCONF
 ./script/singularity_run_anaCandidateFemto.sh <picoDst list> <out.root> <jobid> <nEvents|-1> $MAINCONF
-./script/singularity_purityCorrectedCorrelation.sh <merged.root> $MAINCONF k0s_xi_minus <out/prefix> 2 "4,5,6,7,8"
+./script/singularity_purityCorrectedCorrelation.sh <merged.root> $MAINCONF <channel> <out/prefix> 2 "4,5,6,7,8"
 ./script/singularity_checkHistCandidateFemto.sh <merged.root> $MAINCONF <out.pdf> "8;6,7;4,5"
 # hist YAML after changing species/channels:
-env -u PYTHONPATH python3 script/generate_hist_anaCandidateFemto.py config/cuts/femto/candidateFemto_auau3_k0sXiKaonXi.yaml \
-  config/hist/hist_auau3_anaXiK0short_KFParticle.yaml config/hist/hist_auau3_anaCandidateFemto_k0sXiKaonXi.yaml
+env -u PYTHONPATH python3 script/generate_hist_anaCandidateFemto.py <candidateFemto YAML> <base hist YAML> <output hist YAML>
 ```
 
 - mainconf keys: `candidateFemto` (species, channels, axes), `trackPid` (track particles), optional
@@ -326,10 +327,11 @@ env -u PYTHONPATH python3 script/generate_hist_anaCandidateFemto.py config/cuts/
 - All wrappers take every input as an argument (no environment fallback, no default output path).
 - Output: `THnSparseF hPair{SE,ME}_<channel>` (k*, cent9, mass classes, masses, BDT scores); windows,
   sidebands, BDT thresholds and centrality are selected in the macros above.
-- Production reads the PicoDst once: reconstruction stage with `..._candidateStore.yaml` (writes candidate stores), then
-  the pair stage with `..._bdt.yaml` on the store files (BDT scores, pairs, mixing). The pair stage can be rerun at will.
+- Production reads the PicoDst once: reconstruction stage with `main_<anaName>_candidateStore.yaml` (writes candidate
+  stores), then the pair stage with `main_<anaName>_bdt.yaml` on the store files (BDT scores, pairs, mixing). The pair stage
+  can be rerun at will.
 - BDT thresholds are chosen afterwards from the `_bdt` output (scan, criteria: `common/macro/candidate_femto/README.md`);
-  the chosen selection is `..._bdtSelection_k0s0.5_xi0.3.yaml` (give it to the CF and QA macros, not to a job).
+  the chosen selection is a `_bdtSelection_<thresholds>` mainconf (give it to the CF and QA macros, not to a job).
 - Batch: `./script/generate_joblist.sh $MAINCONF` (catalog input) or `./script/generate_joblist_from_list.py` (a PicoDst list, or
   the candidate stores for the pair stage; see "Creating a joblist"), then `job/run/submit.sh` as for any analysis.
 

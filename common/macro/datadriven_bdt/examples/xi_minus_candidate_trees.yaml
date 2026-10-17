@@ -1,7 +1,7 @@
 # Template: Xi- BDT on the candidate trees of StCandidateFemtoMaker (docs/ai/skills/candidate-bdt.md).
 # Copy it, set data.trees and output, then: train -> apply -> study -> report -> (validation) -> model -> Maker -> check.
-# The trees should be written with the loose BDT training preselection
-# (config/cuts/kf/kf_auau3_anaCandidateFemto_bdtPreselection.yaml); the Maker has then applied it already, so preselection is "1".
+# The trees should be written with the loose BDT training preselection in the kf YAML; the Maker has then applied it
+# already, so preselection is "1".
 # Learner settings: regularised (shallow trees, small learning rate, subsampling), chosen by comparison on a 10% sample
 # (toolkit README, "Lessons").
 name: xi_minus_bdt

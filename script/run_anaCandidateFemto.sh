@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run StCandidateFemtoMaker (reconstruction parts + femto pairing; e.g. K0S-Xi-, K+-Xi-).
+# Run StCandidateFemtoMaker (reconstruction parts + femto pairing).
 # Host entry (needs an SL7 host, e.g. interactive sl7; on AL9 login nodes use script/singularity_run_anaCandidateFemto.sh).
 # Usage: ./script/run_anaCandidateFemto.sh <inputFile|list> <outputFile> <jobid> <nEvents|-1> <mainconf>
 # Every argument is required (no default mainconf; docs/ai/AGENT_RULES.md).

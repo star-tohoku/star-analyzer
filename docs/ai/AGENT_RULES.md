@@ -81,8 +81,8 @@ These rules exist because three defects of the same shape reached a 241-job farm
   and there is no KFParticle-specific femto build rule. KFParticle code lives in the parts
   (`StMaker/kfparticle/`, `*KFParticleMaker` reconstruction Makers), which the runner loads.
 - **Two femto Makers exist.** `StFemtoMaker` (shared; φ–p, φ–d, Λ–nucleus; builders and a Λ provider)
-  and `StCandidateFemtoMaker` (parts given by the macro through `include/CandidateSource.h`; K0S–Ξ⁻,
-  K⁺–Ξ⁻). Extend one of them with a new species/channel (YAML + a source or builder); do not add a new
+  and `StCandidateFemtoMaker` (parts given by the macro through `include/CandidateSource.h`).
+  Extend one of them with a new species/channel (YAML + a source or builder); do not add a new
   dedicated pairing Maker per channel. Do not change `StFemtoMaker` for a channel of the other Maker.
 - **Several particles from one KFParticle pass** come from one part (`KfParticleCandidateSource`): add
   the particle there, not a second Finder pass.
