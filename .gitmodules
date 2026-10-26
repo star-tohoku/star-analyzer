@@ -1,3 +1,8 @@
 [submodule "src/third_party/yaml-cpp"]
 	path = src/third_party/yaml-cpp
 	url = https://github.com/jbeder/yaml-cpp.git
+[submodule "star_local"]
+	path = star_local
+	url = https://github.com/HypTPCIchikawa/star_local_submodule.git
+	update = none
+	branch = main

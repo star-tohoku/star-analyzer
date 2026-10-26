@@ -172,3 +172,7 @@ common/macro/etc/
 /tools/fix_missing_hists.py
 /tools/merge_hist_yaml.py
 /tools/patch.py
+
+# Personal-submodule navigation aliases (symlinks, never shared content)
+/Todo
+/analysisnote

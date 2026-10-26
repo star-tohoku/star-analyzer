@@ -92,3 +92,19 @@ correlations without redefining event selection, PID, or centrality. See
 `script/singularity_run_data006.sh`, `script/package_data006.sh`,
 `script/singularity_plot_data006.sh`, and
 `docs/others/DATA-006-implementation.md`.
+
+### Optional personal workspace
+
+`star_local` is a separate personal repository for tasks, notes, private study
+sources and small figures. It is optional (`update = none`) and is not required
+for building or running the shared analyses. To use it explicitly:
+
+```bash
+git -c submodule.star_local.url=git@github.com:HypTPCIchikawa/star_local_submodule.git submodule update --init --checkout star_local
+python3 star_local/scripts/sync_workspace.py mount
+```
+
+The Todo/analysisnote aliases remain outside shared tracking. Personal data and
+study files are versioned in the submodule; the shared repository records only
+its URL and commit reference. The submodule README describes capture, size
+limits, commit hooks and restoration without overwriting existing files.
