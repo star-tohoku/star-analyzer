@@ -1,0 +1,16 @@
+schemaVersion: 1
+centBins: 9
+representations: [4He, 3He, 3HeAs4He]
+massSuffixes: ['', _SBPos, _SBNeg, _signalLow, _signalHigh]
+stagePrefixes: ['', PrePid]
+mixingPrefixes: ['', Mixed_]
+axes:
+  Kstar: {nBins: 200, min: 0.0, max: 1.0}
+  NSigma: {nBins: 120, min: -12.0, max: 12.0}
+  POverQ: {nBins: 120, min: 0.0, max: 6.0}
+jointCategoryAxes:
+  Cent9: {bins: 9, min: -0.5, max: 8.5, title: 'cent9'}
+  Representation: {bins: 3, min: -0.5, max: 2.5, title: '0=he4, 1=he3, 2=he3as4'}
+  MixingMode: {bins: 2, min: -0.5, max: 1.5, title: '0=SE, 1=ME'}
+  MassClass: {bins: 4, min: -0.5, max: 3.5, title: '0=SBNeg, 1=signalLow, 2=signalHigh, 3=SBPos'}
+  PidStage: {bins: 2, min: -0.5, max: 1.5, title: '0=selected, 1=prePID'}

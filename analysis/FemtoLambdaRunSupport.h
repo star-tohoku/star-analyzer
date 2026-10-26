@@ -62,9 +62,22 @@ struct Run {
     }
     if (!ConfigManager::GetInstance().LoadConfig(config)) return kFALSE;
     const FemtoConfig& femto = ConfigManager::GetInstance().GetFemtoConfig();
-    if (femto.species.size() != 2 || femto.species.find("lambda") == femto.species.end()
-        || femto.species.find(expectedSpecies) == femto.species.end()) {
-      std::cerr << "ERROR: entry requires exactly lambda and " << expectedSpecies << std::endl;
+    const std::string configFile(config.Data());
+    const size_t configRoot=configFile.rfind("/config/");
+    if(configRoot==std::string::npos) {std::cerr<<"ERROR: mainconf must reside below config/"<<std::endl;return kFALSE;}
+    const std::string makerPath=keys["maker"][0]=='/'?keys["maker"]:configFile.substr(0,configRoot)+"/config/"+keys["maker"];
+    std::map<std::string,std::string> makerKeys;
+    if(!YamlParser::ParseFile(makerPath.c_str(),makerKeys))return kFALSE;
+    const std::map<std::string,std::string>::const_iterator control=makerKeys.find("lambdaHe3ControlEnabled");
+    if(control!=makerKeys.end()&&control->second!="true"&&control->second!="false") {
+      std::cerr<<"ERROR: lambdaHe3ControlEnabled requires explicit true/false"<<std::endl;return kFALSE;
+    }
+    const bool he3Control=control!=makerKeys.end()&&control->second=="true";
+    const bool validControl=!he3Control || (std::string(expectedSpecies)=="he4"&&femto.species.find("he3")!=femto.species.end());
+    if (femto.species.size() != (he3Control?3u:2u) || femto.species.find("lambda") == femto.species.end()
+        || femto.species.find(expectedSpecies) == femto.species.end() || !validControl) {
+      std::cerr << "ERROR: entry requires lambda and " << expectedSpecies
+                << "; an additional he3 is allowed only with the explicit He4 control policy" << std::endl;
       return kFALSE;
     }
     if (input.EndsWith(".root")) inputFiles.push_back(input.Data());

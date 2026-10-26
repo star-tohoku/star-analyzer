@@ -44,7 +44,6 @@ When adding particles or channels, follow these rules and update `FemtoConfig` Y
   - CF: `{anaName}_checkHistAnaFemtoPhiProton_CF_{jobid}.pdf` — remaining slices (`cfPdfExcludeQaSlices: true` avoids duplicate).
   - **Per-slice layout (representative + CF PDF):** 4 columns (signal / SB-L / SB-R / SB-LR) × 4 rows (SE k*, ME k*, raw `CF_sig_raw`, sub `CF_sig_sub_SBL|SBR|SBLR` on row 4).
 - Run QA on `*_merge.root`: `./script/singularity_checkHistAnaFemtoPhiProton.sh <merge.root> <mainconf>`.
-- Implementation record: `analysisnote/YYYYMMDD/femto_cent_sb_cf_plan.md` (φ–p cent/SB/CF extension).
 
 ### Topic 3: k*-binned purity and CF_genuine (`anaFemtoPhi` unified)
 
@@ -347,111 +346,88 @@ rebinning recomputes the CF from rebinned SE and ME and never replaces the nativ
 
 ## KF Lambda–nucleus profile (`anaFemtoLambda_{d,t,3He,4He}`)
 
-This additive path uses actual `StFemtoMaker` with an injected `FemtoLambdaProvider`.
-The neutral provider interface contains no vendor KF/SIMD type. The concrete
-factory `createFemtoLambdaKfProvider()` lives in `libStKfParticleCommon.so` and is
-instantiated by Lambda ACLiC macros; the Maker owns it. Existing Phi/Kaon entries
-run with no provider and no mandatory KF linkage.
+These entries use `StFemtoMaker` with an injected `FemtoLambdaProvider`. The neutral
+interface carries no vendor KF/SIMD type. `createFemtoLambdaKfProvider()` lives in
+`libStKfParticleCommon.so`; the Maker owns the provider. Phi/Kaon entries have no
+provider and no mandatory KF linkage.
 
-| Macro suffix | Species / particleKey | Base channel |
-|---|---|---|
-| `d` | `deuteron` | `lambda_deuteron` |
-| `t` | `triton` | `lambda_triton` |
-| `3He` | `he3` | `lambda_he3` |
-| `4He` | `he4` | `lambda_he4` |
+The basic profile has Lambda plus one nucleus and four mass-region channels
+(inclusive, signal, leftSB, rightSB). `lambdaHe3ControlEnabled: true` opts into
+exactly `lambda,he4,he3` and eight channels. Each accepted He3 pair also fills a
+`he3_as_he4` comparison using He4 mass and unchanged physical He3 momentum. This
+is a derived representation, not another species or mixing channel. It changes
+k* and mean-mass mT; track provenance and Lambda mass-region membership remain
+the same. The Maker applies no contamination coefficient or CF subtraction.
 
-Each maker YAML declares exactly two species: `lambda` with `builderType: resonance`
-/`particleKey: lambda_kf`, and one nucleus with `builderType: track`. It declares
-four enabled channels: base, `_signal`, `_leftSB`, `_rightSB`, with explicit species,
-mass bounds, mixing and normalization keys. Provider absence, incompatible legacy
-mainconf, missing required histograms/settings and unsupported policies fail Init.
+### PID and acceptance
 
-- `lambdaEventPolicy: lambda_imp5_compat`: finite PV/maxNTr and centrality; no implicit
-  generic Femto/Phi event or primary-track cuts. `qaVertexByMode` controls QA centers,
-  not event acceptance. An explicit alternative policy is required for vertex cuts.
-- `nuclearSelectionProfile: legacy_nuclearid`: independent global-track collection,
-  original best-species TPC nuclear PID and raw-rigidity upper bound, optional TOF
-  m² selection. `nuclearMinNHitsDedx: 15` and `nuclearMinPt: 0.1` are explicit in
-  nuclearid YAML. Generic Phi-bachelor cuts are not applied. Common PID QA retains
-  all nuclear hypotheses even though only one nucleus species enters pairs.
-- `kf:` directly references the saved energy-specific highpurity preset. Full
-  Finder/Topo reconstruction sees the full PicoDst; its final selector is shared
-  with standalone `StLambdaKFParticleMaker`. Daughter provenance uses Pico array
-  indices and event indices, not track IDs.
-- `lambdaPairMassMode: fixed`, `lambdaPairMass: 1.115683`: fixed-mass Lambda P4 for
-  k*, but `reso.invMass` and mass axes use the unconstrained KF fit. Nuclear masses
-  are explicit in nuclearid YAML; He rigidity is multiplied by Z=2 once.
-- Authoritative mass-window keys: `lambdaSignalMean: 1.11596`,
-  `lambdaSignalSigma: 0.00296`, `lambdaSignalNSigma: 3`,
-  `lambdaSidebandOuterFactor: 4`. Indexed channel boundaries are checked against
-  these values. Signal includes both edges; sidebands exclude their signal edge.
-  The earlier purity-study window [1.110,1.122) is not substituted here.
-- `mergingFieldTesla: 0.5`, `mergingRadiusMeters: 1.4` preserve the legacy QA
-  convention with corrected track-index lookup. Event-field QA has a separate name.
-  This migration adds no close-pair veto; shared-track rejection remains mandatory.
+The standard 2021 P24iy entry is
+`config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle.yaml`.
+Its explicit `nuclearid` selects a He4-only log10(R) polynomial calibration:
+cubic mean, quadratic Gaussian width. d/t/He3 use `NuclearIdDeDxVsMom.h`
+unchanged. The schema-2 YAML includes all coefficients, units, domain and
+provenance; source paths are identification records, not runtime dependencies.
+Missing or invalid explicit calibration fails Init. Outside its declared
+calibration domain, the configured legacy policy applies.
 
-Mainconf keys: `analysis,event,centrality,kf,nuclearid,maker,mixing,femtoHist,nuclearHist`.
-New energy/species mainconfs carry `_KFParticle_highpurity`. The two hist configs are
-`hist_femtoLambda_<species>_kf.yaml` (top-level Lambda/canonical QA) and
-`hist_femtoLambda_<species>_nuclear.yaml` (legacy nuclear and pair keys).
+TPC best-species selection precedes rigidity and TOF cuts. A rejected winner is
+never reassigned. For all four nuclei, R<2 GeV/c requires no TOF; R>=2 requires
+valid TOF plus the species' strict mass-squared window. He4 uses the deuteron
+window because both have similar m/q. These gates use raw rigidity and (m/q)^2;
+He physical momentum has its Z=2 correction applied exactly once. He4 requires
+strictly 0.61<R<5 GeV/c with no He4 rigidity veto. d/t/He3 retain their legacy
+minima and vetoes. All numerical cuts live in nuclearid YAML.
 
-The output preserves original `anaLambdaNuclearId.C` directory/axis contracts:
-Lambda QA at top level; nuclear/SE keys in `true/`; ME keys only in `mix/`.
-`hKstarMass_<S>_CentBin<i>` and `hKstarMass_Mixed_<S>_CentBin<i>` have X=k* (200 bins,
-0–1) and Y=unconstrained mass (200 bins,1.05–1.25). They are filled once per accepted
-pair before narrow signal/sideband classification. Canonical
-`hKstarSE/ME[VsCent]_lambda_<species>[_signal|_leftSB|_rightSB]` use that same pair
-result. The un-debugged intermediate split Maker is **not** the compatibility
-reference; its known double fills/missing reverse fills are not reproduced.
+`lambdaEventPolicy: lambda_imp5_compat` uses finite PV/maxNTr and centrality;
+it does not add generic Phi primary-track cuts. `qaVertexByMode` sets QA centers,
+not event acceptance. KF Finder/Topo sees the full PicoDst and shares its final
+selector with `StLambdaKFParticleMaker`. Daughter provenance uses Pico array
+indices and event indices. `lambdaPairMassMode: fixed` uses the configured
+Lambda mass for kinematics while `reso.invMass` retains unconstrained KF mass.
+Signal is +/-3 configured sigmas, including both edges; sidebands exclude the
+adjacent signal edge. Mixing uses the configured Vz/cent9/EP bins, pool depth,
+Vz clamping and directions. Shared-track rejection remains mandatory.
 
-Initial mixing is explicitly `bufferAll`, both directions independently enabled,
-cent9=9 bins, one EP bin, 10 Vz bins, depth20/maxMixEvents20. This is the original
-route's effective depth (old raw maxMixEvents100, buffer20). Mixing `minVz:198` /
-`maxVz:202` are independent of event cuts. `vzOutOfRangePolicy: clamp` is explicit
-and clamping is counted; centrality bins are not clamped together. CF is computed
-only downstream from summed SE/ME, never in Maker Finish.
+Single-candidate acceptance maps fill once per selected candidate, independently
+of pair multiplicity. Lambda signal and He4 have beta vs lab eta and lab Y;
+beta is physical |p|/E, not measured TOF beta. He4 beta/eta, beta/Y and pT/Y maps
+also have `lowR_noTof`, `lowR_tofMatch`, `lowR_tofM2`, `highR_tofM2` samples.
+The three low-R samples are nested, so do not add them. For each variable,
+lowR_noTof + highR_tofM2 equals inclusive, including flow bins.
 
-Operational commands, rollback snapshot, runtime guards and the new
-`checkHistAnaFemtoLambda` QA are documented in
-[REFERENCE](../../docs/REFERENCE.md#kf-lambdanucleus-femto-entries-2026-09-30).
-Static config/entry checks: `python3 tests/test_femto_lambda_entries.py`.
-See [the implementation plan](../../mdfiles/femto/plans/plan_femto_lambda_nuclei_kfparticle_20260929.md)
-for real-data closure gates; these implementation notes do not by themselves claim
-that those runtime gates have passed.
+### Optional nuclear pair PID QA
 
-### ΛのアクセプタンスQAと信号窓の二分割（2026-09-30追加）
+`nuclearPidPairQaHist` enables a separate HistManager and 8D THnSparseD.
+Absent key means no extra QA histograms or QA-candidate storage. The standard
+4He mainconf enables it; other entries do not opt in implicitly.
 
-- 最上位の `hLambda_PtVsYLab_signal`、`hLambdaProton_PtVsYLab_signal`、
-  `hLambdaPion_PtVsYLab_signal` は±3σ内の採用Λについて1候補1回記録する。
-  X=実験室系ラピディティ、Y=pT。重心系シフトは行わない。
-- Λはペア用の固定質量四元運動量、娘は対応するPico global trackの `gMom()` を使う。
-  makerの必須キー `lambdaDaughterProtonMass: 0.9382720813` と
-  `lambdaDaughterPionMass: 0.13957039` [GeV/c²] は娘QA専用。
-  このヘルパーはKFライブラリへのリンク依存を持たない。
-- `hNucleus_PtVsYLab_<species>` は最終選別後の対象核種について1track1回記録する。
-  HeのZ=2補正は既存 `NuclearP4` による1回のみ。Λの有無やペア数では重み付けしない。
-- `hKstarSE/ME[VsCent]_lambda_<species>_signalLow` と `_signalHigh` を追加。
-  既存signal判定の後で `mass < lambdaSignalMean` を低側、残りを高側とする。
-  中心値は高側だけに入り、SE／MEの各binで低側＋高側が従来signalに一致する。
-  **派生ヒストであり、4 channelの定義やmixing loopは増やさない。**
-- 既存180ヒストを保持し、12ヒスト追加で計192（最上位79、true71、mix42）。
-  QAは新ROOTで7ページ、旧ROOTでは追加ヒスト欠落の警告付きで従来4ページ。
-  新ヒストが一部だけある場合は失敗させる。CFは引き続きQA側でSE／MEから計算する。
-- 詳しい母集団・軸・境界は[ヒストグラム一覧](../../mdfiles/femto/implementation/femto_lambda_histograms_20260930.md)。
-  これらは採用候補の分布であり、生成数で補正した検出効率ではない。
+`selected` uses final nuclear PID. `prePID` removes only the species' own TPC
+pull window and best-species competition, retaining track quality, permitted
+rigidity domains and applicable TOF cuts. Selected is a subset of prePID; He3
+and He3-as-He4 share the same tracks and pairs. Neither pair of representations
+is statistically independent. Pull is nSigmaHe4 for He4 and nSigmaHe3 for both
+He3 representations. Pair-QA rigidity comes from stored Float_t physical P4/2;
+selection boundaries use the original double-precision track quantities.
 
-### centrality別のk*–m_T（2026-09-30追加）
+QA payloads accompany the existing physical mixing pool. QA-only events do not
+enter or evict that pool, or change CF eligibility, pair counters or randomness.
+SE TH2D keys live in `true/`, ME in `mix/`. The 1,080 TH2D retain k* vs pull
+and k* vs R by representation, mass region, centrality and PID stage.
+`hNuclearPidPairJoint` stores axes
+`(Kstar,POverQ,NSigma,Cent9,Representation,MixingMode,MassClass,PidStage)`.
+MassClass is exclusive: SBNeg, signalLow, signalHigh, SBPos. Full signal is the
+sum of its two classes. The TH2 projections alone cannot recover the R/pull
+correlation; use the Sparse for simultaneous cuts. Sparse size grows with
+occupied bins and can exceed ROOT's single-object serialization limit. Preserve
+it in separate input-group files and sum matching low-dimensional projections
+when one merged object would exceed that limit.
 
-- ユーザー指定：`m_T = sqrt((|pT_Lambda+pT_nucleus|/2)^2 + ((m_Lambda+m_nucleus)/2)^2)`。
-  pTは横運動量ベクトルの和。ペア全体の横質量ではない。
-- Λは `lambdaPairMass`、原子核は `nuclearMass<Species>` の固定質量を使う。
-  signal／sideband／SE／MEで共通。Heの運動量補正は候補作成時の1回のみ。
-- `true/hKstarMt_<S>{,_SBPos,_SBNeg,_signalLow,_signalHigh}_CentBin<i>` と
-  `mix/hKstarMt_Mixed_<S>{,_SBPos,_SBNeg,_signalLow,_signalHigh}_CentBin<i>`。
-  `S=d,t,3He,4He`、`i=0..8`。suffixなしは±3σsignal。
-- 90 TH2DをnuclearヒストYAMLへ追加。Xは既存Kstar、Yは `PairMt`（200 bin、0〜10 GeV/c²）。
-  従来のpair loop内で埋め、カット・mixing・旧192ヒストは変更しない。最新出力は282ヒスト。
-- `FemtoLambdaPairMtDefinition` に定義と固定質量を保存。Yのflow込みProjectionXは従来k*に一致する。
-- 後段でcent9をSE／ME別に加算し、同じm_T bin範囲を射影して、その範囲内でCFを正規化する。
-  選択精度は保存bin幅まで。既存ROOTからm_Tを復元することはできないので再解析が必要。
-- QA末尾に5領域のk*–m_Tを追加（合計12ページ）。旧ROOTの従来表示は維持し、部分欠損・型／軸不整合は失敗する。
+The standard configuration defines 1,786 ordinary histograms plus one Sparse.
+The [complete histogram catalog](../../mdfiles/femto/implementation/femto_lambda_histograms_20260930.md)
+lists names, classes, axes, sample definitions, filling stages and metadata.
+The calibration and selection policies are also saved as ROOT TNamed records.
+
+Build with `script/singularity_make.sh MAINCONF`. Regression entry points under
+`tests/` cover calibration validation, legacy coefficients, exact TOF boundaries,
+He3 control k*, acceptance sample identities, Sparse projections and QA-pool
+independence. Run commands are in [REFERENCE](../../docs/REFERENCE.md).

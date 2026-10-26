@@ -1,22 +1,22 @@
-# Same production/input order as purity_upstream_20260928 (verified run 20160024).
 # Energy label is beam energy in fixed-target mode, not collider sqrt(sNN).
 starTag:
-  triggerSets: "production_3p85GeV_fixedTarget_2019"
+  triggerSets: "production_3p85GeV_fixedTarget_2021"
   stream: "st_physics"
   collision: "auau3p85"
-  year: "year2019"
+  year: "year2021"
   productionTag: "P24iy"
   libraryTag: "SL24y"
   filetype: "daq_reco_picoDst"
   filenameFilter: "st_physics"
-  filenameNotFilter: ""
+  filenameNotFilter: "adc"
   storage: "local"
 dataset:
   collisionSystem: "Au+Au"
-  allPicoDstList: "picoDstList/auau3p85_femtoLambda_validation_20260930.list"
+  # Local runs must explicitly supply a verified 2021 P24iy input file/list.
+  allPicoDstList: ""
   runRange:
-    min: 20000000
-    max: 20999999
+    min: 22000000
+    max: 22999999
   goodRunList: ""
   dataQuality: "production"
   dataFormat: "picoDst"

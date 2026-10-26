@@ -150,6 +150,18 @@ int femto_lambda_maker_checks(const char* mainconf) {
     NoKfLibraries();
     Fixtures f(mainconf);
     Case(f,"valid_mock",f.Main("valid_mock"),true);
+    if(f.maker.find("lambdaHe3ControlEnabled: true")==std::string::npos) {
+      Case(f,"control_flag_without_dual_targets",f.Main("control_flag_without_dual_targets",
+           f.maker+"\nlambdaHe3ControlEnabled: true\n"),false);
+      const std::string primary=f.maker.find("speciesKeys: lambda,he4")!=std::string::npos?"he4":"he3";
+      const std::string extra=primary=="he4"?"he3":"he4";
+      Case(f,"extra_target_without_control_flag",f.Main("extra_target_without_control_flag",
+           Scalar(f.maker,"speciesKeys","lambda,"+primary+","+extra)+
+           "\nspecies_"+extra+"_builderType: track\nspecies_"+extra+"_particleKey: "+extra+"\n"),false);
+    } else {
+      Case(f,"dual_targets_with_disabled_control",f.Main("dual_targets_with_disabled_control",
+           Scalar(f.maker,"lambdaHe3ControlEnabled","false")),false);
+    }
     Case(f,"provider_absent",f.Main("provider_absent"),false,false);
     Case(f,"provider_init_failure",f.Main("provider_init_failure"),false,true,false);
     Case(f,"existing_output",f.Main("existing_output"),false,true,true,true);

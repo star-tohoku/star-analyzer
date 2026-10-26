@@ -4,6 +4,7 @@
 #include "StMaker.h"
 #include "StPhiKKReconstruction.h"
 #include "FemtoCandidate.h"
+#include "FemtoNuclearPidPairQaCandidate.h"
 #include "FemtoPhiMixSampler.h"
 #include "cuts/FemtoConfig.h"
 #include "StarClassLibrary/StPhysicalHelixD.hh"
@@ -116,6 +117,8 @@ class StFemtoMaker : public StMaker {
 
   struct FemtoMixingEvent {
     FemtoCandidateStore candidates;
+    // Payload only; excluded from physical pool admission and pair sampling.
+    FemtoNuclearPidPairQaStore nuclearPidQaCandidates;
   };
 
   StPicoDstMaker* mPicoDstMaker;
@@ -132,6 +135,7 @@ class StFemtoMaker : public StMaker {
   Double_t m_psi2;
 
   FemtoCandidateStore m_eventCandidates;
+  FemtoNuclearPidPairQaStore mLambdaNuclearPidQaCandidates;
   std::vector<FemtoCandidate> m_phiQaLoose;
   std::vector<FemtoCandidate> m_phiQaPreMassLoose;
   std::vector<FemtoCandidate> m_phiQaPreMassTofStrict;
@@ -265,6 +269,7 @@ class StFemtoMaker : public StMaker {
 
   Int_t GetMixingBin(Float_t vz, Int_t cent9, Double_t psi2) const;
   void FillSameEventPairs(const FemtoConfig::ChannelDef& ch);
+  void FillNuclearPidQaPairs(Float_t vz, Int_t cent9, Double_t psi2);
   void FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t channelIndex, Float_t vz, Int_t cent9,
                            Double_t psi2);
   // Kubo-rule 3-body background: h + SE-K(one charge) + ME-K(other charge), plus a fully-mixed

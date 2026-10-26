@@ -147,13 +147,17 @@ Int_t StFemtoMaker::InitLambda() {
       std::cout << "[Femto Lambda config] " << references[i] << ": " << path << std::endl;
     }
     const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
+    const bool he3Control=maker["lambdaHe3ControlEnabled"] ? maker["lambdaHe3ControlEnabled"].as<bool>() : false;
+    const size_t expectedNuclei=he3Control?2:1;
+    const size_t expectedChannels=4*expectedNuclei;
     if (!maker["speciesKeys"].IsScalar() || !maker["nChannels"].IsScalar() ||
-        maker["nChannels"].as<int>() != 4 || fc.channels.size() != 4 || fc.species.size() != 2)
-      throw std::runtime_error("Lambda requires exactly two explicit species and four channels");
+        maker["nChannels"].as<int>() != int(expectedChannels) || fc.channels.size() != expectedChannels ||
+        fc.species.size() != expectedNuclei+1)
+      throw std::runtime_error("Lambda species/channel count disagrees with its explicit control policy");
     const FemtoConfig::SpeciesDef* lambda = fc.FindSpecies("lambda");
     if (!lambda || lambda->builderType != "resonance" || lambda->particleKey != "lambda_kf")
       throw std::runtime_error("Lambda species must use resonance/lambda_kf");
-    std::string nucleus;
+    std::set<std::string> nuclei;
     for (std::map<std::string, FemtoConfig::SpeciesDef>::const_iterator it = fc.species.begin();
          it != fc.species.end(); ++it) {
       const FemtoConfig::SpeciesDef& sp = it->second;
@@ -164,11 +168,14 @@ Int_t StFemtoMaker::InitLambda() {
       if ((sp.key != "deuteron" && sp.key != "triton" && sp.key != "he3" && sp.key != "he4") ||
           sp.builderType != "track" || sp.particleKey != sp.key)
         throw std::runtime_error("unsupported Lambda bachelor/builder");
-      nucleus = sp.key;
+      nuclei.insert(sp.key);
     }
+    if(nuclei.size()!=expectedNuclei || (he3Control && (!nuclei.count("he4") || !nuclei.count("he3"))))
+      throw std::runtime_error("lambdaHe3ControlEnabled requires exactly lambda,he4,he3");
     const char* suffix[] = {"", "_signal", "_leftSB", "_rightSB"};
     std::set<std::string> expected;
-    for (size_t i = 0; i < 4; ++i) expected.insert("lambda_" + nucleus + suffix[i]);
+    for(std::set<std::string>::const_iterator nucleus=nuclei.begin();nucleus!=nuclei.end();++nucleus)
+      for(size_t i=0;i<4;++i)expected.insert("lambda_"+*nucleus+suffix[i]);
     for (size_t i = 0; i < fc.channels.size(); ++i) {
       std::ostringstream prefix; prefix << "channel_" << i << "_";
       const char* required[] = {"name","partA","partB","enabled","doMixing","signalMin","signalMax","normQMin","normQMax"};
@@ -176,10 +183,13 @@ Int_t StFemtoMaker::InitLambda() {
         if (!maker[prefix.str() + required[j]].IsScalar())
           throw std::runtime_error("missing explicit Lambda channel field: " + prefix.str() + required[j]);
       const FemtoConfig::ChannelDef& ch = fc.channels[i];
-      if (!expected.erase(ch.name) || ch.partA != "lambda" || ch.partB != nucleus ||
-          !ch.enabled || !ch.doMixing || !std::isfinite(ch.signalMin) ||
+      bool nameMatchesBachelor=false;
+      for(size_t r=0;r<4;++r)
+        nameMatchesBachelor=nameMatchesBachelor || ch.name=="lambda_"+ch.partB+suffix[r];
+      if (!expected.erase(ch.name) || ch.partA != "lambda" || !nuclei.count(ch.partB) ||
+          !nameMatchesBachelor || !ch.enabled || !ch.doMixing || !std::isfinite(ch.signalMin) ||
           !std::isfinite(ch.signalMax) || ch.signalMin >= ch.signalMax)
-        throw std::runtime_error("invalid/duplicate Lambda channel");
+        throw std::runtime_error("invalid/duplicate Lambda channel or channel name/partB mismatch");
     }
     if (!expected.empty() || fc.rotationEnabled || fc.fullyMixedEnabled ||
         fc.closePairEnabled || fc.enableHKaonTwoBody || fc.enableKuboTriplet)
@@ -257,6 +267,7 @@ Int_t StFemtoMaker::MakeLambdaEvent() {
   m_cent9 = m_cent16 = -1;
   m_refMultCorr = -1.; m_centWeight = 1.; m_psi2 = -1.;
   m_eventCandidates.clear();
+  mLambdaNuclearPidQaCandidates.clear();
   mLambdaProvider->Clear();
   if (!mPicoDstMaker || !(mPicoDst = mPicoDstMaker->picoDst()) || !mPicoDst->event()) return kStErr;
   StPicoEvent* event = mPicoDst->event();
@@ -311,7 +322,8 @@ Int_t StFemtoMaker::MakeLambdaEvent() {
     ++mLambdaSelectedTotal;
     ++mLambdaEventSelected;
   }
-  mLambdaLegacy->CollectNuclei(mPicoDst, mEventCounter, m_cent9, m_eventCandidates);
+  mLambdaLegacy->CollectNuclei(mPicoDst, mEventCounter, m_cent9, m_eventCandidates,
+    mLambdaLegacy->NuclearPidPairQaEnabled()?&mLambdaNuclearPidQaCandidates:0);
   // Each base channel is evaluated once; its helper fans out all mass classes.
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   for (size_t i = 0; i < fc.channels.size(); ++i) {
@@ -321,6 +333,7 @@ Int_t StFemtoMaker::MakeLambdaEvent() {
     FillMixedEventPairs(ch, static_cast<Int_t>(i), pv.Z(), m_cent9, m_psi2);
   }
   if (pv.Z() < mLambdaMixMinVz || pv.Z() > mLambdaMixMaxVz) ++mLambdaMixClampedEvents;
+  FillNuclearPidQaPairs(pv.Z(), m_cent9, m_psi2);
   StoreEventForMixing(pv.Z(), m_cent9, m_psi2);
   if (cent.fillCentralityQA) {
     const FemtoLambdaEventStats& stats = mLambdaProvider->Stats();
@@ -2857,6 +2870,41 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
   }
 }
 
+void StFemtoMaker::FillNuclearPidQaPairs(Float_t vz,Int_t cent9,Double_t psi2) {
+  if(!mLambdaLegacy || !mLambdaLegacy->NuclearPidPairQaEnabled()) return;
+  const FemtoCandidateStore::const_iterator currentLambda=m_eventCandidates.find("lambda");
+  const std::vector<FemtoCandidate>* lambdas=currentLambda==m_eventCandidates.end()?0:&currentLambda->second;
+  auto fill=[&](const std::vector<FemtoCandidate>* l,const FemtoNuclearPidPairQaStore& qa,bool mixed) {
+    if(!l || l->empty()) return;
+    for(FemtoNuclearPidPairQaStore::const_iterator species=qa.begin();species!=qa.end();++species)
+      for(size_t i=0;i<l->size();++i) for(size_t j=0;j<species->second.size();++j) {
+        const FemtoCandidate& a=(*l)[i];
+        const FemtoCandidate& b=species->second[j].candidate;
+        if(TracksOverlap(a,b)) continue;
+        const Double_t kstar=ComputeKStar(CandidateP4(a),CandidateP4(b));
+        mLambdaLegacy->FillPrePidNuclearPairQa(a,b,kstar,cent9,mixed);
+      }
+  };
+  fill(lambdas,mLambdaNuclearPidQaCandidates,false);
+  // Read the existing physical pool only: no new admission, pair sampling,
+  // random-number generation or physical sampler-counter updates.
+  const Int_t mixBin=GetMixingBin(vz,cent9,psi2);
+  std::map<Int_t,std::deque<FemtoMixingEvent> >::const_iterator poolIt=m_mixingPool.find(mixBin);
+  if(poolIt==m_mixingPool.end()) return;
+  const std::deque<FemtoMixingEvent>& pool=poolIt->second;
+  const size_t limit=std::min(pool.size(),static_cast<size_t>(mLambdaMaxMixEvents));
+  const MixingConfig& mix=ConfigManager::GetInstance().GetMixingConfig();
+  for(size_t i=0;i<limit;++i) {
+    const FemtoMixingEvent& buffered=pool[pool.size()-1-i];
+    fill(lambdas,buffered.nuclearPidQaCandidates,true);
+    if(mix.mixBothDirections) {
+      const FemtoCandidateStore::const_iterator oldLambda=buffered.candidates.find("lambda");
+      const std::vector<FemtoCandidate>* old=oldLambda==buffered.candidates.end()?0:&oldLambda->second;
+      fill(old,mLambdaNuclearPidQaCandidates,true);
+    }
+  }
+}
+
 void StFemtoMaker::StoreEventForMixing(Float_t vz, Int_t cent9, Double_t psi2) {
   if (m_eventCandidates.empty()) return;
   if (mLambdaLegacy) {
@@ -2868,6 +2916,8 @@ void StFemtoMaker::StoreEventForMixing(Float_t vz, Int_t cent9, Double_t psi2) {
   Int_t mixBin = GetMixingBin(vz, cent9, psi2);
   FemtoMixingEvent evt;
   evt.candidates = m_eventCandidates;
+  if(mLambdaLegacy && mLambdaLegacy->NuclearPidPairQaEnabled())
+    evt.nuclearPidQaCandidates=mLambdaNuclearPidQaCandidates;
   std::deque<FemtoMixingEvent>& pool = m_mixingPool[mixBin];
   pool.push_back(evt);
   const MixingConfig& mix = ConfigManager::GetInstance().GetMixingConfig();

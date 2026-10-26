@@ -10,17 +10,42 @@
 
   <command>
     starver __STARVER__
-    mkdir -p $SCRATCH/__SCRATCH_SUBDIR__
-    set runtime_dir="$SCRATCH/runtime_bundle"
-    /bin/rm -rf "$runtime_dir"
-    /bin/mkdir -p "$runtime_dir"
-    foreach d (analysis config lib include StMaker StRoot .sl73_x8664_gcc485)
-      if ( -e "$d" ) then
-        /bin/cp -RL "$d" "$runtime_dir/"
+    # SCRATCH is allocated by SUMS on the worker, unlike the precreated output directory.
+    if ( ! $?SCRATCH ) exit 80
+    if ( "$SCRATCH" == "" || "$SCRATCH" == "/" ) exit 80
+    if ( ! -d "$SCRATCH" || ! -w "$SCRATCH" ) exit 81
+    /bin/mkdir -p "$SCRATCH/__SCRATCH_SUBDIR__"
+    if ( $status != 0 ) exit 82
+    if ( ! -w "$SCRATCH/__SCRATCH_SUBDIR__" ) exit 82
+    # Failed SUMS staging can leave a remote URI; reject nonlocal unreadable input.
+    if ( ! -s "$FILELIST" ) exit 83
+    # SUMS may append an event-count column; both runners need path-only lines.
+    awk 'NF {if ($1 ~ /^#/) next; if (NF>2) exit 1; if (NF==2) if ($2 !~ /^[0-9]+$/) exit 1; print $1}' "$FILELIST" > "$SCRATCH/production_input.list"
+    if ( $status != 0 ) exit 83
+    setenv FILELIST "$SCRATCH/production_input.list"
+    set input_count=`awk 'END {print NR}' "$FILELIST"`
+    if ( "$input_count" == "0" ) exit 83
+    if ( $input_count > __FILES_PER_JOB__ ) exit 83
+    echo "Production input list (staged files):"
+    cat "$FILELIST"
+    foreach input_file (`cat "$FILELIST"`)
+      if ( ! -r "$input_file" ) then
+        echo "ERROR: input was not staged as a readable local file: $input_file"
+        exit 84
       endif
     end
-    /bin/rm -f "$runtime_dir/analysis/"*_C.* 2>/dev/null
+    set runtime_dir="$SCRATCH/runtime_bundle"
+    /bin/mkdir "$runtime_dir"
+    if ( $status != 0 ) exit 85
+    foreach d (analysis config lib include StMaker StRoot)
+      if ( ! -d "$d" ) exit 86
+      /bin/cp -RL "$d" "$runtime_dir/"
+      if ( $status != 0 ) exit 86
+    end
+    # Remove only scratch-local copied ACLiC products, not project originals.
+    find "$runtime_dir/analysis" -maxdepth 1 -type f -name '*_C.*' -delete
     cd "$runtime_dir"
+    if ( $status != 0 ) exit 87
     setenv LD_LIBRARY_PATH ${runtime_dir}/lib:${LD_LIBRARY_PATH}
     # Provenance the analysis cannot work out for itself: the runtime bundle is a copy, with no
     # git repository in it. Captured when this joblist was generated. Without these the tree
@@ -28,7 +53,13 @@
     setenv STAR_ANA_GIT_REV "__GIT_REV__"
     setenv STAR_ANA_GIT_DIRTY "__GIT_DIRTY__"
     setenv STAR_ANA_LIBRARY_TAG "__STARVER__"
-    singularity exec -B /star/nfs4/AFS:/star/nfs4/AFS -B /home/starlib:/home/starlib --env LD_LIBRARY_PATH="$LD_LIBRARY_PATH" /cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest /bin/bash -lc 'export STAR=/star/nfs4/AFS/star/packages/__STARVER__; export STAR_HOST_SYS=sl73_x8664_gcc485; export STAR_LIB=${STAR}/.${STAR_HOST_SYS}/lib; export STAR_BIN=${STAR}/.${STAR_HOST_SYS}/bin; export PATH=${STAR_BIN}:${STAR}/mgr:$PATH; export LD_LIBRARY_PATH=${STAR_LIB}:$LD_LIBRARY_PATH; root4star -q -b analysis/__RUN_MACRO__\(\"$FILELIST\",\"$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root\",\"$JOBID\",__MAX_EVENTS__,\"__MAINCONF__\"\)'
+    singularity exec --pwd "$runtime_dir" -B "${SCRATCH}:${SCRATCH}" -B /cvmfs:/cvmfs -B /star/nfs4/AFS:/star/nfs4/AFS -B /home/starlib:/home/starlib --env LD_LIBRARY_PATH="$LD_LIBRARY_PATH" /cvmfs/singularity.opensciencegrid.org/star-bnl/star-sw:latest /bin/bash -lc 'set -eu; export ROOTSYS=/cvmfs/star.sdcc.bnl.gov/star-spack/spack/opt/spack/linux-rhel7-x86_64/gcc-4.8.5/root-5.34.38-eyawaunrtayjlt3aqon5claakm3c7xl7; export STAR=/star/nfs4/AFS/star/packages/__STARVER__; export STAR_HOST_SYS=sl73_x8664_gcc485; export STAR_LIB=${STAR}/.${STAR_HOST_SYS}/lib; export STAR_BIN=${STAR}/.${STAR_HOST_SYS}/bin; export PATH=${ROOTSYS}/bin:${STAR_BIN}:${STAR}/mgr:$PATH; export LD_LIBRARY_PATH=${ROOTSYS}/lib:${STAR_LIB}:$LD_LIBRARY_PATH; root4star -q -b analysis/__RUN_MACRO__\(\"$FILELIST\",\"$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root\",\"$JOBID\",__MAX_EVENTS__,\"__MAINCONF__\"\)'
+    set analysis_status=$status
+    if ( $analysis_status != 0 ) exit $analysis_status
+    if ( ! -s "$SCRATCH/__SCRATCH_SUBDIR__/__OUTPUT_FILE_STEM___$JOBID.root" ) then
+      echo "ERROR: expected ROOT output missing or empty"
+      exit 88
+    endif
   </command>
 
   <stdout URL="file:__LOG_DIR__/stdout.$JOBID.out" />
@@ -41,7 +72,6 @@
 
   <SandBox>
     <Package>
-      <File>file:./.sl73_x8664_gcc485</File>
       <File>file:./analysis/</File>
       <File>file:./lib/</File>
       <File>file:./config/</File>

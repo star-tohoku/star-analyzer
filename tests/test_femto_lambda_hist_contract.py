@@ -6,7 +6,7 @@ import re
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "mdfiles/femto/plans/femto_lambda_legacy_histogram_manifest_20260930.json"
+MANIFEST = ROOT / "tests/fixtures/femto_lambda_legacy_histogram_manifest.json"
 
 
 def signature(spec):

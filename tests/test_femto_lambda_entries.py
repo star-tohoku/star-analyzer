@@ -3,6 +3,7 @@
 from pathlib import Path
 import subprocess
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SPECIES = {"d": "deuteron", "t": "triton", "3He": "he3", "4He": "he4"}
@@ -27,8 +28,9 @@ class FemtoLambdaEntries(unittest.TestCase):
             for short, species in SPECIES.items():
                 name = f"auau{energy}_anaFemtoLambda_{short}_KFParticle_highpurity"
                 main = flat(ROOT / f"config/mainconf/main_{name}.yaml")
-                self.assertEqual(set(main), {"analysis", "event", "centrality", "kf", "nuclearid",
-                                             "maker", "mixing", "femtoHist", "nuclearHist"})
+                expected = {"analysis", "event", "centrality", "kf", "nuclearid",
+                            "maker", "mixing", "femtoHist", "nuclearHist"}
+                self.assertEqual(set(main), expected)
                 self.assertEqual(main["kf"], f"cuts/kf/kf_auau{energy}_anaLambda_KFParticle_highpurity.yaml")
                 for path in main.values():
                     self.assertTrue((ROOT / "config" / path).is_file(), path)
@@ -36,26 +38,79 @@ class FemtoLambdaEntries(unittest.TestCase):
                 self.assertIn(f'baseRunMacro: "run_anaFemtoLambda_{short}"', info)
                 self.assertIn(f'baseAnaMacro: "anaFemtoLambda_{short}"', info)
                 self.assertIn('mode: "fxtmult"', info)
-                self.assertIn("fixedTarget_" + ("2020" if energy == "13p5" else "2019"), info)
+                self.assertIn("fixedTarget_" + ("2020" if energy == "13p5" else "2021"), info)
                 maker = flat(ROOT / "config" / main["maker"])
-                self.assertEqual(maker["speciesKeys"], "lambda," + species)
+                control = maker.get("lambdaHe3ControlEnabled", "false") == "true"
+                if control:
+                    self.assertEqual((energy, short), ("3p85", "4He"))
+                    self.assertEqual(maker["speciesKeys"], "lambda,he4,he3")
+                    targets = ["he4", "he3"]
+                else:
+                    self.assertEqual(maker["speciesKeys"], "lambda," + species)
+                    targets = [species]
                 self.assertEqual(maker["species_lambda_particleKey"], "lambda_kf")
                 self.assertEqual(maker["lambdaEventPolicy"], "lambda_imp5_compat")
                 self.assertEqual(maker["nuclearSelectionProfile"], "legacy_nuclearid")
                 self.assertEqual(maker["lambdaPairMassMode"], "fixed")
                 self.assertEqual(float(maker["lambdaPairMass"]), 1.115683)
-                self.assertEqual(maker["nChannels"], "4")
+                self.assertEqual(maker["nChannels"], str(4 * len(targets)))
                 mu = float(maker["lambdaSignalMean"])
                 self.assertEqual(float(maker["lambdaSignalNSigma"]), 3.0)
                 self.assertGreater(float(maker["lambdaSignalSigma"]), 0.0)
                 width = float(maker["lambdaSignalSigma"]) * float(maker["lambdaSignalNSigma"])
                 outer = float(maker["lambdaSidebandOuterFactor"]) * width
                 bounds = [(1.05, 1.25), (mu-width, mu+width), (mu-outer, mu-width), (mu+width, mu+outer)]
-                for i, (low, high) in enumerate(bounds):
+                for i in range(4 * len(targets)):
+                    low, high = bounds[i % 4]
                     for key in ("name", "partA", "partB", "enabled", "doMixing", "signalMin", "signalMax", "normQMin", "normQMax"):
                         self.assertIn(f"channel_{i}_{key}", maker)
+                    self.assertEqual(maker[f"channel_{i}_partB"], targets[i // 4])
                     self.assertAlmostEqual(float(maker[f"channel_{i}_signalMin"]), low)
                     self.assertAlmostEqual(float(maker[f"channel_{i}_signalMax"]), high)
+
+    def test_3p85_dataset_policy(self):
+        names = [s + "_KFParticle_highpurity" for s in SPECIES]
+        production = ROOT / "config/analysis/analysis_info_auau3p85_anaFemtoLambda_4He_KFParticle.yaml"
+        if production.is_file():
+            names.append("4He_KFParticle")
+        for suffix in names:
+            info = (ROOT / f"config/analysis/analysis_info_auau3p85_anaFemtoLambda_{suffix}.yaml").read_text()
+            for key, value in {"triggerSets": "production_3p85GeV_fixedTarget_2021",
+                               "year": "year2021", "productionTag": "P24iy",
+                               "filenameNotFilter": "adc", "allPicoDstList": ""}.items():
+                self.assertIn(f'  {key}: "{value}"\n', info)
+            self.assertIn("    min: 22000000\n", info)
+            self.assertIn("    max: 22999999\n", info)
+
+    def test_nuclear_pair_pid_qa_is_opt_in_for_canonical_production(self):
+        enabled = {
+            "main_auau3p85_anaFemtoLambda_4He_KFParticle.yaml",
+        }
+        observed = set()
+        for path in (ROOT / "config/mainconf").glob("main_*.yaml"):
+            main = flat(path)
+            if "nuclearPidPairQaHist" not in main:
+                continue
+            observed.add(path.name)
+            reference = main["nuclearPidPairQaHist"]
+            self.assertTrue(reference.startswith("hist/"), reference)
+            self.assertTrue((ROOT / "config" / reference).is_file(), reference)
+            self.assertIn("he3Control", main["maker"])
+            self.assertIn("he4_accepted_20261022", main["nuclearid"])
+        self.assertEqual(observed, enabled)
+    def test_3p85_local_production_xml(self):
+        # Generated production artifacts are not present in every checkout.
+        xml_path = ROOT / "job/joblist/joblist_auau3p85_anaFemtoLambda_4He_KFParticle.xml"
+        info_path = ROOT / "config/analysis/analysis_info_auau3p85_anaFemtoLambda_4He_KFParticle.yaml"
+        if not xml_path.is_file() or not info_path.is_file():
+            self.skipTest("local production configuration/XML not generated")
+        xml = ET.parse(xml_path).getroot()
+        inp = xml.find("input")
+        self.assertEqual(inp.get("nFiles"), "all")
+        self.assertEqual(inp.get("URL"), "catalog:star.bnl.gov?trgsetupname=production_3p85GeV_fixedTarget_2021,production=P24iy,filetype=daq_reco_picoDst,filename~st_physics,filename!~adc,storage=local")
+        info = info_path.read_text()
+        self.assertIn("  maxEvents: -1\n", info)
+        self.assertIn('  nFiles: "all"\n', info)
 
     def test_entry_lifecycle_and_loader_order(self):
         for short, species in SPECIES.items():

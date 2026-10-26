@@ -1,0 +1,41 @@
+# Accepted He4 PID polynomial; d/t/He3 use the unchanged Git tables.
+schemaVersion: 2
+profile: he4_accepted_20261022
+function: log10_polynomial
+rigidityUnit: GeV/c
+dedxUnit: keV/cm
+outsideRangePolicy: legacy
+source:
+  collision: auau3p85
+  year: 2021
+  production: P24iy
+  sourceRoot: /gpfs/mnt/gpfs01/star/pwg/yichikawa/git_STAR_3/star-analyzer/rootfile/auau3p85_anaFemtoLambda_4He_KFParticle/auau3p85_anaFemtoLambda_4He_KFParticle_2021P24iy_partial_merge.root
+  sourceRootFingerprint:
+    path: /gpfs/mnt/gpfs01/star/pwg/yichikawa/git_STAR_3/star-analyzer/rootfile/auau3p85_anaFemtoLambda_4He_KFParticle/auau3p85_anaFemtoLambda_4He_KFParticle_2021P24iy_partial_merge.root
+    size: 10522646853
+    mtime_ns: 1790979373044137604
+    device: 48
+    inode: 82490341
+  referenceGit: 8f7d539
+  coefficients: rootfile/auau3p85_anaFemtoLambda_4He_KFParticle/pdf/nuclear_pid_he4_20261022_002/coefficients.json
+  coefficientsSha256: d7b9f000208dfc1d0e0fbde312a456b53fc91f8574a49cf004285aa52c800f98
+  fitSummary: rootfile/auau3p85_anaFemtoLambda_4He_KFParticle/pdf/nuclear_pid_he4_20261022_002/summary.json
+  fitSummarySha256: a0508c617a9bad880660881eabc0b52b3e3d27cb02abf9f315bcefe79175e488
+  fitSource: tools/nuclear_pid_he4_fixedmean_20261022/run.py
+  fitSourceSha256: 8b6c6265d0ff102e1f8b3b3cef492e89a36a4d63e08c0a09a823f4bf6d083686
+  settings: rootfile/auau3p85_anaFemtoLambda_4He_KFParticle/pdf/nuclear_pid_he4_20261022_002/settings.yaml
+  settingsSha256: 2f8e0404b515e44b83f8d5fa6193e81ce93b1442cb356f6acfbb365698803d5f
+species:
+  he4:
+    domain:
+    - 0.4
+    - 5.0
+    mean:
+    - 40.07075429018867
+    - -104.6984111474443
+    - 140.39957818755835
+    - -64.63448390958877
+    sigma:
+    - 2.3688048759048863
+    - -6.957225467583047
+    - 7.124880203400031

@@ -138,3 +138,37 @@ script/getfile/
 
 # Local femto CF fit macros (experimental; source in share/femtocalc)
 common/macro/etc/
+
+# Personal task lists, study reports and generated analysis products
+/Todo/
+/analysisnote/
+/rootfile/
+/mdfiles/kfparticle/comparisons/
+/mdfiles/kfparticle/plans/
+/mdfiles/femto/plans/
+/mdfiles/configuration/unused_lambda_cut_cleanup_20260908.md
+/tools/summary_4He*.tex
+# Nuclear PID fit/plot studies; adopted runtime calibration lives in config/.
+/tools/he4_purity/
+/tools/kfparticle_summary/
+/tools/nuclear_pid_cutoff/
+/tools/nuclear_pid_he4_20261022/
+/tools/nuclear_pid_he4_fixedmean_20261022/
+/tools/nuclear_pid_restart_20261020/
+/tools/nuclear_pid_smooth_20261021/
+/tools/nuclear_pid_tof/
+# Per-submission monitoring state and dated one-off launch/recovery scripts
+/job/run/merge_notify/
+/job/run/notify/
+/job/run/production*.started/
+/job/run/recovery*/
+/job/run/*_20[0-9][0-9][01][0-9][0-3][0-9].py
+/job/run/*_20[0-9][0-9][01][0-9][0-3][0-9].sh
+/script/organize_todo_*.py
+# Personal one-off source/config rewrite helpers
+/tools/add_missing_hists.py
+/tools/apply_patch.py
+/tools/create_fit_macro.py
+/tools/fix_missing_hists.py
+/tools/merge_hist_yaml.py
+/tools/patch.py

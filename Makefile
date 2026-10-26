@@ -310,10 +310,11 @@ $(LIB_DIR)/$(LIB_COMMON_NAME): $(LIB_DIR) $(COMMON_OBJS) $(LIB_DIR)/libStarAnaCo
 $(LIB_DIR)/common_%.o: $(COMMON_DIR)/%.cxx $(COMMON_DIR)/%.h | $(LIB_DIR)
 	$(CXX) $(CXXFLAGS_MAKER) -c $< -o $@
 
-# Lambda's strict YAML validation is local to these two core objects. No KF flags/link dependency.
-$(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/common_FemtoLambdaLegacy.o: CXXFLAGS_MAKER += -Isrc/third_party/yaml-cpp/include
-$(LIB_DIR)/StFemtoMaker.o: include/FemtoLambdaProvider.h StMaker/common/FemtoLambdaLegacy.h
-$(LIB_DIR)/common_FemtoLambdaLegacy.o: include/FemtoLambdaProvider.h $(COMMON_DIR)/NuclearIdDeDxVsMom.h
+# Lambda's strict YAML validation stays in compiled core objects. No KF flags/link dependency.
+$(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/common_FemtoLambdaLegacy.o $(LIB_DIR)/common_FemtoNuclearDedxCalibration.o $(LIB_DIR)/common_FemtoNuclearPairPidSparse.o: CXXFLAGS_MAKER += -Isrc/third_party/yaml-cpp/include
+$(LIB_DIR)/StFemtoMaker.o: include/FemtoLambdaProvider.h StMaker/common/FemtoLambdaLegacy.h include/FemtoNuclearPidPairQaCandidate.h
+$(LIB_DIR)/common_FemtoLambdaLegacy.o: include/FemtoLambdaProvider.h $(COMMON_DIR)/NuclearIdDeDxVsMom.h $(COMMON_DIR)/FemtoNuclearDedxCalibration.h $(COMMON_DIR)/FemtoNuclearPairPidSparse.h include/FemtoNuclearPidPairQaCandidate.h
+$(LIB_DIR)/common_FemtoNuclearDedxCalibration.o: $(COMMON_DIR)/NuclearIdDeDxVsMom.h
 
 # Extra header-only dependency for nuclear ID calibration tables
 $(LIB_DIR)/common_StNuclearIdHelper.o: $(COMMON_DIR)/NuclearIdDeDxVsMom.h

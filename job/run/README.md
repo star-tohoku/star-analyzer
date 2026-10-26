@@ -166,3 +166,37 @@ After submission, SUMS leaves many files named `anaName+jobid+*` (e.g. `auau3p85
 ## root4star exit abort (`corrupted size vs. prev_size`)
 
 If analysis finishes and ROOT files copy successfully but stderr shows glibc heap errors at process exit, see **`TROUBLESHOOTING_root4star_exit.md`** in this directory. It lists **debug joblists** (minimal exit, `maxEvt=1` / `100`, ACLiC vs interpreter, `gSystem->Exit(0)`), **Pr3** `Make()` stage bisect (`joblist_auau19_anaLambda_debug_pr3_max1_no_hist_s[0-4].xml`), **Pr4** Phi control and optional **`MALLOC_CHECK_=3`** joblist, a **reproduction matrix** template, **hypotheses**, and **operational success criteria** when a full fix is not available. For a **local symbolic backtrace** (no gdb in `star-sw:latest`), use **`./local_root4star_anaLambda_backtrace.sh`**. The matrix also includes **`joblist_auau19_anaLambda_debug_max1_no_hist.xml`** (Lambda without `HistManager`); see troubleshooting row **B2**.
+
+## Aggregate completion checks and guarded merging
+
+The job template accepts SUMS one-column paths or two-column `path count` input
+lists. It builds a path-only ROOT input list and checks scratch paths, input
+readability, process status and produced ROOT output before copying results.
+Scheduler exit code 0 alone does not establish successful analysis. Completion
+checks also require expected outputs and successful analysis completion records.
+
+`script/watch_job_notify.py --runmeta RUNMETA --event-log CONDOR_LOG --email ADDRESS --check`
+is read-only. `--watch` waits and sends one aggregate completion email.
+
+To validate and merge after all subjobs terminate:
+
+```bash
+python3 script/watch_job_merge_notify.py \
+  --runmeta RUNMETA --event-log CONDOR_LOG \
+  --root-runner script/singularity_root_batch.sh --mainconf MAINCONF \
+  --email ADDRESS --watch
+```
+
+Use `--check` for a read-only status inspection and `--no-email` when email is not
+wanted. Full successful input coverage is required unless `--allow-partial` is
+explicit. The tool records included/excluded jobs, validates ROOT inputs and
+merged output, refuses an existing destination and does not retry an uncertain
+merge. State is local under `job/run/merge_notify/`; no study artifacts are
+needed in Git. Review failures before starting another merge.
+
+After a validated publication, `python3 script/archive_merged_subjobs.py --runmeta RUNMETA`
+relocates exactly the validated inputs into `subjobs/<SUMS id>` with a resumable
+plan, without deleting ROOT data or overwriting a destination. It does not merge
+or email. Oversized THnSparse objects require a separate, explicitly partitioned
+merge: preserve same-axis Sparse sidecars, then sum low-dimensional projections.
+The generic hadd workflow does not automatically convert such objects.

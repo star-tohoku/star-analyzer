@@ -1,27 +1,82 @@
 # KFParticleを使うΛ–原子核Femto解析のヒストグラム一覧
 
-作成日: 2026-09-30。対象は `anaFemtoLambda_{d,t,3He,4He}` の新しいKF解析出力です。13p5/3p85で名称と軸は共通です。実際のYAML定義と `StFemtoMaker` / `FemtoLambdaLegacy` の記録処理を確認してまとめました。
+対象は `anaFemtoLambda_{d,t,3He,4He}` のKF解析出力。以下は3.85 GeV・2021 P24iyの標準4He設定の名称・軸・充填条件をまとめる。
 
-## 表記と保存場所
 
-| 表記 | 意味 |
+## 現行anaFemtoLambda_4He_KFParticleの全出力
+
+対象入口：[main_auau3p85_anaFemtoLambda_4He_KFParticle.yaml](../../../config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle.yaml)。実際に選別する核は⁴Heと³Heで、³He→⁴He質量仮定は同じ³He候補・pairから派生する比較用表現。d/tのTPC仮説QAも保存するが、この設定にΛ–d/tのCFチャネルはない。
+
+| ROOT保存場所 | 通常TH1/TH2 | 内容 |
+|---|---:|---|
+| `/`（トップ階層） | 145 | イベント・Λ/KF QA、Λ/娘/核の単粒子アクセプタンス、3表現の共通形式SE/ME、mixing QA |
+| `true/` | 840 | 原子核QAと3表現のSE・mT・merging（300）、selected/prePIDペアQA（540） |
+| `mix/` | 801 | 3表現のME・mT（261）、selected/prePIDペアQA（540） |
+| 合計 | **1,786** | TTree・TNamed・TParameterは含めない |
+
+さらにトップ階層に8次元THnSparseD **`hNuclearPidPairJoint`を1個**保存し、ヒストグラム総数は**1,787個**。この数は本節の標準4He設定に対応し、他のprofileとは異なる。
+
+**全ヒストグラムの実名・型・軸・簡単な説明は、本ページ末尾の「現行設定の全ヒストグラムキー一覧」に収録した。** 1,786キーとSparseを3つのヒストYAMLから列挙する。
+
+### 全体の読み方
+
+| 分類 | 対象・主な用途 | 詳細説明 |
+|---|---|---|
+| イベント・centrality QA | event選択、multiplicity、cent9/16、正常終了数 | 本文「最上位：イベント・centralityのQA」 |
+| Λ/KF QA | 全保存質量範囲の採用Λ・娘PID・距離・pointing・KF品質 | 本文「最上位：Λ候補のQA」 |
+| 単粒子アクセプタンス | Λ信号、娘、⁴He、³He、³He→⁴He質量仮定のpT–Y、追加β分布 | 本節の下表と本文pT–Y節 |
+| 共通原子核QA | 全4核種・通常粒子のdE/dx仮説、TOF m²、運動学 | 本文「true/：共通の原子核QA」 |
+| ⁠⁴He専用PID/TOF QA | PID前の対照試料、TPC best後/TOF後、段階別数 | 本文高剛性TOF節と下記現行条件 |
+| Λ–核pair | ⁴He・³He・³HeAs4HeのSE/ME、信号/左右SB、k*、q_lab、全Λ質量、cent9、mT | 本文pair・k*–mT節 |
+| 近接pair QA | Λ娘陽子と各核表現のΔφ*–Δη | 本文track-merging節 |
+| 混合QA | 8チャネルのmixing状態別カウント。base indexは⁴He=0、³He=4 | 本文混合処理節 |
+| ペアPID QA | selected/prePID、k*対nσ/Rの1,080 TH2Dと同時8次元Sparse | 本文「原子核PIDとk*の相関QA」 |
+
+### 現在のPID・TOF条件
+
+- d/t/³HeのdE/dx中心・幅は`NuclearIdDeDxVsMom.h`の関数・係数・有効域を使用。⁴Heだけ確定したlog10(R)の中心3次・幅2次係数へ更新し、補間校正は使わない。
+- 全4核種でR<2 GeV/cはTOF不要、R≥2は有効TOFと核種別m²窓を要求。⁴Heはdと同じ`3.268773 < (m/q)² < 3.693147`。tは`7.2564275～8.2816925`、³Heは`1.78285～2.06485`、いずれも両端除外。
+- ⁠⁴Heは厳密にR>0.61、R<5 GeV/c、旧⁴He vetoなし。d/t/³Heの既存最小R・vetoは保持（特にR≥2.5のveto）。TOF要件だけで全域が採用されるわけではない。
+- TPC best-species判定を先に行い、後段のR/TOF条件で落ちたwinnerを他核種へ再割当てしない。³He物理質量版と⁴He質量仮定版は同じ採用候補を使う。
+- `hHe4PidStage`の0～4は最終R下限/上限等の前を含み、5は最終候補。`0=1+2`だが、現在のR制限では`5=1+4`を一般には仮定しない。
+
+
+### 現在のβ・アクセプタンス追加分
+
+既存のpT–YはΛ信号・陽子娘・π娘、⁴He、³He、³HeAs4Heについて保持。核は最終選別済み候補、Λと娘はΛ信号候補につき1回で、pair数による重みなし。
+
+| TH2D名 | X軸 | Y軸 | 対象 |
+|---|---|---|---|
+| `hLambda_BetaVsEta_signal` | η_lab | β=物理P/E | Λ信号候補 |
+| `hLambda_BetaVsYLab_signal` | Y_lab | β=物理P/E | 同上 |
+| `hNucleus_BetaVsEta_he4` | η_lab | β=物理P/E | 最終⁴He候補、全R |
+| `hNucleus_BetaVsYLab_he4` | Y_lab | β=物理P/E | 同上 |
+
+βはTOF測定値ではない。⁴HeのPとpTはZ=2補正済み物理運動量。η/Yは実験室系、CMシフトなし。η/Y軸200 bin・−5～5、β軸200 bin・0～1。
+
+さらに`hNucleus_{BetaVsEta,BetaVsYLab,PtVsYLab}_he4`の各基底名へ次の末尾を付けた**12個のTH2D**を保存する。対応する全体分布と同じ軸である。
+
+| 末尾 | 条件 |
 |---|---|
-| `{S}` | そのファイルの対象核種：`d`、`t`、`3He`、`4He` |
-| `{C}` | 同じ順に `lambda_deuteron`、`lambda_triton`、`lambda_he3`、`lambda_he4` |
-| `{i}` | `0`〜`8`。たとえば `CentBin2` はcent9=2のイベント |
-| `{a,b}` | aまたはbへ置き換えた各名称。`{,_signal,...}` の先頭の空欄はsuffixなし |
-| SE / ME | 同じイベントの組合せ / 異なるイベントを混合した組合せ |
+| `_lowR_noTof` | R<2、TOF不要。TOFがある候補も含む |
+| `_lowR_tofMatch` | R<2、有効TOFあり、m²窓なし |
+| `_lowR_tofM2` | R<2、有効TOF＋既存⁴He m²窓 |
+| `_highR_tofM2` | R≥2、有効TOF＋既存⁴He m²窓 |
 
-cent9は大きいほど中心衝突です。詳細は[centralityの定義](../../../StRoot/StRefMultCorr/README.md)を参照してください。
+低R3区分は`tofM2 ⊆ tofMatch ⊆ noTof`で重複するため足し合わせない。各変数で`lowR_noTof + highR_tofM2 = 全体分布`がflowを含めて成立する。境界判定は元trackのdouble R・m²を使用。Λのβ分布は全体signal候補のまま。ROOTの`FemtoHe4AcceptanceSamples`へ区分定義・R境界・m²窓を記録する。
 
-| ROOT内の場所 | 内容 | 1ファイルのヒスト数 |
-|---|---|---:|
-| 最上位 `/` | Λ・イベントQA、アクセプタンス、共通Femto形式のSE/ME、混合QA | 79 |
-| `true/` | 共通原子核QA、対象核種のSE、k*–m_T、track-merging QA | 116 |
-| `mix/` | 対象核種のME、k*–m_T | 87 |
-| 合計 | TTreeやメタデータは含めない | 282 |
 
-原子核QAには全4核種のPID仮説を残しますが、pairヒストはファイルごとの対象核種だけです。以下の1次元ヒストのY軸は、断りがなければ件数です。
+### 現在の定義・実装
+
+- [KF・イベント・アクセプタンス・共通pair YAML](../../../config/hist/hist_auau3p85_femtoLambda_he4_he3_control_acceptanceSamples20261022_kf.yaml)
+- [原子核QA・旧形式pair YAML](../../../config/hist/hist_auau3p85_femtoLambda_he4_he3_control_nuclear.yaml)
+- [ペアPID QAとSparse YAML](../../../config/hist/hist_auau3p85_femtoLambda_he4_he3_pid_pair_qa.yaml)
+- [単粒子・原子核・pair充填とROOT保存](../../../StMaker/common/FemtoLambdaLegacy.cxx)、[event/mixingとledger保存](../../../StMaker/StFemtoMaker/StFemtoMaker.cxx)
+
+`FemtoNuclearDedxCalibration`には消費した⁴He係数YAML全文と出典、`FemtoNuclearPidDomain`には核種別R・veto・TOF条件、`FemtoHe4AcceptanceSamples`には追加アクセプタンス試料の定義が入る。これらはTNamedで、上のヒストグラム数には含めない。その他の非ヒストグラム出力は本文末尾の保存項目とPID QA節を参照。
+
+以下に分類別の充填条件と全キーを示す。
+
 
 ## Λの質量窓：signalは±3σ
 
@@ -38,7 +93,7 @@ cent9は大きいほど中心衝突です。詳細は[centralityの定義](../..
 
 **signalのFemto解析は±3σですが、背景確認用の全質量・sidebandヒストは別に保存します。** `hLambda_InvMass` が±3σ外にも分布を持つのはこのためです。保存質量は質量制約をかけていないKF再構成値です。k*の計算では、別途固定Λ質量1.115683 GeV/c²を使用します。
 
-## 最上位：採用粒子のpT–Y_Lab分布（今回追加）
+## 最上位：採用粒子のpT–Y_Lab分布
 
 全4核種・両エネルギーに追加しました。4つともTH2Dで、**横軸は実験室系ラピディティ `Y_Lab`、縦軸はpT [GeV/c]**です。
 `Y_Lab = 0.5 × ln((E+pz)/(E−pz))` とし、擬ラピディティηではありません。重心系への移動やビームラピディティの差引きは行いません。
@@ -103,6 +158,9 @@ Y_Lab軸は200 bin・−5〜5、pT軸は200 bin・0〜10 GeV/cです。軸の定
 
 ## true/：共通の原子核QA
 
+
+### 従来の核QA
+
 KF処理まで通過したイベントのtrackについて記録します。基本条件はnHitsDedx ≥ 15、gPt ≥ 0.1、正のdE/dxです。以下のTPC仮説QAは、最終best-species選択・p/q上限・任意TOF選択の**前**を含み、最終pair用核種の分布とは異なります。
 
 | ヒストグラム名（すべて `true/`） | 軸と意味・記録対象 |
@@ -139,7 +197,7 @@ k*軸は200 bin・0〜1 GeV/c、q_lab軸は200 bin・0〜2 GeV/c、全質量TH2�
 
 旧形式と共通形式は**同じ採用pairを別名で保存したもの**です。たとえば `true/hKstar_d` と最上位の `hKstarSE_lambda_deuteron_signal` は同じ母集団なので、足し合わせてはいけません。全質量TH2も1 pairにつき1回で、signal/SBごとに再加算しません。これらはSE/ME分布であり、Maker出力に完成済みCFやpurityヒストがあるわけではありません。
 
-## 最上位：信号窓を低質量側・高質量側に分けたk*（今回追加）
+## 最上位：信号窓を低質量側・高質量側に分けたk*
 
 従来の±3σ信号、全質量、左右サイドバンドをすべて維持し、**同じ採用済みsignal pair**を次の2群へ追加記録します。
 実際の判定は従来の `MassRegion(mass)==1` を先に確認し、質量中心より低いかどうかで分けます。
@@ -185,7 +243,7 @@ CFを足し合わせて元のsignal CFにしてはいけません。合算する
 
 ## 最上位：混合処理の確認
 
-`hMixSamplerQA` はXが下表の状態番号0〜14、Yがchannel番号です。今回の設定ではbase channel（Y=0）だけを混合し、同じpairを各質量窓へ振り分けるため、他のY binを個別に埋める必要はありません。bin内容はイベント数ではなく、各状態のpair数またはbuffer方向数の累積です。
+`hMixSamplerQA` はXが下表の状態番号0〜14、Yがchannel番号です。基本設定ではbase channel（Y=0）を混合する。現行³He control付き設定では⁴HeのY=0と³HeのY=4を混合し、同じpairを各質量窓へ振り分けるため、他のY binを個別に埋める必要はありません。bin内容はイベント数ではなく、各状態のpair数またはbuffer方向数の累積です。
 
 | Xの値 | 意味 |
 |---|---|
@@ -211,15 +269,10 @@ CFを足し合わせて元のsignal CFにしてはいけません。合算する
 
 現在のYAMLには `hDedxP_4He_m2`、原子核QAの `*_CentBin{i}`、`hVz_{S}`、`hMult_{S}` 等の旧コード上だけのoptionalヒストはありません。未作成のものを一覧の実出力に数えていません。`mix/` のヒストを空の複製として `true/` へ書く旧来の構成も引き継いでいません。
 
-参照：[実装・検証まとめ](femto_lambda_nuclei_kfparticle_20260930.md)、[全キー・軸の機械可読一覧](../plans/femto_lambda_legacy_histogram_manifest_20260930.json)、[代表のΛ/common YAML](../../../config/hist/hist_femtoLambda_deuteron_kf.yaml)、[代表の核種/pair YAML](../../../config/hist/hist_femtoLambda_deuteron_nuclear.yaml)、[記録処理](../../../StMaker/common/FemtoLambdaLegacy.cxx)。
+参照：[実装・検証まとめ](femto_lambda_nuclei_kfparticle_20260930.md)、[全キー・軸の機械可読一覧](../../../tests/fixtures/femto_lambda_legacy_histogram_manifest.json)、[代表のΛ/common YAML](../../../config/hist/hist_femtoLambda_deuteron_kf.yaml)、[代表の核種/pair YAML](../../../config/hist/hist_femtoLambda_deuteron_nuclear.yaml)、[記録処理](../../../StMaker/common/FemtoLambdaLegacy.cxx)。
 
-## 追加分の検証と出力先
 
-SL24y／ROOT 5で全ビルドと4核種の人工データ検証が成功しました。13.5／3.85 GeVの全4核種を前回と同じ先頭10,000イベントで再解析し、既存180ヒストの型・軸・全bin内容・誤差・entriesとイベント／Λ候補記録の完全一致を確認しました。新12ヒストの作成、SE／MEの低側＋高側＝signalも検証済みです。
-
-新ROOT・QA図・各mapのentries・再実行手順は[追加ヒストの検証記録](../../../rootfile/femto_lambda_kf_validation_20260930/acceptance_split/README.md)を参照してください。従来のROOT・PDFは上書きしていません。
-
-## centrality別のk*–m_T（2026-09-30追加）
+## centrality別のk*–m_T
 
 後段でcentralityとm_Tを指定してCFを作るため、**SE／MEを別々に、cent9=0〜8の各binにTH2Dを保存**します。
 既存192ヒストを保持し、90ヒストを追加して計282ヒストです。全4核種・両エネルギーの設定に追加しています。
@@ -298,12 +351,1966 @@ QAの末尾に、signal／SBPos／SBNeg／signalLow／signalHighのk*–m_T（SE
 旧ROOTに90個の新ヒストが全くなければ警告して従来ページだけを表示します。一部欠損・異次元・軸不整合はPDF作成前に停止します。
 既存ROOTにm_T情報は後付けできないため、再ビルド・再解析した新ROOTを使用してください。
 
-### k*–m_T追加分の検証・実出力
 
-SL24y／ROOT5で全ビルド・4核種の人工データ試験が成功しました。13p5／3p85 × 4核種を同じ先頭10,000イベントで再解析し、既存192ヒストとイベント・Λ候補記録が不変であることを確認しました。
-全90 TH2のm_T全域射影（flow・誤差を含む）が従来k*と一致し、低側＋高側＝signalも各二次元binで確認済みです。
-全8 QAは12ページで、旧4／7ページ形式との互換性・異常出力の拒否も検証しました。
+## 原子核PIDとk*の相関QA
 
-最新出力は `rootfile/femto_lambda_kf_validation_20260930/pair_mt/` に分離して保存しました。
-[検証記録・全QAリンク](../../../rootfile/femto_lambda_kf_validation_20260930/pair_mt/README.md)を参照してください。
-以前の `acceptance_split/` のROOTには今回のm_Tヒストは入っていません。
+原子核のpurityをk*・centrality・Λ質量領域別に調べるための、**追加の入力分布**である。
+Makerがpurity fitやCFの背景差引きを実行する機能ではない。
+mainconfの任意キー `nuclearPidPairQaHist:` で専用ヒストYAMLを指定した場合だけ有効にし、
+キーがない従来profileでは追加ヒストの生成・QA候補の保持を行わない。
+専用定義は [原子核PIDペアQA YAML](../../../config/hist/hist_auau3p85_femtoLambda_he4_he3_pid_pair_qa.yaml) に保存する。
+標準3p85⁴He mainconfがこのQAを明示的に有効にする。
+旧統合ROOTにはこれらの新分布はないため、再ビルド・再解析後のROOTが必要になる。
+
+
+### 保存する2段階と運動量の定義
+
+| 段階 | 対象 | 用途と制限 |
+|---|---|---|
+| `selected`（名称に追加suffixなし） | 元のTPC nσ窓・best-species判定・核種ごとの剛性範囲・TOF条件まで通った最終核候補 | 従来CFと同じ採用pairを追跡する。nσ窓で切断済みなので、これだけから窓外の背景やピーク形を復元しない |
+| `prePID`（名称に `PrePid`） | 対象核種自身のTPC nσ窓とbest-species競合だけを外したQA仮説候補。track品質、剛性の許可／除外領域、適用されるTOF条件は維持 | 背景を含むnσ全形状のfit用入力。無条件の全track分布ではない。同一trackが³He仮説と⁴He仮説の両方に入ることがあり、仮説同士を独立粒子数として足さない |
+
+同一核種・pair条件の `selected` は `prePID` に含まれる。
+両stageを独立標本として尤度へ二重に加算したり、ヒストを足して統計を増やしたりしない。
+³He実質量と `3HeAs4He` も同じtrack／pairの派生表現なので統計的に独立ではない。
+
+⁴He表現は `nSigmaHe4`、³Heと `3HeAs4He` は**選別元の `nSigmaHe3`**を使う。
+`3HeAs4He` は同じ³He trackの運動量を保って⁴He質量でk*を計算する比較用表現であり、
+⁴Heのpullへ取り替えたり、別の核種／mixing channelとして追加したりしない。
+剛性 `R=p/|q|` は元trackの物理運動量の大きさをHeの電荷数2で割った値で、
+運動量のZ=2補正を二重に適用しない。追加pair QAでは保存済みFloat_t P4からRを求めるため、
+元trackのdouble剛性の完全な再現ではなく、丸めを含む診断値である。
+TOF量も未補正剛性から計算した `(m/q)^2` である。
+
+QA候補は物理CF用の候補storeとは別に保持する。
+MEでは**従来の物理候補によるpool参加条件・深さ・centrality/Vz区分・両方向を維持した同じpool**にQA情報を添付し、
+QA候補だけのイベントを新たにpoolへ参加させない。
+元イベントとtrack indexによる共有track vetoを維持する。
+最終選択とQA選択の判定には元のdouble値を使い、保存済みFloat_tから境界判定をやり直さない。
+
+### TH2Dの名前・軸・保存場所
+
+次の表の `{S}` は `4He,3He,3HeAs4He`、`{i}` はcent9の `0..8`、
+`{M}` は空欄（±3σsignal）、`_SBPos`、`_SBNeg`、`_signalLow`、`_signalHigh` のいずれかである。
+
+| 保存場所 | ヒストグラム名 | X軸 | Y軸 |
+|---|---|---|---|
+| `true/` | `hKstarNSigma_{S}{M}_CentBin{i}` | k* | 選別元核種のdE/dx nσ、最終選択後 |
+| `mix/` | `hKstarNSigma_Mixed_{S}{M}_CentBin{i}` | k* | 同上、ME |
+| `true/` | `hKstarPOverQ_{S}{M}_CentBin{i}` | k* | 元trackのR、最終選択後 |
+| `mix/` | `hKstarPOverQ_Mixed_{S}{M}_CentBin{i}` | k* | 同上、ME |
+| `true/` | `hKstarNSigmaPrePid_{S}{M}_CentBin{i}` | k* | prePID仮説のdE/dx nσ |
+| `mix/` | `hKstarNSigmaPrePid_Mixed_{S}{M}_CentBin{i}` | k* | 同上、ME |
+| `true/` | `hKstarPOverQPrePid_{S}{M}_CentBin{i}` | k* | prePID仮説のR |
+| `mix/` | `hKstarPOverQPrePid_Mixed_{S}{M}_CentBin{i}` | k* | 同上、ME |
+
+全て明示YAML軸を使う。k*は200 bin・0〜1 GeV/c（5 MeV/c幅）、
+Rは120 bin・0〜6 GeV/c（0.05幅）、nσは120 bin・−12〜12（0.2幅）。
+軸範囲外の有限値はflowへ残し、通常のY軸可視範囲だけを射影するとその分は落ちる。
+各段階で `2変数×3表現×2(SE/ME)×5質量区分×9cent9=540` 件、2段階で1080 TH2Dである。
+signalとその低側・高側は部分集合として重複保存されるため、5区分を全て足して収量にしない。
+最終選択後TH2のY全域・flow込みProjectionXは対応する従来のcentrality別k*を再現し、
+各段階・各二次元binで `signalLow+signalHigh=signal` となる設計である。
+
+2種類のTH2はそれぞれ周辺分布であり、両者だけから `(k*,R,nσ)` の同時分布は復元できない。
+R依存の応答・purityをk*へ移すときにRとnσの独立性を暗黙に仮定しないよう、次の疎同時分布も残す。
+
+### THnSparseDの同時分布と射影
+
+最上位の `hNuclearPidPairJoint` は、同じQA pairを次の8軸で保存する1個の `THnSparseD` である。
+疎形式なので全binを密に確保しないが、埋まったbinに応じてメモリ・ROOT容量・hadd時間が増える。
+
+| 軸番号 | 軸名 | binning／カテゴリ |
+|---:|---|---|
+| 0 | `Kstar` | 200 bin、0〜1 GeV/c |
+| 1 | `POverQ` | 120 bin、0〜6 GeV/c |
+| 2 | `NSigma` | 120 bin、−12〜12 |
+| 3 | `Cent9` | 9 bin、値0〜8 |
+| 4 | `Representation` | 0=`he4`、1=`he3`、2=`he3as4` |
+| 5 | `MixingMode` | 0=`SE`、1=`ME` |
+| 6 | `MassClass` | 0=`SBNeg`、1=`signalLow`、2=`signalHigh`、3=`SBPos` |
+| 7 | `PidStage` | 0=`selected`、1=`prePID` |
+
+categorical軸もbin数・範囲をYAMLに明記し、上記意味との不一致は初期化時に拒否する。
+signalを独立カテゴリとして二重に埋めず、signalLow／signalHighを**排他的に1回だけ**保存する。
+signalの射影はMassClassの1と2を加算する。左右SBとは重ならない。
+カテゴリを選び、他の物理軸のflowを含めて加算した射影は上のTH2と対応する。
+各pairは単位weightで記録し、疎分布は `Sumw2` を有効にする。
+非有限のk*・R・nσまたは不正カテゴリはQAだけで拒否し、通常CFのpair判定へ戻さない。
+同時分布と二次元射影の閉包のため、新QAは有限な同一tupleを記録する。
+
+ROOT5でflowを含む範囲を選んだ軸へ射影するときは、元の軸を維持する `"EA"` を使う。
+`"E"` だけでは、出力先の物理軸がflowを含む幅へ拡張され、元TH2の軸と一致しなくなる。
+たとえばcent9=0、⁴He、SE、±3σsignal、prePIDを選ぶ場合：
+
+```cpp
+for (int axis = 0; axis < 3; ++axis)
+  joint->GetAxis(axis)->SetRange(0, joint->GetAxis(axis)->GetNbins() + 1);
+joint->GetAxis(3)->SetRange(1, 1); // cent9=0
+joint->GetAxis(4)->SetRange(1, 1); // he4
+joint->GetAxis(5)->SetRange(1, 1); // SE
+joint->GetAxis(6)->SetRange(2, 3); // signalLow + signalHigh
+joint->GetAxis(7)->SetRange(2, 2); // prePID
+TH2D* nsigmaVsKstar = joint->Projection(2, 0, "EA"); // X=k*, Y=nSigma
+TH2D* rigidityVsKstar = joint->Projection(1, 0, "EA"); // X=k*, Y=R
+// 使用後、次の選択へ影響させないため全8軸のSetRange(0, 0)を行う。
+```
+
+`A` は射影先軸のrange指定を無視して元の全軸を保つoptionである。
+射影先のk*などをさらに制限したい場合は、このTH2を得た後で目的のbinを選ぶ。
+独立toyでは1080個のカテゴリ／質量区分別射影が、別に組み立てたTH2の全flow・内容・誤差²と一致した。
+
+このR幅0.05・nσ幅0.2は保存後の分割精度の上限であり、
+以前の低R studyのnative R幅0.01や元dE/dxスペクトルを復元するものではない。
+有限のflowは保持するが、flowの内部をさらにR・nσで分けられない。
+解析時には選択範囲、flow方針、TPC winner条件、TOF条件、応答モデルを明示し、
+³He coreのCFをそのまま⁴He窓へ漏れる³He tailのCFと同一視しない。
+
+| 最上位のメタデータ名 | 内容 |
+|---|---|
+| `FemtoLambdaNuclearPairPidQaDefinition` | TH2の母集団・stage・元核種pull・剛性・質量表現の定義 |
+| `NuclearPidPairJointMetadata` | 疎8軸のカテゴリ対応、exact QA YAML、flow／weight方針、helperが受け取ったtuple内の正常fill・非有限値拒否・不正カテゴリ拒否の件数。caller側共通finite gateより前の除外数は含まない |
+
+TH2Dの内容配列は2段階で約203 MiB（1080×202×122×8 byte、flow込み）となり、
+全TH2にSumw2配列も確保すると合計約406 MiBになる。疎分布とpool payloadの占有量は別に増える。
+これは配列の概算であり、実RSSや本番ROOTサイズではない。新規設定では短時間smokeと高占有toyの容量・時間を確認し、
+本番投入前に利用可能メモリとhadd負荷を評価する。offなら追加分を確保しない。
+
+
+## 現行設定の全ヒストグラムキー一覧
+
+現在のmainconfが参照する3つのYAMLを展開した**全1,786通常ヒストグラムと1 Sparse**の一覧。キーはROOT内のフルパス。各区分を開くと全名称を検索できる。型は`HistManager.cpp`の生成規則（無指定の1DはTH1F、2DはTH2F等）を適用し、実ROOTのクラス名でも照合した。軸は「軸ラベル / bin数 [下端, 上端]」。上端は軸範囲の端で、値の選別境界そのものではない。候補cutとflowの扱いは本文を参照。
+
+同じpairを別名で保存する旧形式/共通形式、同じ信号の全体/上下半分、同じ低R候補のTOF比較群は互いに重複し、独立な収量として合計しない。ペアPID QAは完成したPurityやCFではなく後処理の入力分布である。
+
+<details>
+<summary>トップ階層（145個）：全キー・型・軸・説明</summary>
+
+| ROOTキー | 型 | 軸 | 説明 |
+|---|---|---|---|
+| `hCentrality` | TH1F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5] | 選択後cent9 |
+| `hCentrality16` | TH1F | X: cent16 / 16 bin [-0.5, 15.5] | 選択後cent16 |
+| `hCentralityRaw` | TH1F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5] | centrality計算後・許容範囲選択前のcent9 |
+| `hCentralityVsVz` | TH2F | X: V_{z} [cm] / 400 bin [-300, 300]<br>Y: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5] | centrality計算後のPV z–cent9 |
+| `hCosPointing` | TH1F | X: cos(#theta) / 100 bin [0.99, 1.01] | PV→崩壊点とΛ運動量のpointing cos |
+| `hCosPointing_vs_InvMass` | TH2F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25]<br>Y: cos(#theta) / 100 bin [0.99, 1.01] | Λ不変質量–pointing cos |
+| `hDCA12` | TH1F | X: DCA [cm] / 200 bin [0, 5] | 採用Λの娘陽子–π間KF距離 |
+| `hDCAV0` | TH1F | X: DCA [cm] / 200 bin [0, 5] | 採用Λ–PV間KF距離 |
+| `hDCAV0_vs_InvMass` | TH2F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25]<br>Y: DCA [cm] / 200 bin [0, 5] | Λ不変質量–PV距離 |
+| `hKstarMEVsCent_lambda_he3` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・ME・Λ全保存質量・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_as_he4` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_as_he4_leftSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_as_he4_rightSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_as_he4_signal` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_as_he4_signalHigh` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_as_he4_signalLow` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_leftSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・ME・Λ低側sideband・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_rightSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・ME・Λ高側sideband・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_signal` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・ME・Λ信号窓・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_signalHigh` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・ME・Λ信号高半分・最終核選別後 |
+| `hKstarMEVsCent_lambda_he3_signalLow` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・ME・Λ信号低半分・最終核選別後 |
+| `hKstarMEVsCent_lambda_he4` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・ME・Λ全保存質量・最終核選別後 |
+| `hKstarMEVsCent_lambda_he4_leftSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・ME・Λ低側sideband・最終核選別後 |
+| `hKstarMEVsCent_lambda_he4_rightSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・ME・Λ高側sideband・最終核選別後 |
+| `hKstarMEVsCent_lambda_he4_signal` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・ME・Λ信号窓・最終核選別後 |
+| `hKstarMEVsCent_lambda_he4_signalHigh` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・ME・Λ信号高半分・最終核選別後 |
+| `hKstarMEVsCent_lambda_he4_signalLow` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・ME・Λ信号低半分・最終核選別後 |
+| `hKstarME_lambda_he3` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・ME・Λ全保存質量・最終核選別後 |
+| `hKstarME_lambda_he3_as_he4` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後 |
+| `hKstarME_lambda_he3_as_he4_leftSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後 |
+| `hKstarME_lambda_he3_as_he4_rightSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後 |
+| `hKstarME_lambda_he3_as_he4_signal` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後 |
+| `hKstarME_lambda_he3_as_he4_signalHigh` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後 |
+| `hKstarME_lambda_he3_as_he4_signalLow` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後 |
+| `hKstarME_lambda_he3_leftSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後 |
+| `hKstarME_lambda_he3_rightSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後 |
+| `hKstarME_lambda_he3_signal` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後 |
+| `hKstarME_lambda_he3_signalHigh` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号高半分・最終核選別後 |
+| `hKstarME_lambda_he3_signalLow` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号低半分・最終核選別後 |
+| `hKstarME_lambda_he4` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ全保存質量・最終核選別後 |
+| `hKstarME_lambda_he4_leftSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後 |
+| `hKstarME_lambda_he4_rightSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後 |
+| `hKstarME_lambda_he4_signal` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後 |
+| `hKstarME_lambda_he4_signalHigh` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号高半分・最終核選別後 |
+| `hKstarME_lambda_he4_signalLow` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号低半分・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・SE・Λ全保存質量・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_as_he4` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_as_he4_leftSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_as_he4_rightSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_as_he4_signal` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_as_he4_signalHigh` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_as_he4_signalLow` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_leftSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・SE・Λ低側sideband・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_rightSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・SE・Λ高側sideband・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_signal` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・SE・Λ信号窓・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_signalHigh` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・SE・Λ信号高半分・最終核選別後 |
+| `hKstarSEVsCent_lambda_he3_signalLow` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–³He・SE・Λ信号低半分・最終核選別後 |
+| `hKstarSEVsCent_lambda_he4` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・SE・Λ全保存質量・最終核選別後 |
+| `hKstarSEVsCent_lambda_he4_leftSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・SE・Λ低側sideband・最終核選別後 |
+| `hKstarSEVsCent_lambda_he4_rightSB` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・SE・Λ高側sideband・最終核選別後 |
+| `hKstarSEVsCent_lambda_he4_signal` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・SE・Λ信号窓・最終核選別後 |
+| `hKstarSEVsCent_lambda_he4_signalHigh` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・SE・Λ信号高半分・最終核選別後 |
+| `hKstarSEVsCent_lambda_he4_signalLow` | TH2F | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: cent9 / 9 bin [-0.5, 8.5] | k*–cent9・Λ–⁴He・SE・Λ信号低半分・最終核選別後 |
+| `hKstarSE_lambda_he3` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・SE・Λ全保存質量・最終核選別後 |
+| `hKstarSE_lambda_he3_as_he4` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後 |
+| `hKstarSE_lambda_he3_as_he4_leftSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後 |
+| `hKstarSE_lambda_he3_as_he4_rightSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後 |
+| `hKstarSE_lambda_he3_as_he4_signal` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後 |
+| `hKstarSE_lambda_he3_as_he4_signalHigh` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後 |
+| `hKstarSE_lambda_he3_as_he4_signalLow` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後 |
+| `hKstarSE_lambda_he3_leftSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後 |
+| `hKstarSE_lambda_he3_rightSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後 |
+| `hKstarSE_lambda_he3_signal` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後 |
+| `hKstarSE_lambda_he3_signalHigh` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号高半分・最終核選別後 |
+| `hKstarSE_lambda_he3_signalLow` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号低半分・最終核選別後 |
+| `hKstarSE_lambda_he4` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ全保存質量・最終核選別後 |
+| `hKstarSE_lambda_he4_leftSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後 |
+| `hKstarSE_lambda_he4_rightSB` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後 |
+| `hKstarSE_lambda_he4_signal` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後 |
+| `hKstarSE_lambda_he4_signalHigh` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号高半分・最終核選別後 |
+| `hKstarSE_lambda_he4_signalLow` | TH1F | X: k* [GeV/c] / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号低半分・最終核選別後 |
+| `hLambdaKF_Chi2Ndf` | TH1F | X: Chi2Ndf / 200 bin [0, 100] | 採用ΛのKF品質QA（詳細は本文） |
+| `hLambdaKF_DecayLength` | TH1F | X: DecayLength / 200 bin [0, 100] | 採用ΛのKF品質QA（詳細は本文） |
+| `hLambdaKF_DecayLengthSignificance` | TH1F | X: DecayLengthSignificance / 200 bin [0, 100] | 採用ΛのKF品質QA（詳細は本文） |
+| `hLambdaKF_TopoChi2Ndf` | TH1F | X: TopoChi2Ndf / 200 bin [0, 100] | 採用ΛのKF品質QA（詳細は本文） |
+| `hLambdaPion_PtVsYLab_signal` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: p_{T} [GeV/c] / 200 bin [0, 10] | Λ信号候補のπ娘アクセプタンス・1候補1回 |
+| `hLambdaProton_PtVsYLab_signal` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: p_{T} [GeV/c] / 200 bin [0, 10] | Λ信号候補の陽子娘アクセプタンス・1候補1回 |
+| `hLambda_BetaVsEta_signal` | TH2D | X: #eta_{lab} / 200 bin [-5, 5]<br>Y: #beta = &#124;p&#124;/E / 200 bin [0, 1] | Λ信号候補の運動学的βアクセプタンス・1候補1回 |
+| `hLambda_BetaVsYLab_signal` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: #beta = &#124;p&#124;/E / 200 bin [0, 1] | Λ信号候補の運動学的βアクセプタンス・1候補1回 |
+| `hLambda_Eta` | TH1F | X: #eta / 100 bin [-2.5, 2.5] | 採用Λの単粒子運動学・全保存質量範囲 |
+| `hLambda_InvMass` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin0` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin1` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin2` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin3` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin4` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin5` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin6` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin7` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_CentBin8` | TH1F | X: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_vs_DecayLength` | TH2F | X: Decay Length [cm] / 200 bin [0, 100]<br>Y: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_vs_Pt` | TH2F | X: p_{T} [GeV/c] / 200 bin [0, 10]<br>Y: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_vs_RefMultCorr` | TH2F | X: refMult_{corr} / 1000 bin [0, 1000]<br>Y: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_vs_TransDecayLength` | TH2F | X: L_{T} [cm] / 200 bin [0, 50]<br>Y: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_InvMass_vs_Y` | TH2F | X: y / 100 bin [-2, 2]<br>Y: M_{p#pi^{-}} [GeV/c^{2}] / 200 bin [1.05, 1.25] | 採用Λの全保存質量QA（詳細は本文・軸） |
+| `hLambda_Phi` | TH1F | X: #phi [rad] / 100 bin [-3.15, 3.15] | 採用Λの単粒子運動学・全保存質量範囲 |
+| `hLambda_Pt` | TH1F | X: p_{T} [GeV/c] / 200 bin [0, 10] | 採用Λの単粒子運動学・全保存質量範囲 |
+| `hLambda_PtVsYLab_signal` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: p_{T} [GeV/c] / 200 bin [0, 10] | Λ信号候補のpT–Y_labアクセプタンス・1候補1回 |
+| `hMixSamplerQA` | TH2D | X: status (FemtoMixingSampler enum) / 15 bin [-0.5, 14.5]<br>Y: channel index / 8 bin [-0.5, 7.5] | mixing処理の状態別カウント×8チャネル |
+| `hN` | TH1I | X: dummy / 1 bin [0, 1] | 正常終了event数。全入力数とは別 |
+| `hNLambdaPairs_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: N_{pairs} / 200 bin [0, 200] | KF Finder/Topo内Λ数。最終cut前 |
+| `hNPionCand_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: N_{#pi^{-}} / 200 bin [0, 200] | KFへ投入したπ仮説数。最終娘数ではない |
+| `hNProtonCand_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: N_{p} / 200 bin [0, 200] | KFへ投入した陽子仮説数。最終娘数ではない |
+| `hNSigmaPion` | TH1F | X: n#sigma_{#pi} / 100 bin [-5, 5] | 採用Λのπ娘TPC nσ |
+| `hNSigmaProton` | TH1F | X: n#sigma_{p} / 100 bin [-5, 5] | 採用Λの陽子娘TPC nσ |
+| `hNTracks_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: N_{tracks} / 500 bin [0, 2000] | KF処理成功後のcent9–入力track数 |
+| `hNucleus_BetaVsEta_he4` | TH2D | X: #eta_{lab} / 200 bin [-5, 5]<br>Y: #beta = &#124;p&#124;/E / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–η・全R・1候補1回 |
+| `hNucleus_BetaVsEta_he4_highR_tofM2` | TH2D | X:  valid TOF and He4 mass2 window) / 200 bin [-5, 5]<br>Y: #eta_{lab} / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–η・高R・TOF＋m²窓・1候補1回 |
+| `hNucleus_BetaVsEta_he4_lowR_noTof` | TH2D | X:  no TOF requirement) / 200 bin [-5, 5]<br>Y: #eta_{lab} / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–η・低R・TOF不要・1候補1回 |
+| `hNucleus_BetaVsEta_he4_lowR_tofM2` | TH2D | X:  valid TOF and He4 mass2 window) / 200 bin [-5, 5]<br>Y: #eta_{lab} / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–η・低R・TOF＋m²窓・1候補1回 |
+| `hNucleus_BetaVsEta_he4_lowR_tofMatch` | TH2D | X:  valid TOF / 200 bin [-5, 5]<br>Y:  no mass2 cut) / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–η・低R・有効TOFのみ・1候補1回 |
+| `hNucleus_BetaVsYLab_he4` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: #beta = &#124;p&#124;/E / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–Y_lab・全R・1候補1回 |
+| `hNucleus_BetaVsYLab_he4_highR_tofM2` | TH2D | X:  valid TOF and He4 mass2 window) / 200 bin [-5, 5]<br>Y: y_{lab} / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–Y_lab・高R・TOF＋m²窓・1候補1回 |
+| `hNucleus_BetaVsYLab_he4_lowR_noTof` | TH2D | X:  no TOF requirement) / 200 bin [-5, 5]<br>Y: y_{lab} / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–Y_lab・低R・TOF不要・1候補1回 |
+| `hNucleus_BetaVsYLab_he4_lowR_tofM2` | TH2D | X:  valid TOF and He4 mass2 window) / 200 bin [-5, 5]<br>Y: y_{lab} / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–Y_lab・低R・TOF＋m²窓・1候補1回 |
+| `hNucleus_BetaVsYLab_he4_lowR_tofMatch` | TH2D | X:  valid TOF / 200 bin [-5, 5]<br>Y:  no mass2 cut) / 200 bin [0, 1] | ⁴He候補アクセプタンス・β–Y_lab・低R・有効TOFのみ・1候補1回 |
+| `hNucleus_PtVsYLab_he3` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: p_{T} [GeV/c] / 200 bin [0, 10] | ³He候補アクセプタンス・pT–Y_lab・全R・1候補1回 |
+| `hNucleus_PtVsYLab_he3_as_he4` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: p_{T} [GeV/c] / 200 bin [0, 10] | ³He→⁴He質量仮定候補アクセプタンス・pT–Y_lab・全R・1候補1回 |
+| `hNucleus_PtVsYLab_he4` | TH2D | X: y_{lab} / 200 bin [-5, 5]<br>Y: p_{T} [GeV/c] / 200 bin [0, 10] | ⁴He候補アクセプタンス・pT–Y_lab・全R・1候補1回 |
+| `hNucleus_PtVsYLab_he4_highR_tofM2` | TH2D | X:  valid TOF and He4 mass2 window) / 200 bin [-5, 5]<br>Y: y_{lab} / 200 bin [0, 10] | ⁴He候補アクセプタンス・pT–Y_lab・高R・TOF＋m²窓・1候補1回 |
+| `hNucleus_PtVsYLab_he4_lowR_noTof` | TH2D | X:  no TOF requirement) / 200 bin [-5, 5]<br>Y: y_{lab} / 200 bin [0, 10] | ⁴He候補アクセプタンス・pT–Y_lab・低R・TOF不要・1候補1回 |
+| `hNucleus_PtVsYLab_he4_lowR_tofM2` | TH2D | X:  valid TOF and He4 mass2 window) / 200 bin [-5, 5]<br>Y: y_{lab} / 200 bin [0, 10] | ⁴He候補アクセプタンス・pT–Y_lab・低R・TOF＋m²窓・1候補1回 |
+| `hNucleus_PtVsYLab_he4_lowR_tofMatch` | TH2D | X:  valid TOF / 200 bin [-5, 5]<br>Y:  no mass2 cut) / 200 bin [0, 10] | ⁴He候補アクセプタンス・pT–Y_lab・低R・有効TOFのみ・1候補1回 |
+| `hRawMult` | TH1F | X: mult / 1000 bin [0, 1000] | centrality入力raw multiplicity（FXT: fxtMult） |
+| `hRawMult_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: rawMult / 1000 bin [0, 1000] | KF処理成功後のcent9–raw multiplicity |
+| `hRawMult_vs_RefMultCorr` | TH2F | X: refMult_{corr} / 1000 bin [0, 1000]<br>Y: rawMult / 1000 bin [0, 1000] | KF処理成功後の補正–raw multiplicity |
+| `hRefMult` | TH1F | X: RefMult / 1000 bin [0, 1000] | PicoEventのrefMult。event除去前 |
+| `hRefMultCorr` | TH1F | X: refMult_{corr} / 1000 bin [0, 1000] | 補正multiplicity |
+| `hRefMultCorr_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: refMult_{corr} / 1000 bin [0, 1000] | KF処理成功後のcent9–補正multiplicity |
+| `hRefMultVsNTOFMatch` | TH2F | X: nBTOFMatch / 500 bin [0, 500]<br>Y: refMult / 1000 bin [0, 1000] | event除去前のnBTOFMatch–raw multiplicity |
+| `hRefMultVsNTOFMatchAfter` | TH2F | X: nBTOFMatch / 500 bin [0, 500]<br>Y: refMult / 1000 bin [0, 1000] | event/pileup選択後のnBTOFMatch–raw multiplicity |
+| `hRefMultWeight` | TH1F | X: weight / 125 bin [0.5, 3] | centrality補正weightの分布 |
+| `hTofMatchMult_vs_Cent9` | TH2F | X: cent9 (0=70-80%%, 8=0-5%%) / 9 bin [-0.5, 8.5]<br>Y: nBTOFMatch / 500 bin [0, 500] | KF処理成功後のcent9–nBTOFMatch |
+| `hVz` | TH1F | X: V_{z} [cm] / 400 bin [-300, 300] | PVのz。event除去前 |
+
+</details>
+
+<details>
+<summary>true/（840個）：全キー・型・軸・説明</summary>
+
+| ROOTキー | 型 | 軸 | 説明 |
+|---|---|---|---|
+| `true/hDedxP` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | 品質通過trackのR–dE/dx、最終PID前 |
+| `true/hDedxP_3He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・3He・最終核種選別とは独立 |
+| `true/hDedxP_3He_m2` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TOF m²仮説QA・R–dE/dx・3He・最終核種選別とは独立 |
+| `true/hDedxP_4He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・4He・最終核種選別とは独立 |
+| `true/hDedxP_4He_TOFControl` | TH2F | X: R=&#124;p/q&#124; [GeV/c] / 600 bin [0, 6]<br>Y: dE/dx [keV/cm] / 1200 bin [0, 120] | TPC PID前の条件付きTOF対照試料のR–dE/dx |
+| `true/hDedxP_4He_selected` | TH2F | X: R=&#124;p/q&#124; [GeV/c] / 600 bin [0, 6]<br>Y: dE/dx [keV/cm] / 1200 bin [0, 120] | 最終⁴He候補のR–dE/dx |
+| `true/hDedxP_K` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・K・最終核種選別とは独立 |
+| `true/hDedxP_cut` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TOF未match/無効または広いTOF QA条件を通らないtrack |
+| `true/hDedxP_d` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・d・最終核種選別とは独立 |
+| `true/hDedxP_d_m2` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TOF m²仮説QA・R–dE/dx・d・最終核種選別とは独立 |
+| `true/hDedxP_e` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・e・最終核種選別とは独立 |
+| `true/hDedxP_else` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | 通常e/π/K/p仮説から離れたtrackのR–dE/dx |
+| `true/hDedxP_p` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・p・最終核種選別とは独立 |
+| `true/hDedxP_pi` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・pi・最終核種選別とは独立 |
+| `true/hDedxP_t` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TPC仮説QA・R–dE/dx・t・最終核種選別とは独立 |
+| `true/hDedxP_t_m2` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  dE/dx (keV/cm) / 1200 bin [0, 120] | TOF m²仮説QA・R–dE/dx・t・最終核種選別とは独立 |
+| `true/hDphiDeta_proton_3He` | TH2F | X: #Delta#phi* / 200 bin [-0.25, 0.25]<br>Y: #Delta#eta / 200 bin [-0.25, 0.25] | Λ娘陽子–³Heの近接pair QA・signal SE・旧固定磁場規約 |
+| `true/hDphiDeta_proton_3HeAs4He` | TH2F | X: #Delta#phi* / 200 bin [-0.25, 0.25]<br>Y: #Delta#eta / 200 bin [-0.25, 0.25] | Λ娘陽子–³He→⁴He質量仮定の近接pair QA・signal SE・旧固定磁場規約 |
+| `true/hDphiDeta_proton_3HeAs4He_EventField` | TH2F | X: Delta phi* / 200 bin [-0.25, 0.25]<br>Y: Delta eta / 200 bin [-0.25, 0.25] | Λ娘陽子–³He→⁴He質量仮定の近接pair QA・signal SE・イベント磁場 |
+| `true/hDphiDeta_proton_3He_EventField` | TH2F | X: Delta phi* / 200 bin [-0.25, 0.25]<br>Y: Delta eta / 200 bin [-0.25, 0.25] | Λ娘陽子–³Heの近接pair QA・signal SE・イベント磁場 |
+| `true/hDphiDeta_proton_4He` | TH2F | X: #Delta#phi* / 200 bin [-0.25, 0.25]<br>Y: #Delta#eta / 200 bin [-0.25, 0.25] | Λ娘陽子–⁴Heの近接pair QA・signal SE・旧固定磁場規約 |
+| `true/hDphiDeta_proton_4He_EventField` | TH2F | X: Delta phi* / 200 bin [-0.25, 0.25]<br>Y: Delta eta / 200 bin [-0.25, 0.25] | Λ娘陽子–⁴Heの近接pair QA・signal SE・イベント磁場 |
+| `true/hHe4PidStage` | TH1F | X: Stage / 6 bin [-0.5, 5.5] | TPC/低R/高R/有効TOF/m²窓/最終候補の段階別track数 |
+| `true/hKstarMass_3HeAs4He_CentBin0` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=0 |
+| `true/hKstarMass_3HeAs4He_CentBin1` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=1 |
+| `true/hKstarMass_3HeAs4He_CentBin2` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=2 |
+| `true/hKstarMass_3HeAs4He_CentBin3` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=3 |
+| `true/hKstarMass_3HeAs4He_CentBin4` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=4 |
+| `true/hKstarMass_3HeAs4He_CentBin5` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=5 |
+| `true/hKstarMass_3HeAs4He_CentBin6` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=6 |
+| `true/hKstarMass_3HeAs4He_CentBin7` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=7 |
+| `true/hKstarMass_3HeAs4He_CentBin8` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・SE・Λ全保存質量・最終核選別後・cent9=8 |
+| `true/hKstarMass_3He_CentBin0` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=0 |
+| `true/hKstarMass_3He_CentBin1` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=1 |
+| `true/hKstarMass_3He_CentBin2` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=2 |
+| `true/hKstarMass_3He_CentBin3` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=3 |
+| `true/hKstarMass_3He_CentBin4` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=4 |
+| `true/hKstarMass_3He_CentBin5` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=5 |
+| `true/hKstarMass_3He_CentBin6` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=6 |
+| `true/hKstarMass_3He_CentBin7` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=7 |
+| `true/hKstarMass_3He_CentBin8` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・SE・Λ全保存質量・最終核選別後・cent9=8 |
+| `true/hKstarMass_4He_CentBin0` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=0 |
+| `true/hKstarMass_4He_CentBin1` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=1 |
+| `true/hKstarMass_4He_CentBin2` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=2 |
+| `true/hKstarMass_4He_CentBin3` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=3 |
+| `true/hKstarMass_4He_CentBin4` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=4 |
+| `true/hKstarMass_4He_CentBin5` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=5 |
+| `true/hKstarMass_4He_CentBin6` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=6 |
+| `true/hKstarMass_4He_CentBin7` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=7 |
+| `true/hKstarMass_4He_CentBin8` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・SE・Λ全保存質量・最終核選別後・cent9=8 |
+| `true/hKstarMt_3HeAs4He_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarMt_3HeAs4He_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarMt_3HeAs4He_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarMt_3HeAs4He_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarMt_3HeAs4He_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarMt_3HeAs4He_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarMt_3HeAs4He_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarMt_3HeAs4He_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarMt_3HeAs4He_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarMt_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarMt_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarMt_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarMt_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarMt_3He_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarMt_3He_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarMt_3He_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarMt_3He_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarMt_3He_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarMt_3He_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarMt_3He_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarMt_3He_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarMt_3He_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarMt_3He_SBNeg_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarMt_3He_SBNeg_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarMt_3He_SBNeg_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarMt_3He_SBNeg_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarMt_3He_SBNeg_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarMt_3He_SBNeg_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarMt_3He_SBNeg_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarMt_3He_SBNeg_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarMt_3He_SBNeg_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarMt_3He_SBPos_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarMt_3He_SBPos_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarMt_3He_SBPos_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarMt_3He_SBPos_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarMt_3He_SBPos_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarMt_3He_SBPos_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarMt_3He_SBPos_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarMt_3He_SBPos_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarMt_3He_SBPos_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarMt_3He_signalHigh_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarMt_3He_signalHigh_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarMt_3He_signalHigh_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarMt_3He_signalHigh_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarMt_3He_signalHigh_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarMt_3He_signalHigh_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarMt_3He_signalHigh_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarMt_3He_signalHigh_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarMt_3He_signalHigh_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarMt_3He_signalLow_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarMt_3He_signalLow_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarMt_3He_signalLow_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarMt_3He_signalLow_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarMt_3He_signalLow_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarMt_3He_signalLow_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarMt_3He_signalLow_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarMt_3He_signalLow_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarMt_3He_signalLow_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarMt_4He_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarMt_4He_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarMt_4He_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarMt_4He_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarMt_4He_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarMt_4He_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarMt_4He_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarMt_4He_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarMt_4He_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarMt_4He_SBNeg_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarMt_4He_SBNeg_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarMt_4He_SBNeg_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarMt_4He_SBNeg_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarMt_4He_SBNeg_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarMt_4He_SBNeg_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarMt_4He_SBNeg_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarMt_4He_SBNeg_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarMt_4He_SBNeg_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarMt_4He_SBPos_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarMt_4He_SBPos_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarMt_4He_SBPos_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarMt_4He_SBPos_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarMt_4He_SBPos_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarMt_4He_SBPos_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarMt_4He_SBPos_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarMt_4He_SBPos_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarMt_4He_SBPos_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarMt_4He_signalHigh_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarMt_4He_signalHigh_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarMt_4He_signalHigh_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarMt_4He_signalHigh_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarMt_4He_signalHigh_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarMt_4He_signalHigh_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarMt_4He_signalHigh_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarMt_4He_signalHigh_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarMt_4He_signalHigh_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarMt_4He_signalLow_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarMt_4He_signalLow_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarMt_4He_signalLow_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarMt_4He_signalLow_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarMt_4He_signalLow_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarMt_4He_signalLow_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarMt_4He_signalLow_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarMt_4He_signalLow_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarMt_4He_signalLow_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=8 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=0 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=1 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=2 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=3 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=4 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=5 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=6 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=7 |
+| `true/hKstarNSigmaPrePid_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=8 |
+| `true/hKstarNSigma_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarNSigma_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarNSigma_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarNSigma_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarNSigma_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarNSigma_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarNSigma_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarNSigma_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarNSigma_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarNSigma_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・prePID・cent9=8 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=0 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=1 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=2 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=3 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=4 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=5 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=6 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=7 |
+| `true/hKstarPOverQPrePid_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・prePID・cent9=8 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号高半分・最終核選別後・cent9=8 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=0 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=1 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=2 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=3 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=4 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=5 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=6 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=7 |
+| `true/hKstarPOverQ_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・SE・Λ信号低半分・最終核選別後・cent9=8 |
+| `true/hKstar_3He` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後 |
+| `true/hKstar_3HeAs4He` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後 |
+| `true/hKstar_3HeAs4He_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstar_3HeAs4He_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstar_3HeAs4He_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstar_3HeAs4He_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstar_3HeAs4He_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstar_3HeAs4He_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstar_3HeAs4He_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstar_3HeAs4He_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstar_3HeAs4He_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstar_3HeAs4He_SBNeg` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstar_3HeAs4He_SBNeg_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstar_3HeAs4He_SBPos` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstar_3HeAs4He_SBPos_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstar_3He_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstar_3He_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstar_3He_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstar_3He_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstar_3He_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstar_3He_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstar_3He_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstar_3He_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstar_3He_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstar_3He_SBNeg` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後 |
+| `true/hKstar_3He_SBNeg_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstar_3He_SBNeg_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstar_3He_SBNeg_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstar_3He_SBNeg_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstar_3He_SBNeg_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstar_3He_SBNeg_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstar_3He_SBNeg_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstar_3He_SBNeg_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstar_3He_SBNeg_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstar_3He_SBPos` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後 |
+| `true/hKstar_3He_SBPos_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstar_3He_SBPos_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstar_3He_SBPos_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstar_3He_SBPos_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstar_3He_SBPos_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstar_3He_SBPos_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstar_3He_SBPos_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstar_3He_SBPos_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstar_3He_SBPos_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hKstar_4He` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後 |
+| `true/hKstar_4He_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=0 |
+| `true/hKstar_4He_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=1 |
+| `true/hKstar_4He_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=2 |
+| `true/hKstar_4He_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=3 |
+| `true/hKstar_4He_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=4 |
+| `true/hKstar_4He_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=5 |
+| `true/hKstar_4He_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=6 |
+| `true/hKstar_4He_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=7 |
+| `true/hKstar_4He_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ信号窓・最終核選別後・cent9=8 |
+| `true/hKstar_4He_SBNeg` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後 |
+| `true/hKstar_4He_SBNeg_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=0 |
+| `true/hKstar_4He_SBNeg_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=1 |
+| `true/hKstar_4He_SBNeg_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=2 |
+| `true/hKstar_4He_SBNeg_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=3 |
+| `true/hKstar_4He_SBNeg_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=4 |
+| `true/hKstar_4He_SBNeg_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=5 |
+| `true/hKstar_4He_SBNeg_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=6 |
+| `true/hKstar_4He_SBNeg_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=7 |
+| `true/hKstar_4He_SBNeg_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ低側sideband・最終核選別後・cent9=8 |
+| `true/hKstar_4He_SBPos` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後 |
+| `true/hKstar_4He_SBPos_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=0 |
+| `true/hKstar_4He_SBPos_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=1 |
+| `true/hKstar_4He_SBPos_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=2 |
+| `true/hKstar_4He_SBPos_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=3 |
+| `true/hKstar_4He_SBPos_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=4 |
+| `true/hKstar_4He_SBPos_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=5 |
+| `true/hKstar_4He_SBPos_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=6 |
+| `true/hKstar_4He_SBPos_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=7 |
+| `true/hKstar_4He_SBPos_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・SE・Λ高側sideband・最終核選別後・cent9=8 |
+| `true/hM2P` | TH2F | X: p (GeV/c) / 600 bin [0, 6]<br>Y: m^{2} (GeV^{2}/c^{4}) / 1000 bin [-0.5, 25] | 有効TOFを持つ品質通過trackのR–(m/q)² |
+| `true/hM2P_4He_TPC` | TH2F | X: R=&#124;p/q&#124; [GeV/c] / 600 bin [0, 6]<br>Y: (m/q)^{2} [(GeV/c^{2})^{2}] / 1000 bin [-0.5, 25] | TPC best=⁴He、高R・有効TOF、m²窓前 |
+| `true/hM2P_4He_selected` | TH2F | X: R=&#124;p/q&#124; [GeV/c] / 600 bin [0, 6]<br>Y: (m/q)^{2} [(GeV/c^{2})^{2}] / 1000 bin [-0.5, 25] | 最終⁴He候補のうち有効TOFありのR–(m/q)² |
+| `true/hNSigmaHe4VsP_TOFControl` | TH2F | X: R=&#124;p/q&#124; [GeV/c] / 600 bin [0, 6]<br>Y: n#sigma_{He4} / 400 bin [-10, 10] | 同対照試料のR–⁴He nσ |
+| `true/hPvsEta_3He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  #eta / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsEta_4He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  #eta / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsEta_d` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  #eta / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsEta_t` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  #eta / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsPt_3He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  p_{T} (GeV/c) / 600 bin [0, 6] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsPt_4He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  p_{T} (GeV/c) / 600 bin [0, 6] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsPt_d` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  p_{T} (GeV/c) / 600 bin [0, 6] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsPt_t` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  p_{T} (GeV/c) / 600 bin [0, 6] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsY_3He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  y / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsY_4He` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  y / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsY_d` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  y / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hPvsY_t` | TH2F | X:  p (GeV/c) / 600 bin [0, 6]<br>Y:  y / 100 bin [-3, 3] | 各TPC核仮説通過trackの物理P対η/Y/pT・HeはZ=2補正 |
+| `true/hQlab_3He` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He・SE・Λ信号窓・最終核選別後 |
+| `true/hQlab_3HeAs4He` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He→⁴He質量仮定・SE・Λ信号窓・最終核選別後 |
+| `true/hQlab_3HeAs4He_SBNeg` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He→⁴He質量仮定・SE・Λ低側sideband・最終核選別後 |
+| `true/hQlab_3HeAs4He_SBPos` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He→⁴He質量仮定・SE・Λ高側sideband・最終核選別後 |
+| `true/hQlab_3He_SBNeg` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He・SE・Λ低側sideband・最終核選別後 |
+| `true/hQlab_3He_SBPos` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He・SE・Λ高側sideband・最終核選別後 |
+| `true/hQlab_4He` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–⁴He・SE・Λ信号窓・最終核選別後 |
+| `true/hQlab_4He_SBNeg` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–⁴He・SE・Λ低側sideband・最終核選別後 |
+| `true/hQlab_4He_SBPos` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–⁴He・SE・Λ高側sideband・最終核選別後 |
+
+</details>
+
+<details>
+<summary>mix/（801個）：全キー・型・軸・説明</summary>
+
+| ROOTキー | 型 | 軸 | 説明 |
+|---|---|---|---|
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin0` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=0 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin1` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=1 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin2` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=2 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin3` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=3 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin4` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=4 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin5` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=5 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin6` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=6 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin7` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=7 |
+| `mix/hKstarMass_Mixed_3HeAs4He_CentBin8` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He→⁴He質量仮定・ME・Λ全保存質量・最終核選別後・cent9=8 |
+| `mix/hKstarMass_Mixed_3He_CentBin0` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=0 |
+| `mix/hKstarMass_Mixed_3He_CentBin1` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=1 |
+| `mix/hKstarMass_Mixed_3He_CentBin2` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=2 |
+| `mix/hKstarMass_Mixed_3He_CentBin3` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=3 |
+| `mix/hKstarMass_Mixed_3He_CentBin4` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=4 |
+| `mix/hKstarMass_Mixed_3He_CentBin5` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=5 |
+| `mix/hKstarMass_Mixed_3He_CentBin6` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=6 |
+| `mix/hKstarMass_Mixed_3He_CentBin7` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=7 |
+| `mix/hKstarMass_Mixed_3He_CentBin8` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–³He・ME・Λ全保存質量・最終核選別後・cent9=8 |
+| `mix/hKstarMass_Mixed_4He_CentBin0` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=0 |
+| `mix/hKstarMass_Mixed_4He_CentBin1` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=1 |
+| `mix/hKstarMass_Mixed_4He_CentBin2` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=2 |
+| `mix/hKstarMass_Mixed_4He_CentBin3` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=3 |
+| `mix/hKstarMass_Mixed_4He_CentBin4` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=4 |
+| `mix/hKstarMass_Mixed_4He_CentBin5` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=5 |
+| `mix/hKstarMass_Mixed_4He_CentBin6` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=6 |
+| `mix/hKstarMass_Mixed_4He_CentBin7` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=7 |
+| `mix/hKstarMass_Mixed_4He_CentBin8` | TH2F | X: X / 200 bin [0, 1]<br>Y: 件数軸 / 200 bin [1.05, 1.25] | k*–Λ不変質量（全質量）・Λ–⁴He・ME・Λ全保存質量・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3HeAs4He_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3He_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3He_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3He_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3He_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3He_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3He_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3He_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3He_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3He_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3He_SBNeg_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3He_SBPos_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3He_signalHigh_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_3He_signalLow_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_4He_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_4He_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_4He_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_4He_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_4He_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_4He_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_4He_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_4He_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_4He_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_4He_SBNeg_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_4He_SBPos_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_4He_signalHigh_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin0` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin1` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin2` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin3` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin4` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin5` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin6` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin7` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarMt_Mixed_4He_signalLow_CentBin8` | TH2D | X: k* (GeV/c) / 200 bin [0, 1]<br>Y: m_{T} (GeV/c^{2}) / 200 bin [0, 10] | k*–mT・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=8 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=0 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=1 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=2 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=3 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=4 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=5 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=6 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=7 |
+| `mix/hKstarNSigmaPrePid_Mixed_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{3He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarNSigma_Mixed_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: n#sigma_{4He} / 120 bin [-12, 12] | k*–TPC nσ・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・prePID・cent9=8 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=0 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=1 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=2 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=3 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=4 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=5 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=6 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=7 |
+| `mix/hKstarPOverQPrePid_Mixed_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・prePID・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3HeAs4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He→⁴He質量仮定・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_3He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–³He・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_4He_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_4He_SBNeg_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_4He_SBPos_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_4He_signalHigh_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号高半分・最終核選別後・cent9=8 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin0` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=0 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin1` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=1 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin2` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=2 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin3` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=3 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin4` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=4 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin5` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=5 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin6` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=6 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin7` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=7 |
+| `mix/hKstarPOverQ_Mixed_4He_signalLow_CentBin8` | TH2D | X: k* [GeV/c] / 200 bin [0, 1]<br>Y: raw &#124;p/q&#124; [GeV/c] / 120 bin [0, 6] | k*–R・Λ–⁴He・ME・Λ信号低半分・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_3He` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後 |
+| `mix/hKstar_Mixed_3HeAs4He` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_3HeAs4He_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_3HeAs4He_SBNeg_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_3HeAs4He_SBPos_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_3He_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_3He_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_3He_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_3He_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_3He_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_3He_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_3He_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_3He_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_3He_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_3He_SBNeg` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_3He_SBNeg_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_3He_SBPos` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_3He_SBPos_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–³He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_4He` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後 |
+| `mix/hKstar_Mixed_4He_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_4He_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_4He_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_4He_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_4He_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_4He_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_4He_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_4He_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_4He_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ信号窓・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_4He_SBNeg` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_4He_SBNeg_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ低側sideband・最終核選別後・cent9=8 |
+| `mix/hKstar_Mixed_4He_SBPos` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin0` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=0 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin1` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=1 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin2` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=2 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin3` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=3 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin4` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=4 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin5` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=5 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin6` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=6 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin7` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=7 |
+| `mix/hKstar_Mixed_4He_SBPos_CentBin8` | TH1F | X: k* (GeV/c) / 200 bin [0, 1] | k*・Λ–⁴He・ME・Λ高側sideband・最終核選別後・cent9=8 |
+| `mix/hQlab_Mixed_3He` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He・ME・Λ信号窓・最終核選別後 |
+| `mix/hQlab_Mixed_3HeAs4He` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He→⁴He質量仮定・ME・Λ信号窓・最終核選別後 |
+| `mix/hQlab_Mixed_3HeAs4He_SBNeg` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He→⁴He質量仮定・ME・Λ低側sideband・最終核選別後 |
+| `mix/hQlab_Mixed_3HeAs4He_SBPos` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He→⁴He質量仮定・ME・Λ高側sideband・最終核選別後 |
+| `mix/hQlab_Mixed_3He_SBNeg` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He・ME・Λ低側sideband・最終核選別後 |
+| `mix/hQlab_Mixed_3He_SBPos` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–³He・ME・Λ高側sideband・最終核選別後 |
+| `mix/hQlab_Mixed_4He` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–⁴He・ME・Λ信号窓・最終核選別後 |
+| `mix/hQlab_Mixed_4He_SBNeg` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–⁴He・ME・Λ低側sideband・最終核選別後 |
+| `mix/hQlab_Mixed_4He_SBPos` | TH1F | X: q_lab (GeV/c) / 200 bin [0, 2] | q_lab・Λ–⁴He・ME・Λ高側sideband・最終核選別後 |
+
+</details>
+
+### トップ階層：hNuclearPidPairJoint（THnSparseD、1個）
+
+全8軸を同時保存。カテゴリの意味と投影コードは本文PID QA節を参照。
+
+| 軸番号 | 軸名 | bin数・範囲 | 意味 |
+|---|---|---|---|
+| 0 | Kstar | 200 [0, 1] | k* [GeV/c] |
+| 1 | POverQ | 120 [0, 6] | raw &#124;p/q&#124; [GeV/c] |
+| 2 | NSigma | 120 [-12, 12] | source-nucleus nSigma |
+| 3 | Cent9 | 9 [-0.5, 8.5] | cent9 |
+| 4 | Representation | 3 [-0.5, 2.5] | 0=he4, 1=he3, 2=he3as4 |
+| 5 | MixingMode | 2 [-0.5, 1.5] | 0=SE, 1=ME |
+| 6 | MassClass | 4 [-0.5, 3.5] | 0=SBNeg, 1=signalLow, 2=signalHigh, 3=SBPos |
+| 7 | PidStage | 2 [-0.5, 1.5] | 0=selected, 1=prePID |
+
+
+## 大規模統合時のSparse保存
+
+`hNuclearPidPairJoint` は占有bin数に応じて増大し、ROOTの約1 GB/単一オブジェクトのシリアライズ上限を超えることがある。通常1,786ヒストを主ROOTに統合し、Sparseは同一軸・Sumw2のまま入力群ごとの別ROOTに保存する。この場合は各Sparseへ同じ範囲条件を適用し、低次元へ射影してから加算する。巨大Sparseを先に1個へ加算・保存しない。各入力群を重複なく網羅し、Entries、座標、内容・誤差、underflow/overflow、軸定義を保存後に確認する。
+
+`FemtoNuclearDedxCalibration` の出典フィールドは係数を同定するための記録であり、fitスクリプトや出典ROOTを実行時に開かない。本番が必要とする係数は校正YAMLに全て含む。
