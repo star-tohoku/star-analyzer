@@ -48,6 +48,92 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   - **runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `anaName+jobid+*` files such as `.list`, `.csh`, `.condor`, `.report`, and `.session.xml`
   - **runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` console output
 
+## Lambda–He4 candidate cache jobs
+
+The `anaFemtoLambda_4He` entry supports candidate persistence and replay through
+mainconf `candidateStore:`. The writer reads PicoDst and retains the original
+reconstruction/PID/pairing; its ROOT output also contains `femtoCandidateEvents`
+and layout, selection, original-mixing and file-UUID metadata. The replay stage
+reads those exact candidates without PicoDst/KF reconstruction. This is the
+`StFemtoMaker` cache format, separate from the reconstruction-part store used by
+`StCandidateFemtoMaker`. The explicit cache species include d/t along with
+Lambda/He3/He4: legacy d/t candidates affect original pool admission even when
+only He3/He4 pair channels are enabled. Do not filter these collections out of
+the cache or change their PID. Selection provenance also guards effective
+dE/dx calibration content.
+
+Build and run a local closure test before farm submission. The write/replay
+mainconfs are
+`main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreWrite.yaml` and
+`main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreReplay.yaml` under
+`config/mainconf/`. Both keep the production selection references. The standard
+He4 dataset is 2021 P24iy; do not substitute archived 2019 validation input.
+
+The [no-Sparse writer mainconf](../../config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreWriteNoJointSparse.yaml)
+keeps candidate writing and physical cuts unchanged. Its dedicated nuclear pair
+QA YAML uses explicit `jointSparse: false`, with the full 8D definition commented
+out. This removes only `hNuclearPidPairJoint`; dense QA and pre-PID candidate
+caching remain enabled. A complete `jointSparse` mapping enables the 8D output;
+missing, null or `true` values are errors.
+
+From the project root, create explicit file-list jobs with separate destinations:
+
+```bash
+python3 script/generate_joblist_from_list.py \
+  --mainconf <candidateStoreWrite-mainconf> --input <2021-P24iy-PicoDst-list> \
+  --files-per-subjob <n> --label candidateStore --output-dir <new-cache-directory>
+python3 script/generate_joblist_from_list.py \
+  --mainconf <candidateStoreReplay-mainconf> --input <ordered-original-store-list> \
+  --files-per-subjob <n> --label candidateReplay --output-dir <new-pair-directory>
+```
+
+Submit the reviewed XML from `job/run` in the normal way. The command retains
+explicit input, output, job ID, event limit and mainconf. In replay, `nEvents`
+counts **stored accepted events**, not producer PicoDst input events; `-1` reads
+all store rows. Save the submitted runtime/config snapshots and the exact ordered
+cache list for each variant.
+
+Keep candidate caches as their **original completed per-job files**. Do not use
+`--watch-merge`, hadd, repacking, or generic histogram cleanup on the cache stage:
+ROOT UUID and producer pool boundaries form part of the replay contract.
+Byte-for-byte copies retain the UUID, but duplicate UUIDs/files in one replay list
+are rejected. Inventory completion and expected coverage before replay; scheduler
+exit 0 alone does not establish a valid completed producer. Submit cache jobs
+without `--watch-merge`, including when the 8D histogram is disabled. Use
+`script/watch_job_notify.py --watch` for completion email without a merge. Start
+it on the submit host after runmeta is available, in tmux or another persistent
+session. tmux survives a client disconnect, not a submit-host reboot.
+
+Use explicit `resetPoolAtFileBoundary: true` for original per-job closure. It
+starts an empty pool at each original store file; grouping several files into one
+replay job therefore does not accidentally mix across source-job boundaries.
+Setting it to `false` deliberately continues across files, changes the ME
+reference and must be recorded as a variation with a fixed input order.
+`requireOriginalMixing: true` guards the producer's mixing configuration;
+`false` permits a deliberate mixing override while selection/PID provenance stays
+fixed. The supplied `candidateStoreRemixVz` mainconf varies only Vz bins 10→20.
+
+The cache retains original `psi2` separately from auxiliary unflattened TPC Q2 and
+validity. Storing Q2 does not change the writer's pairing event plane or establish
+a calibrated physics event plane. Pair-only replay does not regenerate
+PicoDst-dependent reconstruction/helix QA, so compare core pair histograms rather
+than expecting all producer QA to be refilled. Replay histogram outputs can use
+the normal guarded merge after completion; their input caches remain untouched.
+
+With the full-QA configuration (`jointSparse` mapping enabled), the ROOT5
+limited-statistics check stores/replays 3,858 accepted rows from 4,027
+PicoDst events and reproduces 1,675 dense pair histograms plus one Sparse exactly,
+including pre-PID QA. The Vz 10→20 variation leaves SE unchanged and changes the
+signal He4 ME population from 251 to 235. This confirms the cache/replay contract
+on the sample, not full-statistics physics behavior. One auxiliary TPC plane is
+invalid, so EP-binned replay stops explicitly under the current validity rule.
+
+The validation runner can reuse an explicit successful reconstruction record after
+strict recorded input/config/library checks, without new PicoDst/KF commands;
+original ROOT fingerprints and the comparison-macro change remain in the record.
+The exact local pair comparator and stage commands are in the [reference](../../docs/REFERENCE.md#cached-lambdahe4-pairing),
+with the full [Maker storage contract](../../StMaker/StFemtoMaker/README.md#lambdahe4-candidate-event-store-and-replay).
+
 ## Auto merge after batch completion (`--watch-merge`)
 
 To poll subjob ROOT output and run `merge_root_files.csh` automatically when all subjobs finish:
@@ -176,9 +262,26 @@ Scheduler exit code 0 alone does not establish successful analysis. Completion
 checks also require expected outputs and successful analysis completion records.
 
 `script/watch_job_notify.py --runmeta RUNMETA --event-log CONDOR_LOG --email ADDRESS --check`
-is read-only. `--watch` waits and sends one aggregate completion email.
+is read-only. `--watch` waits for all subjobs to terminate, an empty queue and
+a settle interval, then sends one aggregate completion email. It checks each ROOT
+file's header and the analysis log's matching requested/completed counts and
+successful status. It does not read every ROOT object or validate the complete
+candidate payload. Failed or unconfirmed analysis is reported as requiring
+attention, not successful completion. State and one-time delivery records live
+under `job/run/notify/<anaName>_<jobid>/`; restart on the same submit host and
+inspect uncertain delivery records before retrying mail.
 
-To validate and merge after all subjobs terminate:
+Add `--email-content minimal` to send only completion or attention text, without
+the analysis name, SUMS ID, paths, counts or diagnostic details. Its Message-ID
+is opaque; full diagnostics remain in the local state files. The selected
+`emailContent` is recorded in settings and status, including the sent record.
+The default `--email-content detailed` preserves the aggregate diagnostic email.
+Use `--state-dir PATH` to place the lock, settings, status and one-time delivery
+records on an explicit filesystem. The resolved location is recorded as
+`stateDirectory`; the default remains `job/run/notify/<anaName>_<jobid>/`.
+`--check` reports that location without creating it.
+
+For histogram-only outputs, validate and merge after all subjobs terminate:
 
 ```bash
 python3 script/watch_job_merge_notify.py \
@@ -194,9 +297,24 @@ merged output, refuses an existing destination and does not retry an uncertain
 merge. State is local under `job/run/merge_notify/`; no study artifacts are
 needed in Git. Review failures before starting another merge.
 
+For comparisons that require the same source population, add
+`--allow-partial --include-job-ids COMMON_IDS.list` to each merge command.
+The selection file contains one unique, known nonnegative subjob number per
+line, with no blank lines or comments. IDs are sorted numerically. The tool
+records the file path, SHA256, IDs, and count in its settings, result, and input
+provenance, and rejects a changed selection on restart or before merging.
+Otherwise valid jobs outside that selection are recorded as
+`outside_requested_selection`; their ROOT files remain outside the merged
+input archive. Missing or incomplete jobs retain their own exclusion reasons.
+The default still requires full coverage, and a corrupt ROOT header stops the
+merge even in partial mode. `--check` only inspects scheduler completion; the
+watch path performs the ROOT and analysis-log input checks.
+
 After a validated publication, `python3 script/archive_merged_subjobs.py --runmeta RUNMETA`
 relocates exactly the validated inputs into `subjobs/<SUMS id>` with a resumable
 plan, without deleting ROOT data or overwriting a destination. It does not merge
-or email. Oversized THnSparse objects require a separate, explicitly partitioned
+or email. ROOT basenames follow the submitted XML's `fromScratch` template;
+the submission name may contain a separate label used for state identification.
+Oversized THnSparse objects require a separate, explicitly partitioned
 merge: preserve same-axis Sparse sidecars, then sum low-dimensional projections.
 The generic hadd workflow does not automatically convert such objects.

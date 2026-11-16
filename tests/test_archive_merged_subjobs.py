@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+import xml.etree.ElementTree as ET
 
 spec = importlib.util.spec_from_file_location(
     "archive_merged_subjobs", Path(__file__).resolve().parents[1] / "script/archive_merged_subjobs.py")
@@ -71,6 +72,52 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), content)
         self.assertTrue((self.target / "README.md").is_file())
         self.assertEqual(self.archive()["phase"], "archived")
+
+    def test_submission_label_keeps_frozen_output_names(self):
+        self.ana = "test_covered25"
+        labeled_state = self.state.with_name(self.ana + "_" + self.jobid)
+        self.state.rename(labeled_state)
+        self.state = labeled_state
+        meta = json.loads(self.meta.read_text())
+        meta["anaName"] = self.ana
+        self.write(self.meta, meta)
+        self.result["stateDirectory"] = str(self.state)
+        self.write(self.state / "result.json", self.result)
+        xml = ET.parse(self.xml)
+        xml.getroot().find("output").set("fromScratch", "worker_output/test_$JOBID.root")
+        xml.write(str(self.xml))
+        original = {p: p.read_bytes() for p in (self.meta, self.xml, self.state / "result.json")}
+        self.assertEqual(self.archive()["phase"], "archived")
+        for path in self.inputs:
+            self.assertFalse(path.exists())
+            self.assertEqual((self.target / path.name).read_bytes(), b"root-input")
+        self.assertEqual(self.failed.read_bytes(), b"failed-unmerged-data")
+        self.assertTrue(self.merged.is_file())
+        for path, content in original.items():
+            self.assertEqual(path.read_bytes(), content)
+        self.assertEqual(self.archive()["phase"], "archived")
+
+    def test_unsafe_output_templates_abort_before_moves(self):
+        for template in ("../test_$JOBID.root", "worker/../test_$JOBID.root",
+                         "test_$JOBID_$JOBID.root", "test_${JOBID}.root",
+                         "test_$JOBID.root\n"):
+            with self.subTest(template=template):
+                xml = ET.parse(self.xml)
+                xml.getroot().find("output").set("fromScratch", template)
+                xml.write(str(self.xml))
+                with self.assertRaisesRegex(ValueError, "template"):
+                    self.archive()
+                self.assert_sources_retained()
+                self.assertFalse(self.target.exists())
+
+    def test_output_template_must_match_validated_merge(self):
+        xml = ET.parse(self.xml)
+        xml.getroot().find("output").set("fromScratch", "other_$JOBID.root")
+        xml.write(str(self.xml))
+        with self.assertRaisesRegex(ValueError, "validated merge"):
+            self.archive()
+        self.assert_sources_retained()
+        self.assertFalse(self.target.exists())
 
     def test_resume_after_link_before_unlink(self):
         unlink = module.os.unlink

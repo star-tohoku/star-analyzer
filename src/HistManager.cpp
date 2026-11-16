@@ -149,10 +149,18 @@ Bool_t HistManager::LoadFromFile(const Char_t* yamlPath) {
       }
 
       if (hasY && hasZ) {
-        TH3F* h = new TH3F(name.c_str(), title.c_str(),
-                           xSpec.nBins, xSpec.min, xSpec.max,
-                           ySpec.nBins, ySpec.min, ySpec.max,
-                           zSpec.nBins, zSpec.min, zSpec.max);
+        TH3* h = 0;
+        if (typeStr == "TH3D") {
+          h = new TH3D(name.c_str(), title.c_str(),
+                       xSpec.nBins, xSpec.min, xSpec.max,
+                       ySpec.nBins, ySpec.min, ySpec.max,
+                       zSpec.nBins, zSpec.min, zSpec.max);
+        } else {
+          h = new TH3F(name.c_str(), title.c_str(),
+                       xSpec.nBins, xSpec.min, xSpec.max,
+                       ySpec.nBins, ySpec.min, ySpec.max,
+                       zSpec.nBins, zSpec.min, zSpec.max);
+        }
         m_histograms[name] = h;
       } else if (hasY) {
         TH2* h = 0;

@@ -305,14 +305,19 @@ $(LIB_DIR)/kinematics.o: src/kinematics.cpp include/kinematics.h
 
 # libStCommon.so (helper classes: CentralityHelper, StPhiKKReconstruction, StNuclearIdHelper, ...)
 $(LIB_DIR)/$(LIB_COMMON_NAME): $(LIB_DIR) $(COMMON_OBJS) $(LIB_DIR)/libStarAnaConfig.so $(LIB_DIR)/$(LIB_RMC_NAME)
-	$(CXX) $(LDFLAGS_MAKER) -o $@ $(COMMON_OBJS) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) $(ROOTLIBS)
+	$(CXX) $(LDFLAGS_MAKER) -o $@ $(COMMON_OBJS) -L$(LIB_DIR) -lStarAnaConfig -lStRefMultCorr -Wl,-rpath,$(abspath $(LIB_DIR)) $(STAR_LDFLAGS) -lStEpdUtil $(ROOTLIBS)
 
 $(LIB_DIR)/common_%.o: $(COMMON_DIR)/%.cxx $(COMMON_DIR)/%.h | $(LIB_DIR)
 	$(CXX) $(CXXFLAGS_MAKER) -c $< -o $@
 
+# The EPD helper exposes its public interface from include/, rather than from
+# the common implementation directory used by the generic rule above.
+$(LIB_DIR)/common_FemtoEpdEventPlane.o: $(COMMON_DIR)/FemtoEpdEventPlane.cxx include/FemtoEpdEventPlane.h Makefile | $(LIB_DIR)
+	$(CXX) $(CXXFLAGS_MAKER) -Isrc/third_party/yaml-cpp/include -c $< -o $@
+
 # Lambda's strict YAML validation stays in compiled core objects. No KF flags/link dependency.
 $(LIB_DIR)/StFemtoMaker.o $(LIB_DIR)/common_FemtoLambdaLegacy.o $(LIB_DIR)/common_FemtoNuclearDedxCalibration.o $(LIB_DIR)/common_FemtoNuclearPairPidSparse.o: CXXFLAGS_MAKER += -Isrc/third_party/yaml-cpp/include
-$(LIB_DIR)/StFemtoMaker.o: include/FemtoLambdaProvider.h StMaker/common/FemtoLambdaLegacy.h include/FemtoNuclearPidPairQaCandidate.h
+$(LIB_DIR)/StFemtoMaker.o: include/FemtoLambdaProvider.h StMaker/common/FemtoLambdaLegacy.h include/FemtoNuclearPidPairQaCandidate.h include/FemtoCandidateEventStore.h include/FemtoCandidateEventStoreConfig.h include/FemtoEpdEventPlane.h StMaker/StFemtoMaker/StFemtoMaker.h
 $(LIB_DIR)/common_FemtoLambdaLegacy.o: include/FemtoLambdaProvider.h $(COMMON_DIR)/NuclearIdDeDxVsMom.h $(COMMON_DIR)/FemtoNuclearDedxCalibration.h $(COMMON_DIR)/FemtoNuclearPairPidSparse.h include/FemtoNuclearPidPairQaCandidate.h
 $(LIB_DIR)/common_FemtoNuclearDedxCalibration.o: $(COMMON_DIR)/NuclearIdDeDxVsMom.h
 

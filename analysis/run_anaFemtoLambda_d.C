@@ -32,7 +32,7 @@ void run_anaFemtoLambda_d(const Char_t* inputFile, const Char_t* outputFile,
   Int_t error = 0;
   gROOT->ProcessLine("loadSharedLibraries();", &error);
   if (error) { gSystem->Exit(1); return; }
-  const char* starLibraries[] = {"StarRoot", "StBichsel", "StPicoEvent", "StPicoDstMaker"};
+  const char* starLibraries[] = {"StarRoot", "StBichsel", "StPicoEvent", "StPicoDstMaker", "StEpdUtil"};
   for (UInt_t i = 0; i < sizeof(starLibraries)/sizeof(starLibraries[0]); ++i) {
     if (gSystem->Load(starLibraries[i]) < 0) { gSystem->Exit(1); return; }
   }

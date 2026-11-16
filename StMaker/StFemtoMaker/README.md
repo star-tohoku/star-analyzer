@@ -182,9 +182,154 @@ C_{\mathrm{raw}}(k^*) = \frac{Y_{\mathrm{SE}}(k^*)}{Y_{\mathrm{ME}}(k^*)}.
   daughters share the current event index; fully mixed φ daughters retain their distinct current/pool event indices.
   Overlap rejection requires both fields to match, so a reused local track index from another event is not rejected.
 - **Centrality slices in checkHist:** `pct_0_10` etc. project cent9 ranges **after** fill; Maker mixing stays at cent9 resolution.
-- Changing mixing requires a **new batch run**; cent-slice CF projection uses existing `hKstar*VsCent_*` in merge ROOT.
+- Changing mixing requires new pair processing; a projection of existing `hKstar*VsCent_*` cannot rebuild ME. The optional Lambda–He4 candidate store below supports replay without rereading PicoDst. Analyses without a candidate cache require reconstruction again.
 - **Rollout:** compare `randomSample` and `bufferAll` on a short joblist before full catalog; check high-k* `C→1`, ME shape, job time, merge ROOT size.
 - Production mainconfs keep the `randomSample` mode name and receive its corrected semantics.
+
+## Lambda–He4 candidate event store and replay
+
+The `anaFemtoLambda_4He` entry supports an optional `candidateStore:` mainconf
+reference. It uses the same `StFemtoMaker` pair functions for reconstruction and
+replay; it does not introduce another pairing Maker. Without that key, the
+PicoDst/KF path remains active.
+
+| Feature mode | Input and processing | Output |
+|---|---|---|
+| absent | PicoDst, KF Lambda reconstruction and nuclear PID | Existing histograms and ledgers |
+| `write` | The same reconstruction, PID and pairing | Existing output plus accepted events and exact candidate payloads |
+| `replay` | Original candidate-store ROOT files; no PicoDst reader or Lambda provider | SE/ME and pair diagnostics from the stored candidates |
+
+Storage lives in [`FemtoCandidateEventStore.h`](../../include/FemtoCandidateEventStore.h),
+with the explicit settings and provenance policy in
+[`FemtoCandidateEventStoreConfig.h`](../../include/FemtoCandidateEventStoreConfig.h).
+The cache is part of the writer's analysis ROOT file. Its `femtoCandidateEvents`
+TTree contains every accepted event in processing order, including events with
+no selected candidates. Physical and pre-PID nuclear-QA collections retain their
+presence flags, species, candidate order and QA selection flags. The cache species
+list is explicit: `lambda,deuteron,triton,he3,he4`. Legacy nuclear collection
+contains d/t even when the configured pair channels use only He3/He4. Those d/t
+collections affect whether an event enters the original mixing pool, so dropping
+them would change ME; caching them does not add d/t pair channels or alter PID.
+
+Every `FemtoCandidate` field is stored: the original `Float_t` `px`, `py`, `pz`,
+**energy**, derived kinematics, nuclear/track PID and resonance quantities, plus
+integer charge, source, quality flags and track/daughter event references.
+Replay restores these values directly and does not reconstruct energy with
+`SetP4` or run PID again. Event records contain the original input index,
+run/event IDs, cent9/cent16, raw/corrected multiplicity, track and TOF counts,
+primary vertex, magnetic field, centrality weight and event-plane information.
+Local event references are remapped together during replay so tracks from
+different source events cannot acquire a false shared-track identity.
+
+The accompanying ROOT metadata is:
+
+- `FemtoCandidateEventStoreLayout`: schema and exact species/field layout;
+- `FemtoCandidateEventStoreSelection`: selection settings, effective dE/dx calibration content and auxiliary event-plane definition;
+- `FemtoCandidateEventStoreMixing`: the producer's mixing settings;
+- `FemtoCandidateEventStoreFileUUID`: the original ROOT stream identity.
+
+Use the original completed per-job files. Schema, species, branch types and
+lengths, candidate references, selection provenance and stream identity are
+checked before pairing. Duplicate files/UUIDs and changed entry counts are
+errors. **Do not hadd or repack candidate caches:** changing their ROOT UUID or
+losing producer boundaries prevents faithful replay. A byte-for-byte copy
+preserves the UUID, but two copies of the same stream must not appear in one list.
+
+### Configuration and execution
+
+The standard He4 mainconfs are:
+
+- `main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreWrite.yaml`;
+- `main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreWriteNoJointSparse.yaml`;
+- `main_auau3p85_anaFemtoLambda_4He_KFParticle_histOnlyNoJointSparse.yaml`;
+- `main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreReplay.yaml`;
+- `main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreRemixVz.yaml`.
+
+They keep the production reconstruction/PID references. The write/replay pair
+uses the original mixing; the Vz diagnostic changes only `nVzBins: 10` to `20`
+over the same vertex range. The `candidateStoreWriteNoJointSparse` entry keeps
+candidate writing and dense nuclear pair QA while disabling only the 8D PID
+histogram through its dedicated QA YAML. Reconstruction, PID and mixing cuts
+remain the same.
+
+The [histogram-only mainconf](../../config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle_histOnlyNoJointSparse.yaml)
+omits `candidateStore:` and uses the same dense-only nuclear pair QA. It writes
+neither a candidate-event cache nor the joint 8D PID histogram; dense histograms,
+PID, TOF selections and mixing match the no-Sparse candidate writer. Later mixing
+changes require PicoDst reconstruction again because no replay cache is saved.
+
+The candidate-store feature YAML requires explicit `mode`,
+`speciesKeys`, `requireOriginalMixing`, `resetPoolAtFileBoundary`, `eventPlaneSource` and
+`eventPlaneCalculation` settings.
+
+For closure, use `requireOriginalMixing: true` and
+`resetPoolAtFileBoundary: true`. The latter is the default boundary policy:
+each producer file starts with a fresh pool, matching independent source jobs.
+Setting it to `false` deliberately continues the pool across files and changes
+the mixed-event reference. Preserve the ordered input list for reproducibility.
+Setting `requireOriginalMixing: false` permits an explicit mixing-only variation;
+it does not permit different cached selection/PID settings or candidate reselection.
+
+The existing runner and wrapper select the stage from the mainconf:
+
+```bash
+bash script/singularity_run_anaFemtoLambda_4He.sh \
+  config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreWrite.yaml \
+  <explicit-2021-P24iy-picoDst-or-list> <new-store.root> store_job -1
+bash script/singularity_run_anaFemtoLambda_4He.sh \
+  config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreReplay.yaml \
+  <original-store.root-or-list> <new-replay.root> replay_job -1
+```
+
+Replay lists have one ROOT path per line; relative paths are resolved against the
+list's directory. Replay `nEvents` counts **stored accepted-event rows**, not
+original PicoDst input events. `-1` processes every row; a positive request beyond
+the available rows fails rather than truncating silently. Input, output, job ID
+and mainconf remain explicit arguments, and existing outputs are refused.
+Rebuild with the batch-matched toolchain after changing the Maker or store layout.
+
+### Event-plane payload and validation scope
+
+The original pairing `psi2` and its validity are separate from the auxiliary
+TPC second-harmonic Q vector. The writer can calculate pT-weighted, **unflattened**
+TPC Q2 from configured charged-track cuts, optionally excluding candidate tracks.
+It stores Q2 components, angle, multiplicity and validity. This diagnostic angle
+is not a calibrated or resolution-corrected physics event plane.
+`eventPlaneSource: original` preserves the original pairing behavior, including
+its `psi2=-1` state. `eventPlaneSource: stored` explicitly selects the auxiliary
+angle. EP-binned replay requires a valid angle for every accepted event and stops
+on an invalid value; it does not silently assign invalid angles to a valid bin.
+
+Replay does not regenerate reconstruction, single-track or helix/merging QA
+that requires PicoDst. Pair closure covers selected and cached pre-PID k*, mass,
+centrality, mT, species/mass mappings and associated PID diagnostics.
+[`compareFemtoCandidateReplay.C`](../../tests/compareFemtoCandidateReplay.C)
+compares classes, axes, every bin including flows, Sumw2/errors, Entries,
+statistics and sparse coordinates exactly. Its `sameEventOnly` mode verifies
+unchanged SE for a mixing variation and reports whether the He4 ME probe changes.
+### Verified replay behavior
+
+With the full-QA configuration (`jointSparse` mapping enabled), the ROOT5
+limited-statistics validation processes 4,027 PicoDst events, stores
+3,858 accepted-event rows and replays all rows without a PicoDst reader or Lambda
+provider. Baseline, writer and original-mixing replay agree exactly in 1,675 dense
+pair histograms and one pre-PID QA Sparse: 39,963,446 dense cells including flows
+and 89,815 occupied sparse cells, with identical errors, Entries and statistics.
+The Vz-bin diagnostic preserves all 837 compared SE histograms exactly and changes
+the He4 signal ME histogram from 251 to 235 entries, with 13 different cells.
+This verifies persistence and controlled remix behavior; it does not establish a
+physical CF baseline or normalization plateau.
+
+The auxiliary TPC angle is invalid for one of the 3,858 stored events. EP-binned
+replay therefore stops under the current strict validity rule. Comparing EP
+classes requires an explicit policy for invalid-plane events; no silent dropping
+or assignment to a valid bin is part of this workflow.
+
+The [validation runner](../../tools/kfparticle_summary/validate_femto_candidate_store.py)
+performs fresh baseline/write/replay checks or explicitly reuses successful
+reconstruction records after checking the frozen input and recorded config/library
+fingerprints. Reuse records the comparison-macro change and original ROOT
+fingerprints; its execution log contains no new PicoDst reconstruction commands.
 
 ## QA PDF pre/post layout (`checkHistAnaFemtoPhiProton.C`)
 
@@ -395,11 +540,157 @@ also have `lowR_noTof`, `lowR_tofMatch`, `lowR_tofM2`, `highR_tofM2` samples.
 The three low-R samples are nested, so do not add them. For each variable,
 lowR_noTof + highR_tofM2 equals inclusive, including flow bins.
 
+### He4 lab-rapidity and track-merging diagnostics
+
+The diagnostic mainconfs retain the physical Lambda/nuclear selections and add
+pair-level QA:
+
+| Mainconf suffix under `config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle_` | Purpose |
+|---|---|
+| `epd8_ylab_merging.yaml` | EPD selection and eight EP mixing bins, with the diagnostics below |
+| `epd1_ylab_merging.yaml` | The EPD-selected one-bin mixing control, with the same diagnostics |
+| `diagnostics_noEp.yaml` | Rapidity and merging diagnostics with no EPD event selection |
+
+The EPD source and validity contract is separate from these diagnostic fills.
+Rapidity splitting does not select whole events: one event can contain He4
+candidates on both sides, and each Lambda-He4 pair follows its own He4 candidate.
+The optional maker block is explicit:
+
+```yaml
+he4RapiditySplit:
+  enabled: true
+  yLabThreshold: -0.5
+```
+
+It uses the selected physical He4 candidate's stored four-vector in the lab
+frame. SE and both ME directions use that same candidate-level definition.
+Strictly smaller and strictly larger rapidities fill `_YLabBelow` and
+`_YLabAbove`; exact equality and invalid rapidity fill neither diagnostic.
+The existing inclusive pair fill is retained. The He3-as-He4 mass representation
+does not enter this He4 diagnostic.
+
+The 32 added keys follow
+`hKstar{SE,ME}[VsCent]_lambda_he4{,_signal,_leftSB,_rightSB}_YLab{Below,Above}`.
+Their k* axes match the corresponding inclusive spectra exactly, and `VsCent`
+retains cent9. The ROOT output contains `TParameter<double>
+he4RapiditySplitYLabThreshold` and `TNamed FemtoHe4RapiditySplitDefinition`.
+An enabled block requires the complete histogram set and matching axes; putting
+these histograms in a profile with the feature disabled is an Init error.
+
+All Lambda profiles require the corrected merging geometry explicitly:
+
+```yaml
+mergingRadiusMeters: 1.4
+mergingGeometry:
+  method: starHelixFixedGlobalEta
+  tpcHalfLengthCm: 210.0
+  radiusToleranceCm: 0.001
+  includePion: true
+```
+
+`includePion: false` permits the existing proton-only histogram inventory.
+The method and numerical geometry fields are required; missing or unsupported
+settings fail Init. Every production path uses `StPicoTrack::helix` with the
+event's kG field and the global track momentum. A primary-track fit is not
+required for a Lambda daughter. The helix already represents curvature with
+the stored charge and rigidity, so no extra helium Z=2 scaling is applied.
+
+The calculation takes the first finite nonnegative intersection with the common
+cylinder, rejects STAR's no-solution value, checks the radial residual and the
+global TPC z extent, then fills wrapped daughter-position phi minus
+nucleus-position phi against their global-momentum eta difference. There is no
+asin clamp or fixed-field approximation. The bare
+`hDphiDeta_proton_<representation>` and `_EventField` names are compatibility
+aliases of this same corrected definition. With pion output enabled,
+`hDphiDeta_pion_<representation>` and its `_EventField` alias are also required.
+The representations are `4He`, `3He` and, when configured, `3HeAs4He`.
+
+These maps use signal SE pairs with the current PicoDst available. They do not
+veto close pairs or alter physical SE/ME acceptance. Pair replay cannot rebuild
+track geometry from candidate four-vectors. A cylinder intersection is a helix
+prediction, not a measurement of shared hits or merging efficiency. The output
+`TNamed FemtoLambdaMergingDefinition` records the geometry and alias contract.
+
+The dedicated histogram profiles retain every baseline key, class and axis and
+append the diagnostics. Existing merging-map bins change to the corrected
+definition. To regenerate the dedicated profiles from their explicit maker
+settings without replacing the base profiles, run
+`tools/kfparticle_summary/generate_lambda_diagnostic_histograms.py` with required
+`--base-mainconf` and `--mainconf` arguments. Existing generated output requires
+an explicit `--overwrite`.
+
+### Lambda-He4 pair-rapidity diagnostics
+
+The pair-rapidity diagnostic uses the laboratory rapidity of
+`lambda.P4() + he4.P4()`, from the selected physical candidates. It applies no
+CM shift and does not average the two particle rapidities. The explicit maker
+configuration is:
+
+```yaml
+pairRapiditySplit:
+  enabled: true
+  frame: lab
+  nBins: 10
+  min: -1.5
+  max: 0.5
+```
+
+The ten equal-width intervals have width 0.2. The eight `TH3D` keys are
+`hKstar{SE,ME}VsPairYVsCent_lambda_he4{,_signal,_leftSB,_rightSB}`, with axes
+`(k*, pairYLab, cent9)`. Their k* and cent9 axes match the existing inclusive
+spectra. SE and both ME directions compute rapidity from the same pair-level
+four-vector definition. He3-as-He4 does not enter these histograms.
+
+This diagnostic is independent of the single-He4 `_YLabBelow`/`_YLabAbove`
+views: neither is an additional cut on the other. It leaves inclusive raw
+SE/ME counts, pair acceptance and mixing unchanged. No pre-normalized CF is
+stored in the pair-rapidity maps. Adjacent intervals can be added separately
+for SE and ME before the chosen CF normalization procedure is applied.
+
+ROOT bins use `[low, high)`. A rapidity equal to 0.5 enters overflow; finite
+values outside the configured range remain in underflow or overflow. Nonfinite
+sums, `E <= abs(Pz)`, and nonfinite computed rapidities skip only this
+diagnostic. The output retains cent9 and k* flow bins, so a rapidity projection
+can include or inspect the flow regions explicitly.
+
+`FemtoHe4PairRapiditySplitDefinition` records the definition. The configuration
+values `he4PairRapidityLabNBins`, `he4PairRapidityLabMin` and
+`he4PairRapidityLabMax` are ROOT parameters with first-value merge mode, as is
+the single-He4 `he4RapiditySplitYLabThreshold`. Worker merging preserves these
+constants instead of adding them. Init requires the complete eight-map set,
+`TH3D` storage and matching axes. A disabled or absent feature does not accept
+pair-rapidity histogram definitions.
+
+The QA macro draws raw k* spectra for all ten intervals and reports the
+rapidity flow counts. Its `FemtoLambdaQa::ProjectPairRapidity` helper takes an
+inclusive rapidity-bin range and inclusive cent9 values. Use it for an exact
+underflow-only projection on ROOT 5, where the native projection range `(0,0)`
+otherwise denotes the complete axis. Examples, including adjacent-bin merging,
+are in [REFERENCE](../../docs/REFERENCE.md#lambda-he4-pair-rapidity-diagnostics).
+
+The pair diagnostic regression passes 1,603,559 checks, including 1,140,649
+pair-rapidity checks for definition, boundaries, flow bins, both ME directions,
+He3 exclusion and metadata. A 10,000-event EPD-selected sample retains all
+1,707 existing pair-physics histograms and 40,002,230 cells exactly, including errors,
+entries and statistics. Its physical He4 signal has SE 13 and ME 403 entries;
+the new pair-rapidity projections retain those counts, with no rapidity flow
+entries in that sample. A two-worker merge retains the metadata constants.
+
 ### Optional nuclear pair PID QA
 
-`nuclearPidPairQaHist` enables a separate HistManager and 8D THnSparseD.
-Absent key means no extra QA histograms or QA-candidate storage. The standard
-4He mainconf enables it; other entries do not opt in implicitly.
+`nuclearPidPairQaHist` enables a separate dense-QA HistManager and pre-PID
+QA-candidate storage. Absent key means no extra QA histograms or QA-candidate
+storage. The referenced QA YAML must explicitly choose its 8D output:
+
+- A complete `jointSparse` mapping creates `THnSparseD hNuclearPidPairJoint`.
+- `jointSparse: false` disables only that histogram; dense QA and cached pre-PID
+  candidates remain available.
+- Missing, null or `true` values are errors; there is no implicit output default.
+
+The [no-Sparse writer mainconf](../../config/mainconf/main_auau3p85_anaFemtoLambda_4He_KFParticle_candidateStoreWriteNoJointSparse.yaml)
+references [the dense-only QA YAML](../../config/hist/hist_auau3p85_femtoLambda_he4_he3_pid_pair_qa_noJointSparse.yaml).
+It sets `jointSparse: false` and retains the full 8D definition as comments.
+Candidate writing stays enabled and physical cuts remain unchanged.
 
 `selected` uses final nuclear PID. `prePID` removes only the species' own TPC
 pull window and best-species competition, retaining track quality, permitted
@@ -413,7 +704,7 @@ QA payloads accompany the existing physical mixing pool. QA-only events do not
 enter or evict that pool, or change CF eligibility, pair counters or randomness.
 SE TH2D keys live in `true/`, ME in `mix/`. The 1,080 TH2D retain k* vs pull
 and k* vs R by representation, mass region, centrality and PID stage.
-`hNuclearPidPairJoint` stores axes
+When enabled, `hNuclearPidPairJoint` stores axes
 `(Kstar,POverQ,NSigma,Cent9,Representation,MixingMode,MassClass,PidStage)`.
 MassClass is exclusive: SBNeg, signalLow, signalHigh, SBPos. Full signal is the
 sum of its two classes. The TH2 projections alone cannot recover the R/pull
@@ -422,7 +713,8 @@ occupied bins and can exceed ROOT's single-object serialization limit. Preserve
 it in separate input-group files and sum matching low-dimensional projections
 when one merged object would exceed that limit.
 
-The standard configuration defines 1,786 ordinary histograms plus one Sparse.
+The full-QA configuration defines 1,786 ordinary histograms plus one Sparse.
+The no-Sparse configuration retains the ordinary histograms and omits the Sparse.
 The [complete histogram catalog](../../mdfiles/femto/implementation/femto_lambda_histograms_20260930.md)
 lists names, classes, axes, sample definitions, filling stages and metadata.
 The calibration and selection policies are also saved as ROOT TNamed records.
@@ -431,3 +723,35 @@ Build with `script/singularity_make.sh MAINCONF`. Regression entry points under
 `tests/` cover calibration validation, legacy coefficients, exact TOF boundaries,
 He3 control k*, acceptance sample identities, Sparse projections and QA-pool
 independence. Run commands are in [REFERENCE](../../docs/REFERENCE.md).
+
+
+### Xialei EPD first-order event plane (2026-11-12)
+
+The optional top-level `eventPlane` reference selects
+`config/event_plane/lambda_he4_xialei_epd8.yaml`. This computes the corrected
+East EPD AB (rows 1–8) first-order plane, with the source recentering and
+20-term shift calibration. The mixing class reproduces the original Float_t
+`psi1 / 2` conversion and eight-bin calculation. It is separate from the
+existing auxiliary TPC second-order plane. Event-keyed tile sampling preserves
+the caller's random stream; original event-by-event angles are not claimed to
+be bitwise identical without the original random sequence.
+
+The supplied calibration covers **388 runs, 22158032–22179022**, within the same
+2021 P24iy fixed-target production. It does not cover the entire current
+analysis input. Unknown runs, missing calibration objects, insufficient bin
+counts and empty required calibration cells fail explicitly. Use covered-run
+input for the EP profiles; additional calibration is required for other runs.
+See [calibration provenance](../../config/event_plane/xialei_epd_2021P24iy/README.md).
+
+EP1 and EP8 configurations apply identical EP validity requirements before
+SE, ME and pool admission; only EP8 restricts partners by the computed class.
+Keep cent9, Vz and the other pool settings identical for this comparison.
+Raw SE/ME outputs sum the EP classes; they do not store a separate CF for each
+EP class. The existing auxiliary TPC plane is never used as an EPD fallback.
+
+Outputs include `hEpdPsi1VsCent`, `hEpdMixingBinVsCent`, `hEpdStatus`, the
+`FemtoEpdEventPlaneDefinition` record and seen/valid/rejected event counters.
+`writeDetailedLedger: false` avoids per-event EP branches in the standard
+histogram-only run. Candidate-store writing, when explicitly enabled with EPD,
+uses schema 2 and separate EPD fields; ordinary no-EP schema 1 is unchanged.
+Replay of EPD analysis requires those fields and matching calibration provenance.

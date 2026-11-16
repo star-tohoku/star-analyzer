@@ -161,10 +161,49 @@ def root_layout(xml, jobid):
     return directory, template, directory / (Path(base).stem + "_merge.root")
 
 
-def select_inputs(xml, jobid, indices, output, outcomes, allow_partial):
+def load_job_selection(path, indices):
+    """Read a fixed, explicit subjob population without accepting ambiguous IDs."""
+    path = path.resolve()
+    raw = path.read_bytes()
+    lines = raw.decode("utf-8").splitlines()
+    if not lines or any(not re.fullmatch(r"0|[1-9][0-9]*", line) for line in lines):
+        raise ValueError("include-job-ids requires one nonnegative integer per line")
+    selected = [int(line) for line in lines]
+    if len(selected) != len(set(selected)):
+        raise ValueError("Duplicate subjob ID in include-job-ids")
+    unknown = sorted(set(selected) - set(indices))
+    if unknown:
+        raise ValueError("Unknown subjob IDs in include-job-ids: {}".format(unknown))
+    selected.sort()
+    return dict(path=str(path), sha256=hashlib.sha256(raw).hexdigest(),
+                jobIds=selected, count=len(selected))
+
+
+def verify_job_selection(selection):
+    if selection is not None and hashlib.sha256(
+            Path(selection["path"]).read_bytes()).hexdigest() != selection["sha256"]:
+        raise ValueError("include-job-ids file changed after its selection was recorded")
+
+
+def exclusion_reasons(indices, output, include_indices=None):
+    reasons = {}
+    for key, reason in [("missingRoots", "missing_root"),
+                        ("badRootHeaders", "bad_root_header"),
+                        ("analysisCompletionUnconfirmed", "analysis_completion_unconfirmed")]:
+        for index in output[key]:
+            reasons.setdefault(str(index), []).append(reason)
+    if include_indices is not None:
+        for index in sorted(set(indices) - set(include_indices)):
+            reasons.setdefault(str(index), ["outside_requested_selection"])
+    return reasons
+
+
+def select_inputs(xml, jobid, indices, output, outcomes, allow_partial, include_indices=None):
     directory, template, destination = root_layout(xml, jobid)
     excluded = set(output["missingRoots"] + output["badRootHeaders"]
                    + output["analysisCompletionUnconfirmed"])
+    if include_indices is not None:
+        excluded.update(set(indices) - set(include_indices))
     partial = bool(excluded or outcomes != {"exit_0": len(indices)})
     # A malformed ROOT file is never silently skipped, even in partial mode.
     if output["badRootHeaders"]:
@@ -255,18 +294,24 @@ def publish_no_clobber(source, destination):
     os.link(str(source), str(destination))
 
 
-def merge_once(paths, destination, state_dir, runner, batch_size):
+def merge_once(paths, destination, state_dir, runner, batch_size, selection=None):
+    verify_job_selection(selection)
     attempt = state_dir / "merge_attempt.json"
     if attempt.exists():
         raise RuntimeError("Merge was already attempted; inspect records before any manual recovery")
     if os.path.lexists(str(destination)):
         raise FileExistsError("Refusing to overwrite existing merge: {}".format(destination))
     before = fingerprints(paths)
-    notify.save_json(attempt, dict(startedAt=notify.now(), destination=str(destination),
-                                  inputs=before, runner=runner, batchSize=batch_size))
+    attempt_record = dict(startedAt=notify.now(), destination=str(destination),
+                          inputs=before, runner=runner, batchSize=batch_size)
+    input_record = dict(inputs=before)
+    if selection is not None:
+        attempt_record.update(includeJobIds=selection, selectedInputCount=len(paths))
+        input_record.update(includeJobIds=selection, selectedInputCount=len(paths))
+    notify.save_json(attempt, attempt_record)
     staging = destination.parent / (".merge_staging_" + state_dir.name)
     staging.mkdir()  # Refuse an old/inconsistent staging tree.
-    notify.save_json(state_dir / "input_manifest.json", dict(inputs=before))
+    notify.save_json(state_dir / "input_manifest.json", input_record)
     write_list(state_dir / "inputs.list", paths)
     (state_dir / "merge_notify_audit.C").write_text(ROOT_AUDIT)
     expected = audit(paths, "input_audit", state_dir, runner)
@@ -369,6 +414,8 @@ def main():
     mail.add_argument("--no-email", action="store_true")
     parser.add_argument("--allow-partial", action="store_true",
                         help="After every job terminates, merge only outputs with successful analysis logs")
+    parser.add_argument("--include-job-ids", type=Path,
+                        help="Fixed nonempty subjob population: one unique known integer ID per line")
     parser.add_argument("--poll-sec", type=int, default=300)
     parser.add_argument("--settle-sec", type=int, default=300)
     parser.add_argument("--batch-size", type=int, default=100)
@@ -391,6 +438,8 @@ def main():
                      for p in (root / "job/run").iterdir() if pattern.fullmatch(p.name))
     if not indices or indices != list(range(len(indices))):
         parser.error("Missing/non-contiguous SUMS subjob lists")
+    selection = load_job_selection(args.include_job_ids, indices) if args.include_job_ids else None
+    include_indices = selection["jobIds"] if selection is not None else None
     xml = ET.parse(meta["submit"]["joblistSnapshot"]["path"]).getroot()
     mainconf = args.mainconf or Path(meta["submit"]["mainconf"])
     if not mainconf.is_absolute():
@@ -404,6 +453,10 @@ def main():
         state_dir.mkdir(parents=True, exist_ok=True)
         lock = (state_dir / "monitor.lock").open("a")
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if (state_dir / "settings.json").exists():
+            previous_settings = json.loads((state_dir / "settings.json").read_text())
+            if previous_settings.get("includeJobIds") != selection:
+                raise SystemExit("Job ID inclusion selection changed; inspect records before restarting")
         if (state_dir / "sent.json").exists():
             print("Already notified; no duplicate merge/email", flush=True)
             return 0
@@ -420,6 +473,7 @@ def main():
             email=args.email, allowPartial=args.allow_partial, runner=runner,
             pollSeconds=args.poll_sec, settleSeconds=args.settle_sec,
             batchSize=args.batch_size, expectedSubjobs=len(indices),
+            includeJobIds=selection,
             pid=os.getpid(), host=socket.getfqdn(), startedAt=notify.now()))
     settled_since = None
     while True:
@@ -432,6 +486,8 @@ def main():
                           queueStates=dict(collections.Counter(queue.values())),
                           outcomes=dict(collections.Counter(terminal.values())),
                           stateDirectory=str(state_dir), allTerminal=complete, phase="waiting")
+            if selection is not None:
+                status["includeJobIds"] = selection
             if args.check:
                 print(json.dumps(status, ensure_ascii=False, indent=2))
                 return 0
@@ -459,17 +515,21 @@ def main():
         notify.save_json(state_dir / "status.json", status)
         output = notify.output_summary(xml, meta["jobid"], indices)
         status["output"] = output
+        status["exclusionReasons"] = exclusion_reasons(indices, output, include_indices)
         # Keep missing/unconfirmed indices visible even if strict selection
         # rejects this run before a merge input list can be constructed.
-        status["excludedIndices"] = sorted(set(
-            output["missingRoots"] + output["badRootHeaders"]
-            + output["analysisCompletionUnconfirmed"]))
+        status["excludedIndices"] = sorted(int(index) for index in status["exclusionReasons"])
         paths, selected, excluded, partial, destination = select_inputs(
-            xml, meta["jobid"], indices, output, status["outcomes"], args.allow_partial)
+            xml, meta["jobid"], indices, output, status["outcomes"], args.allow_partial,
+            include_indices)
         status.update(selectedIndices=selected, excludedIndices=excluded, partial=partial,
                       phase="merging", plannedOutput=str(destination))
         notify.save_json(state_dir / "status.json", status)
-        status["merge"] = merge_once(paths, destination, state_dir, runner, args.batch_size)
+        if selection is None:
+            status["merge"] = merge_once(paths, destination, state_dir, runner, args.batch_size)
+        else:
+            status["merge"] = merge_once(paths, destination, state_dir, runner, args.batch_size,
+                                         selection=selection)
         status["phase"] = "merged"
     except Exception as error:
         status.update(phase="failed", error=str(error))

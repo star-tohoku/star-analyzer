@@ -29,10 +29,11 @@ inline TString Absolute(const char* path) {
 struct Run {
   TString input, output, config, job;
   Long64_t requested;
+  Bool_t requiresEpd;
   std::vector<std::string> inputFiles;
   Run(const char* in, const char* out, const char* id, Long64_t n, const char* conf)
       : input(Absolute(in)), output(Absolute(out)), config(Absolute(conf)),
-        job(id ? id : ""), requested(n) {}
+        job(id ? id : ""), requested(n), requiresEpd(kFALSE) {}
 
   Bool_t Prepare(const char* expectedSpecies) {
     if (input.IsNull() || output.IsNull() || config.IsNull() || job.IsNull()
@@ -60,6 +61,8 @@ struct Run {
         return kFALSE;
       }
     }
+    requiresEpd=keys.find("eventPlane")!=keys.end();
+    if(requiresEpd && keys["eventPlane"].empty()){std::cerr<<"ERROR: eventPlane reference is empty"<<std::endl;return kFALSE;}
     if (!ConfigManager::GetInstance().LoadConfig(config)) return kFALSE;
     const FemtoConfig& femto = ConfigManager::GetInstance().GetFemtoConfig();
     const std::string configFile(config.Data());
@@ -108,7 +111,7 @@ struct Run {
         delete file; return kFALSE;
       }
       TTree* tree = dynamic_cast<TTree*>(file->Get("PicoDst"));
-      if (!CheckTree(tree, inputFiles[i].c_str())) { delete file; return kFALSE; }
+      if (!CheckTree(tree, inputFiles[i].c_str(), requiresEpd)) { delete file; return kFALSE; }
       const Long64_t entries = tree->GetEntries();
       std::cout << "[input-file] " << i << " entries=" << entries << " " << inputFiles[i] << std::endl;
       if (entries <= 0) { std::cerr << "ERROR: empty PicoDst" << std::endl; delete file; return kFALSE; }
@@ -131,7 +134,7 @@ struct Run {
     return kTRUE;
   }
 
-  static Bool_t CheckTree(TTree* tree, const char* source) {
+  static Bool_t CheckTree(TTree* tree, const char* source, Bool_t requireEpd=kFALSE) {
     if (!tree) { std::cerr << "ERROR: missing PicoDst tree in " << source << std::endl; return kFALSE; }
     // TOF QA remains part of the nuclear histogram contract even when final m2 PID is off.
     const char* required[] = {"Event", "Track", "TrackCovMatrix", "BTofPidTraits"};
@@ -142,16 +145,20 @@ struct Run {
         return kFALSE;
       }
     }
+    if(requireEpd && !tree->GetBranch("EpdHit") && !tree->GetBranch("EpdHit.")) {
+      std::cerr<<"ERROR: EPD analysis requires EpdHit in "<<source<<std::endl;return kFALSE;
+    }
     return kTRUE;
   }
 
-  static void EnableBranches(StPicoDstMaker* pico) {
+  void EnableBranches(StPicoDstMaker* pico) {
     pico->SetStatus("*", 0);
     pico->SetStatus("Event", 1);
     pico->SetStatus("Track", 1);
     pico->SetStatus("TrackCovMatrix", 1);
     pico->SetStatus("BTofHit", 1);
     pico->SetStatus("BTofPidTraits", 1);
+    if(requiresEpd)pico->SetStatus("EpdHit", 1);
   }
 
   Int_t Execute(StChain* chain, StPicoDstMaker* pico, StFemtoMaker* maker) {
@@ -173,7 +180,7 @@ struct Run {
       if (source->LoadTree(i) < 0 || !source->GetTree()) { status = 3; break; }
       if (source->GetTreeNumber() != previousTree) {
         previousTree = source->GetTreeNumber();
-        if (!CheckTree(source->GetTree(), source->GetCurrentFile()->GetName())) { status = 3; break; }
+        if (!CheckTree(source->GetTree(), source->GetCurrentFile()->GetName(), requiresEpd)) { status = 3; break; }
       }
       if (i % 1000 == 0) std::cout << "Working on event " << i << std::endl;
       chain->Clear();

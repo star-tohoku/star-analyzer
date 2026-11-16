@@ -27,6 +27,8 @@ class FemtoLambdaProvider;
 class FemtoLambdaLegacy;
 class TTree;
 class TFile;
+namespace femto_candidate_store { struct Event; struct Settings; class Writer; class Reader; }
+namespace femto_epd { class Provider; struct Result; }
 
 class StFemtoMaker;
 
@@ -50,10 +52,25 @@ class StFemtoMaker : public StMaker {
   void SetLambdaProvider(FemtoLambdaProvider* provider);
   void SetProcessingSucceeded(bool value) { mLambdaProcessingSucceeded = value; }
   Long64_t GetReconstructedEvents() const { return mLambdaReconstructedEvents; }
+  void SetCandidateStoreInput(const char* path) { mCandidateStoreInput = path ? path : ""; }
+  Bool_t CandidateStoreInputFinished() const;
+  Long64_t CandidateStoreInputEntries() const;
 
  private:
   Int_t InitLambda();
   Int_t MakeLambdaEvent();
+  Int_t MakeLambdaReplayEvent();
+  void ProcessLambdaPairs(Float_t vz, Int_t cent9, Double_t psi2);
+  bool WriteCandidateStoreEvent(const StPicoEvent&, Int_t nTracks);
+  femto_epd::Provider* mLambdaEpd;
+  femto_epd::Result* mLambdaEpdResult;
+  Long64_t mLambdaEpdSeen, mLambdaEpdValid, mLambdaEpdRejected;
+  std::string mCandidateStoreInput;
+  femto_candidate_store::Settings* mCandidateStoreSettings;
+  femto_candidate_store::Writer* mCandidateStoreWriter;
+  femto_candidate_store::Reader* mCandidateStoreReader;
+  bool mCandidateStoreFinished;
+  Int_t mCandidateStoreSourceInputIndex, mCandidateStoreStream;
   std::string mMainConfigPath;
   FemtoLambdaProvider* mLambdaProvider;
   FemtoLambdaLegacy* mLambdaLegacy;

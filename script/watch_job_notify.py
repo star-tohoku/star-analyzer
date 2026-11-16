@@ -109,7 +109,9 @@ def output_summary(xml, jobid, indices):
             "analysisCompletionUnconfirmed": incomplete}
 
 
-def make_message(recipient, meta, status):
+def make_message(recipient, meta, status, content="detailed"):
+    if content not in ("minimal", "detailed"):
+        raise ValueError("email content must be minimal or detailed")
     expected = status["expectedSubjobs"]
     good = (status["outcomes"] == {"exit_0": expected}
             and status["output"]["rootsWithValidHeader"] == expected
@@ -118,8 +120,17 @@ def make_message(recipient, meta, status):
     message = email.message.EmailMessage(policy=email.policy.SMTP)
     message["From"] = "{}@{}".format(getpass.getuser(), socket.getfqdn())
     message["To"] = recipient
-    message["Subject"] = "[STAR {}] {} ({} jobs)".format(label, meta["anaName"], expected)
     message["Date"] = email.utils.format_datetime(datetime.datetime.now().astimezone())
+    if content == "minimal":
+        # Keep run diagnostics local and use a mail ID unrelated to the job ID.
+        message["Subject"] = "[STAR解析 {}]".format(label)
+        message["Message-ID"] = email.utils.make_msgid()
+        message.set_content(
+            ("ご依頼の解析jobの実行終了を確認しました。出力回収と解析完了ログを確認しました。\n" if good else
+             "ご依頼の解析jobは実行中・待機中のものがなくなりました。ただし正常完了を確認できないjobがあります。\n") +
+            "詳細はこのチャットをご確認ください。\n")
+        return message
+    message["Subject"] = "[STAR {}] {} ({} jobs)".format(label, meta["anaName"], expected)
     message["Message-ID"] = "<star-{}-completion@{}>".format(meta["jobid"], socket.getfqdn())
     message.set_content(
         ("STAR解析の正常完了を確認しました。\n\n" if good else
@@ -166,6 +177,10 @@ def main():
     parser.add_argument("--runmeta", type=Path, required=True)
     parser.add_argument("--event-log", type=Path, required=True)
     parser.add_argument("--email", required=True)
+    parser.add_argument("--email-content", choices=("minimal", "detailed"), default="detailed",
+                        help="minimal sends completion/attention text only; detailed includes run diagnostics")
+    parser.add_argument("--state-dir", type=Path,
+                        help="directory for monitor state and delivery records (default: project job/run/notify/analysis_jobid)")
     parser.add_argument("--poll-sec", type=int, default=300)
     parser.add_argument("--settle-sec", type=int, default=300)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -188,7 +203,8 @@ def main():
     if not indices or indices != list(range(len(indices))):
         parser.error("Missing/non-contiguous SUMS subjob lists")
     xml = ET.parse(meta["submit"]["joblistSnapshot"]["path"]).getroot()
-    state_dir = root / "job/run/notify" / (meta["anaName"] + "_" + meta["jobid"])
+    state_dir = (args.state_dir.resolve() if args.state_dir is not None else
+                 root / "job/run/notify" / (meta["anaName"] + "_" + meta["jobid"]))
     lock = None
     if args.watch:
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -201,7 +217,9 @@ def main():
             raise SystemExit("Previous delivery outcome uncertain; verify mail records before restarting")
         save_json(state_dir / "settings.json", dict(
             runmeta=str(args.runmeta.resolve()), eventLog=str(args.event_log.resolve()),
-            email=args.email, pollSeconds=args.poll_sec, settleSeconds=args.settle_sec,
+            email=args.email, emailContent=args.email_content,
+            stateDirectory=str(state_dir),
+            pollSeconds=args.poll_sec, settleSeconds=args.settle_sec,
             expectedSubjobs=len(indices), pid=os.getpid(), host=socket.getfqdn(), startedAt=now()))
     settled_since = None
     while True:
@@ -209,6 +227,7 @@ def main():
             submitted, terminal = parse_events(args.event_log.read_text())
             queue = queue_states(meta["jobid"], meta["submit"]["host"])
             status = dict(checkedAt=now(), expectedSubjobs=len(indices),
+                          emailContent=args.email_content,
                           submitted=len(submitted), terminal=len(terminal),
                           queued=len(queue), queueStates=dict(collections.Counter(queue.values())),
                           outcomes=dict(collections.Counter(terminal.values())),
@@ -223,7 +242,7 @@ def main():
                     settled_since = time.monotonic()
                 if time.monotonic() - settled_since >= args.settle_sec:
                     status["output"] = output_summary(xml, meta["jobid"], indices)
-                    message = make_message(args.email, meta, status)
+                    message = make_message(args.email, meta, status, content=args.email_content)
                     (state_dir / "message.eml").write_bytes(message.as_bytes())
                     save_json(state_dir / "status.json", status)
                     send_once(state_dir, message, status, args.email)

@@ -5,6 +5,8 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
 
 ## Editing and implementation rules
 
+- **Approval infrastructure failures (user decision, 2026-10-19)**: For auto-review capacity/timeouts or sandbox namespace failures, follow [approval-recovery](skills/approval-recovery.md). Promptly report unexecuted work and offer the manual-approval workflow instead of repeatedly stalling. Do not change your own approval policy or bypass a denial. Continue unaffected authorized work.
+
 - **File Modification Approval**: The agent MUST NOT modify, create, or delete any source, configuration, or documentation files in the repository without explicit prior approval from the user.
 - **Macros**: Do not implement custom event loops. Build `StChain`, run `Init()`, `Make(i)`, and `Finish()`. The Maker-using macro must be ACLiC-compiled and linked through `AddLinkedLibs`.
 - **Makers**: Implement `Init()`, `Make()`, `Clear()`, and `Finish()`. Keep histogram lifecycle in `DeclareHistograms()` and `WriteHistograms()` / `Finish()`.
@@ -21,6 +23,7 @@ Framework-level design principles remain in `../../PHILOSOPHY.md`.
   as it is now. `docs/REFERENCE.md`: commands and entry points. Decisions, studies and their history: analysis notes and
   commit messages, not these files.
 - **analysis_info sync**: Keep `anaName`, macro base names, output naming, and `starTag` consistent.
+- **Todo updates (user decision, 2026-10-13)**: When a task has a record under `Todo/`, keep its Markdown plan/report and directory index current as analysis results, code, or YAML settings change. Record what is implemented versus only proposed, links to current plots and settings, validation results, limitations, and remaining work. Preserve historical results and mark superseded conclusions rather than silently erasing them; update the task record during the work, not only at the final handoff.
 - **Build environment for debug/repro**: For debug work and any build used for farm submission, use a **batch-matched STAR toolchain** before submit. **Either** (a) interactive SL7: `sl7`, then `source ./script/setup.sh <mainconf>` and `make`, **or** (b) from any host with Singularity: **`./script/singularity_make.sh <mainconf>`** — option (b) runs `make` inside `star-bnl/star-sw:latest` with the same `sl73_*` / `sl74_*` `STAR_HOST_SYS` resolution as batch and **counts as the SL7-class build** for agents and reproducibility. Do not rely on host-only `make` for farm-bound libraries or heap/exit-crash diagnosis. For `root4star` / QA on fragile login nodes, use the other **`script/singularity_*`** wrappers in `../../docs/REFERENCE.md`.
 
 ## Batch safety: how values reach a job, and what happens when they do not
@@ -66,6 +69,19 @@ These rules exist because three defects of the same shape reached a 241-job farm
 - **When to vendor:** only when `$STAR/lib` is insufficient and the code cannot live in `StMaker/`; see [`docs/ai/skills/reuse-star-stroot.md`](skills/reuse-star-stroot.md).
 - **Canonical example:** [`StRoot/StRefMultCorr/`](../../StRoot/StRefMultCorr/) with `PROVENANCE.md`, `Makefile` target, and repo-local `.so` load in `run_ana*.C` (not `$STAR/lib` duplicate).
 - **Agent procedure:** follow `reuse-star-stroot.md` when searching `$STAR/StRoot` or past trees and copying into `StRoot/<Package>/`.
+
+## 3.85 GeV dataset policy (user decision, 2026-10-01 JST)
+
+- For this user's future 3.85 GeV Lambda / Lambda-nucleus analyses and studies, use
+  **2021 P24iy only** (`production_3p85GeV_fixedTarget_2021`). Do not substitute
+  2019 P24iy or another year/production when access fails; report the problem.
+- Preserve historical ROOT outputs, submitted XML/config snapshots and study records
+  unchanged. They are not approved inputs or production templates for future work.
+  Never merge the 2019 results into the 2021 sample.
+- Check the actual catalog URL and explicit local input list, not just `nFiles: all`
+  or the analysis name. The old 2019 validation list is historical only.
+- Dataset selection is not evidence of complete statistics: distinguish catalog event
+  counts from measured PicoDst Entries, and verify coverage before claiming a full run.
 
 ## Centrality work
 
@@ -213,6 +229,12 @@ what the analyser decides): [`docs/ai/candidate-bdt-guide.md`](candidate-bdt-gui
 ## Output conventions
 
 - ROOT output: `rootfile/<anaName>/`
+- After verified hadd, retain merged ROOTs at the output directory's top level and
+  relocate only the verified subjob inputs to `subjobs/<jobid>/`, with a README and
+  relocation manifest. Do not delete ROOT data or move failed/unmerged inputs.
+  Use `watch_job_merge_notify.py` (automatic) or `archive_merged_subjobs.py --runmeta ...`
+  (already-validated runs); preserve historical provenance and never mix merged and
+  archived inputs in another hadd. This is the user's standing output policy (2026-10-01).
 - Submitted config snapshot: `job/run/configlog/config_<anaName>_<jobid>.txt`
 - Submitted joblist snapshot: `job/run/joblistlog/joblist_<anaName>_<jobid>.xml`
 - Submit-time runmeta manifest: `job/run/runmeta/runmeta_<anaName>_<jobid>.json`

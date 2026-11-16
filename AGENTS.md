@@ -37,6 +37,10 @@ after a defect reached the farm.
 
 ## Skill sync completion rule
 
+For approval-review capacity/timeouts or sandbox startup failures, follow
+`docs/ai/skills/approval-recovery.md`. Promptly notify the user when manual approval is needed;
+do not silently keep retrying or report unexecuted edits as saved.
+
 - Source-of-truth for skills is `docs/ai/skills/*.md`.
 - After adding or editing any file under `docs/ai/skills/`, always run:
   - `script/sync_and_check_skills.sh`

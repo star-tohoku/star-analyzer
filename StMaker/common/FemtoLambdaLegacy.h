@@ -9,6 +9,7 @@
 
 class HistManager;
 class StPicoDst;
+class StPicoTrack;
 class TDirectory;
 class TVector3;
 struct FemtoLambdaCandidate;
@@ -58,6 +59,10 @@ class FemtoLambdaLegacy {
                                 bool validTof, double mass2) const;
   bool PassNuclearPidQaDomain(int type, double rigidity, bool validTof, double mass2) const;
   TLorentzVector NuclearP4(const TVector3& rawRigidity, int type) const;
+  // First forward cylinder intersection of the STAR global-track helix.
+  static bool MergingTrackPositionAtRadius(const StPicoTrack*, double fieldKilogauss,
+                                          double radiusMeters, double tpcHalfLengthCm,
+                                          double radiusToleranceCm, TVector3& position);
 
  private:
   FemtoLambdaLegacy(const FemtoLambdaLegacy&);
@@ -72,6 +77,11 @@ class FemtoLambdaLegacy {
                            const std::string& legacy, int selectedNuclearType, bool prePid);
   void FillMerging(const FemtoCandidate&, const FemtoCandidate&, StPicoDst*,
                    const std::string& legacy, int massIndex);
+  int He4LabRapidityRegion(double yLab) const;
+  void FillHe4RapiditySplit(const FemtoCandidate&, double kstar, int cent9, bool mixed,
+                           const std::string& massSuffix);
+  void FillHe4PairRapidity(const TLorentzVector&, double kstar, int cent9, bool mixed,
+                           const std::string& massSuffix);
   bool ValidateHistograms(std::ostream&);
   bool He4TofQaEnabled() const;
   double He4TofThreshold() const;
@@ -87,6 +97,10 @@ class FemtoLambdaLegacy {
   bool mHe3ControlEnabled;
   std::vector<int> mPairSpeciesIndices;
   double mMean, mWindow, mOuterFactor, mFieldTesla, mRadiusMeters;
+  bool mMergingIncludePion, mHe4RapiditySplitEnabled, mPairRapiditySplitEnabled;
+  double mMergingTpcHalfLengthCm, mMergingRadiusToleranceCm, mHe4RapidityThreshold;
+  int mPairRapidityNBins;
+  double mPairRapidityMin, mPairRapidityMax;
   double mDaughterProtonMass, mDaughterPionMass, mLambdaPairMass;
   int mMinNHitsDedx;
   double mMinPt, mNuclearMass[4], mTofMean[3], mTofSigma[3];

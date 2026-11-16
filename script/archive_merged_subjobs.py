@@ -105,10 +105,14 @@ def prepare(runmeta):
         raise ValueError("Not a local output")
     directory = Path(output["toURL"][5:]).resolve(strict=True)
     contained(directory, root / "rootfile")
-    template = Path(output["fromScratch"]).name
-    if template != ana + "_$JOBID.root":
-        raise ValueError("Output filename does not match analysis scope")
-    merged = directory / (ana + "_" + jobid + "_merge.root")
+    scratch_template = Path(output["fromScratch"])
+    template = scratch_template.name
+    if (".." in scratch_template.parts
+            or not re.fullmatch(r"[A-Za-z0-9_-]+_\$JOBID\.root", template)):
+        raise ValueError("Unsafe output filename template")
+    # A submission label identifies the run; the frozen XML defines ROOT names.
+    basename = template.replace("$JOBID", jobid)
+    merged = directory / (Path(basename).stem + "_merge.root")
     merge = result["merge"]
     if Path(merge["path"]) != merged or not merge.get("validation") or merge.get("histogramCount", 0) <= 0:
         raise ValueError("Missing or wrong validated merge record")
@@ -147,7 +151,7 @@ def prepare(runmeta):
     archive = contained(directory / "subjobs" / jobid, root)
     entries = []
     for index, entry in zip(selected, inputs):
-        source = directory / (ana + "_" + jobid + "_" + str(index) + ".root")
+        source = directory / template.replace("$JOBID", "{}_{}".format(jobid, index))
         if entry["path"] != str(source):
             raise ValueError("Input manifest outside exact selected scope")
         entries.append(dict(index=index, originalPath=str(source),
