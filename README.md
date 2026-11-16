@@ -100,7 +100,7 @@ sources and small figures. It is optional (`update = none`) and is not required
 for building or running the shared analyses. To use it explicitly:
 
 ```bash
-git -c submodule.star_local.url=git@github.com:HypTPCIchikawa/star_local_submodule.git submodule update --init --checkout star_local
+git -c submodule.star_local.url=git@github.com:HypTPCIchikawa/STAR_ana_local.git submodule update --init --checkout star_local
 python3 star_local/scripts/sync_workspace.py mount
 ```
 

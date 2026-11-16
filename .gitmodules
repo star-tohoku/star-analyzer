@@ -3,6 +3,6 @@
 	url = https://github.com/jbeder/yaml-cpp.git
 [submodule "star_local"]
 	path = star_local
-	url = https://github.com/HypTPCIchikawa/star_local_submodule.git
+	url = https://github.com/HypTPCIchikawa/STAR_ana_local.git
 	update = none
 	branch = main
