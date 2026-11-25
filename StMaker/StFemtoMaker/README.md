@@ -186,6 +186,83 @@ C_{\mathrm{raw}}(k^*) = \frac{Y_{\mathrm{SE}}(k^*)}{Y_{\mathrm{ME}}(k^*)}.
 - **Rollout:** compare `randomSample` and `bufferAll` on a short joblist before full catalog; check high-k* `C→1`, ME shape, job time, merge ROOT size.
 - Production mainconfs keep the `randomSample` mode name and receive its corrected semantics.
 
+## Lambda–He4 reduced tree and producer QA
+
+The dedicated `anaFemtoLambda_4He_tree` entry uses the same `StFemtoMaker`
+candidate/pair implementation with a required `reducedTree:` feature YAML:
+
+| Mode | Processing | Output |
+|---|---|---|
+| `write` | PicoDst event selection, centrality/EP, Lambda reconstruction and nuclear PID; no pairing or pool registration | One ROOT with the reduced tree and selected non-pair QA |
+| `replay` | Stored candidates and raw relevant-track data; no PicoDst reader or Lambda provider | SE/ME and pair diagnostics with the requested downstream conditions |
+
+The new format retains canonical Float pairing values and richer event,
+Lambda-fit, daughter and raw-track information. Physical nuclear momentum is
+separate from measured primary/global rigidity momentum and helix geometry.
+The event TTree is `femtoLambdaReducedEvents`; `FemtoLambdaReducedMetadata`
+records the persisted producer segments and their selection/layout/counts.
+The reader uses those segment identities rather than requiring the current
+transport file to retain its original ROOT UUID. It rejects incomplete coverage,
+duplicate segments/events and noncontiguous segment order. Use completed
+producer files in their recorded order; arbitrary partial splitting is not an
+accepted input format.
+Ordered hadd/repack of complete producer segments is supported. Keep each
+original producer source-input manifest: file-level ROOT metadata alone does
+not preserve every segment-to-source-list mapping after hadd.
+Only target candidates and daughters are persisted in the standard compact
+profile. The optional full-control profile also retains nonselected pre-PID
+controls. Selected-pair PID/rigidity QA uses physical candidates and remains
+available in both profiles;
+all-track diagnostics can remain producer histograms without saving unrelated
+particle rows. Events with no target pair, including events whose other legacy
+candidates admitted them to the original pool, retain their processing and
+pool-admission information.
+
+Track `hasTof` means that the referenced BTOF traits object exists. `tofValid`
+means only that beta is finite and positive; it does not certify all TOF fields
+or apply a match-quality cut. Beta, time, match flag, local Y/Z and hit position
+use native PicoDst accessors. The reserved `tofPathLength`, `tofDeltaY` and
+`tofDeltaZ` fields are unavailable from the current native interface and remain
+-999. Treat those fields as unavailable, including when `hasTof` is true.
+
+The producer histogram references explicitly select non-pair QA. Pair histograms
+and sparse outputs are not filled in that stage. Producer QA keeps its own
+original population; it is not a replacement for a condition-dependent QA
+histogram reconstructed during replay and is not automatically duplicated into
+each replay output. Keep producer QA identity/coverage with any later merge.
+
+The replay histogram profile includes optional k* × EPD-bin × cent9 outputs
+for physical Lambda–He4 and Lambda–He3, SE/ME and all four mass classes.
+The EPD coordinate labels the current processing event using the bin count of
+the pair histogram's EPD axis. All such axes must have the same contiguous
+integer bins. With the active mixing partition, both mixed events share that
+class. A legacy EP1 profile may retain eight diagnostic classes, in which case
+the label need not be the Lambda-side class. Summing the complete EPD axis
+recovers the matching inclusive k* × cent9 distribution.
+The five-bin pair-rapidity replay control keeps the same inclusive pair
+physics and EP8 mixing as the ten-bin profile.
+
+Feature settings are explicit: `mode`, `speciesKeys`,
+`resetPoolAtSegmentBoundary`, `requireOriginalMixing`, `compressionLevel`,
+`autoFlush`, `storePrePidControl`. The standard value of the last key is false:
+the producer's 108 single-particle/event QA histograms and replay's selected
+PID/rigidity diagnostics (540 histograms) remain, while only the 540
+nonselected pre-PID pair controls are excluded. The full-control profiles set it true and retain that larger
+bank. Capability metadata and selection fingerprints prevent requesting full
+control QA from a compact input. The macro supplies producer identity and source input from its
+mandatory jobid/input arguments. Original-mixing replay is the closure mode;
+the separate EP1 control configuration relaxes original-mixing equality while
+retaining the stored reconstruction selection. Changing downstream conditions
+does not recover candidates outside that stored selection.
+The embedded source revision is explicitly `unrecorded`; retain the source,
+configuration and dependency checksums in the submit-time manifest alongside
+the original ordered input list. A Git HEAD alone does not describe a dirty
+working tree.
+
+The entrypoints and complete commands are documented in
+[`docs/REFERENCE.md`](../../docs/REFERENCE.md). The old `candidateStore:` format
+below remains unchanged, and a mainconf cannot request both formats.
+
 ## Lambda–He4 candidate event store and replay
 
 The `anaFemtoLambda_4He` entry supports an optional `candidateStore:` mainconf
@@ -619,6 +696,48 @@ settings without replacing the base profiles, run
 `--base-mainconf` and `--mainconf` arguments. Existing generated output requires
 an explicit `--overwrite`.
 
+### Single-He4 rapidity histograms
+
+The optional maker block retains a binned view of every accepted physical
+Lambda-He4 pair without changing the pair or pool selection:
+
+```yaml
+he4RapidityBinning:
+  enabled: true
+  frame: lab
+  nBins: 8
+  min: -1.0
+  max: 0.0
+```
+
+Every key is required when the block is present. The interval uses equal-width
+ROOT bins `[low, high)`; finite rapidities below `min` or at/above `max` remain
+in underflow/overflow. Invalid nucleus rapidity skips this diagnostic only.
+The example gives eight intervals of width 0.125. Add adjacent pairs of raw
+SE and ME intervals to obtain four intervals of width 0.25, then normalize
+each selected interval. Do not average separately normalized CFs. Include
+rapidity flow bins when checking closure against the inclusive spectrum.
+
+Eight TH3D keys follow
+`hKstar{SE,ME}VsHe4YLabVsCent_lambda_he4{,_signal,_leftSB,_rightSB}`.
+Their axes are k*, physical-He4 lab rapidity and cent9. The k*/cent9 axes
+match the inclusive pair spectra exactly. Rapidity comes from the nucleus
+candidate's stored physical four-vector in SE and both ME directions, with
+no extra charge correction or CM shift. Lambda-He3 and He3-as-He4 do not
+enter this view. The existing strict two-region He4 split and the separate
+pair-rapidity diagnostic retain their own definitions. In particular, an
+exact threshold value is included in the upper native rapidity interval,
+while the strict two-region split excludes exact equality from both sides.
+
+An enabled block requires the complete eight-histogram profile and matching
+axes; a disabled/absent block rejects profiles containing these keys.
+`he4RapidityLabNBins`, `he4RapidityLabMin` and `he4RapidityLabMax` are typed
+ROOT parameters in first-value merge mode.
+`FemtoHe4RapidityBinningDefinition` records the physical definition and flow
+policy. Existing reduced event trees retain the information needed for this
+diagnostic; changing these histogram bins does not change reconstruction
+provenance or require another PicoDst pass.
+
 ### Lambda-He4 pair-rapidity diagnostics
 
 The pair-rapidity diagnostic uses the laboratory rapidity of
@@ -725,7 +844,7 @@ He3 control k*, acceptance sample identities, Sparse projections and QA-pool
 independence. Run commands are in [REFERENCE](../../docs/REFERENCE.md).
 
 
-### Xialei EPD first-order event plane (2026-11-12)
+### Xialei EPD first-order event plane
 
 The optional top-level `eventPlane` reference selects
 `config/event_plane/lambda_he4_xialei_epd8.yaml`. This computes the corrected
@@ -743,11 +862,19 @@ counts and empty required calibration cells fail explicitly. Use covered-run
 input for the EP profiles; additional calibration is required for other runs.
 See [calibration provenance](../../config/event_plane/xialei_epd_2021P24iy/README.md).
 
-EP1 and EP8 configurations apply identical EP validity requirements before
-SE, ME and pool admission; only EP8 restricts partners by the computed class.
-Keep cent9, Vz and the other pool settings identical for this comparison.
-Raw SE/ME outputs sum the EP classes; they do not store a separate CF for each
-EP class. The existing auxiliary TPC plane is never used as an EPD fallback.
+The canonical stored/calibrated EPD class remains eight bins. Mixing uses the
+physical first-order angle with `mixing.nEventPlaneBins`; one bin keeps all
+EP-valid events in the same angular class. Partitions of 1, 8, 16 and 32 bins
+use the same validity selection and preserve the original Float_t boundary
+convention. They do not require new recenter/shift calibrations. Keep cent9,
+Vz, both pool-depth limits and the admission policy identical when comparing
+these partitions. The auxiliary TPC plane is never used as an EPD fallback.
+
+Inclusive raw SE/ME histograms sum the classes; optional k* × EPD × cent9
+histograms retain each diagnostic class. The active pool count is separate
+from canonical eight-bin calibration QA. `hEpdPoolBinVsCent`, when configured,
+must match the active partition. CF normalization and background processing
+remain outside the Maker.
 
 Outputs include `hEpdPsi1VsCent`, `hEpdMixingBinVsCent`, `hEpdStatus`, the
 `FemtoEpdEventPlaneDefinition` record and seen/valid/rejected event counters.
@@ -755,3 +882,29 @@ Outputs include `hEpdPsi1VsCent`, `hEpdMixingBinVsCent`, `hEpdStatus`, the
 histogram-only run. Candidate-store writing, when explicitly enabled with EPD,
 uses schema 2 and separate EPD fields; ordinary no-EP schema 1 is unchanged.
 Replay of EPD analysis requires those fields and matching calibration provenance.
+
+### Lambda–He4 close-pair selection
+
+The optional maker `mergingPairCut` block requires explicit `enabled`,
+`nucleus: he4`, `daughter: proton`, `phiMax`, `etaMax`,
+`unreachablePolicy: keep` and `writeQA` values. Widths are positive, finite
+limits in radians and pseudorapidity. A physical Lambda–He4 pair is rejected
+only when both strict inequalities hold. The same predicate precedes every
+SE/ME mass-class and differential pair fill; it does not reject events,
+candidates or pool registrations. Lambda–He3 and its alternative He4 mass
+hypothesis remain independent of this selection.
+
+The geometry uses the configured comparison radius, each track's origin-event
+magnetic field, raw rigidity/charge and global momentum pseudorapidity.
+Intersection positions define wrapped daughter-minus-He4 azimuth. Mixed pools
+own the precomputed track points, including in reverse mixing. Unreachable
+tracks are retained and counted; a missing track or mismatched event cache
+fails explicitly. No fixed-field fallback is used for the selection.
+
+With `writeQA: true`, proton and pion signal-pair maps are written before and
+after selection for SE and ME. `hDphiDetaPairCutQA` records both populations,
+rejections and unreachable tracks. Pion maps diagnose the effect of the proton
+selection; pion proximity does not reject a pair. Existing SE merging aliases
+retain their population before selection. Output metadata records the cut
+parameters, geometry and reachability policy. Without the block, the original
+pairing path and QA population are preserved.

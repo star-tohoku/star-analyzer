@@ -48,6 +48,61 @@ Run `star-submit` from **this directory**. SUMS will write generated files (`.cs
   - **runmeta/sums_artifacts_<anaName>_<jobid>.tar.gz** — stable snapshot of SUMS-generated `anaName+jobid+*` files such as `.list`, `.csh`, `.condor`, `.report`, and `.session.xml`
   - **runmeta/submit_stdout_<anaName>_<jobid>.txt** — captured `star-submit` console output
 
+## Lambda–He4 reduced-tree jobs
+
+`anaFemtoLambda_4He_tree` writes target-event/candidate/track information and
+selected non-pair QA into the same producer ROOT. Its `reducedTree.mode: write`
+stage does not make SE/ME or a mixing pool. The `replay` stage reads completed
+producer ROOTs and performs SE/ME without PicoDst or KF reconstruction. It is a
+separate format from the `candidateStore:` cache described below.
+
+Use `config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree.yaml` for production,
+`main_auau3p85_anaFemtoLambda_4He_tree_replay.yaml` for original-mixing closure,
+and `main_auau3p85_anaFemtoLambda_4He_tree_replay_ep1.yaml` for the one-EP-bin
+control on the same stores. Inputs are explicit: only the producer uses the
+covered 2021 P24iy PicoDst list. Replay must receive an ordered list of producer
+ROOT files, never that PicoDst list.
+
+`main_auau3p85_anaFemtoLambda_4He_tree_replay_pairY5.yaml` is a further replay
+control with five rather than ten pair-rapidity bins and otherwise identical
+EP8 mixing. Replay outputs retain the per-plane k* distributions; producer QA
+does not acquire these pair histograms. These controls use the same stored
+input and require no new reconstruction-stage job.
+
+```bash
+python3 script/generate_joblist_from_list.py \
+  --mainconf config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree.yaml \
+  --input <covered-2021-P24iy-PicoDst-list> --files-per-subjob <n> \
+  --label treeWrite --output-dir <new-producer-directory>
+python3 script/generate_joblist_from_list.py \
+  --mainconf config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree_replay.yaml \
+  --input <ordered-producer-ROOT-list> --files-per-subjob <n> \
+  --label treeReplay --output-dir <new-pair-directory>
+```
+
+The producer has one ROOT output, so `--tree-output-dir` is not needed.
+The standard writer/replay/EP1/pairY5 profiles use compact storage with
+`storePrePidControl: false`. They retain the producer's 108 non-pair QA
+histograms and selected-pair PID/rigidity QA; only nonselected pre-PID pair
+controls are outside the saved envelope. Use
+`main_auau3p85_anaFemtoLambda_4He_tree_fullControl.yaml` and
+`main_auau3p85_anaFemtoLambda_4He_tree_replay_fullControl.yaml` with the explicit
+true capability for full-control studies or existing full-control pilots.
+Do not mix their size estimates with compact production estimates, and do not
+ask a compact replay to recover controls that were not stored.
+Rebuild with the batch-matched toolchain and verify write/read, one-pass
+closure, mixing boundaries, merging geometry and measured quota before a full
+production submission. The uncalibrated 81 runs are not enabled by these
+entries. Producer QA remains associated with its full original input and is
+not silently added once per replay condition or per split/repacked copy.
+Use an ordered list of completed producer files for replay. Ordered hadd or
+repack is supported only when complete producer segments and their metadata
+remain contiguous. Arbitrary splitting within a segment is not supported.
+Retain the original per-producer source/input manifests and source/config
+checksums; a hadded file-level metadata object does not preserve all original
+source-list mappings. An additional hadded tree copy must be included in the
+quota estimate.
+
 ## Lambda–He4 candidate cache jobs
 
 The `anaFemtoLambda_4He` entry supports candidate persistence and replay through

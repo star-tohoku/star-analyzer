@@ -767,6 +767,97 @@ bash script/singularity_root_batch.sh config/mainconf/main_auau3p85_anaFemtoLamb
 The output directories must be new. Calibration source paths record provenance;
 run-time evaluation requires the distributed YAML, not the source ROOT or fit tools.
 
+### Lambda–He4 reduced tree with producer QA
+
+`anaFemtoLambda_4He_tree` has two explicit stages selected by the required
+`reducedTree:` mainconf reference. It is separate from the optional
+`candidateStore:` cache of `anaFemtoLambda_4He`; the two keys cannot be combined.
+
+| Stage | Mainconf | Input and output |
+|---|---|---|
+| `mode: write` | `main_auau3p85_anaFemtoLambda_4He_tree.yaml` | PicoDst reconstruction to one ROOT containing the reduced tree and selected non-pair QA; no SE/ME |
+| Original-mixing replay | `main_auau3p85_anaFemtoLambda_4He_tree_replay.yaml` | Stored ROOT files to SE/ME and pair diagnostics, without a PicoDst reader or KF reconstruction |
+| EP1 control | `main_auau3p85_anaFemtoLambda_4He_tree_replay_ep1.yaml` | The same stores with one EP mixing bin and `requireOriginalMixing: false` |
+| Pair-rapidity control | `main_auau3p85_anaFemtoLambda_4He_tree_replay_pairY5.yaml` | The same stores and EP8 mixing, with five lab-frame pair-rapidity bins over the same range |
+| Full PID-control producer | `main_auau3p85_anaFemtoLambda_4He_tree_fullControl.yaml` | The larger optional format retaining nonselected pre-PID controls |
+| Full PID-control replay | `main_auau3p85_anaFemtoLambda_4He_tree_replay_fullControl.yaml` | Original-mixing replay of those full-control stores, including earlier full-control pilots |
+
+All mainconfs are under `config/mainconf/`. The producer uses 2021 P24iy input
+from the covered 388-run list. The uncalibrated 81 runs remain outside that
+input. The new runner still loads the shared libraries needed by the compiled
+entry; replay does not create or execute a PicoDst reader or Lambda provider.
+
+```bash
+bash script/singularity_make.sh \
+  config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree.yaml
+bash script/singularity_run_anaFemtoLambda_4He_tree.sh \
+  config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree.yaml \
+  <explicit-2021-P24iy-picoDst-or-list> <new-producer.root> tree_producer -1
+bash script/singularity_run_anaFemtoLambda_4He_tree.sh \
+  config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree_replay.yaml \
+  <producer.root-or-ordered-list> <new-pairs.root> tree_replay -1
+bash script/singularity_run_anaFemtoLambda_4He_tree.sh \
+  config/mainconf/main_auau3p85_anaFemtoLambda_4He_tree_replay_ep1.yaml \
+  <same-producer.root-or-ordered-list> <new-ep1-pairs.root> tree_replay_ep1 -1
+```
+
+The direct `script/run_anaFemtoLambda_4He_tree.sh` takes the same five mandatory
+arguments: mainconf, input, output, jobid, nEvents. Producer limits count input
+PicoDst events; replay limits count stored reconstructed events. `-1` processes
+all available entries. Existing output is never overwritten, and no wrapper
+activates `.current_mainconf` or uses it as a fallback.
+
+The producer's `femtoHist` and `nuclearHist` references explicitly select
+non-pair event/centrality/EP, Lambda/daughter and nuclear PID/TOF QA. Pair
+histograms, merging pairs and joint PID sparse outputs are not booked there.
+The standard profiles use `storePrePidControl: false`: their
+`nuclearPidPairQaHist` reference contains the 540 selected-pair PID/rigidity
+QA histograms only; the 540 nonselected pre-PID pair histograms are omitted.
+These observables are recomputed from the stored physical candidates; no
+nonselected control bank is needed. Pair-PID keys containing `NSigmaPrePid` or
+`POverQPrePid` are outside this compact stored envelope. The producer still
+retains its 108 non-pair event/track/candidate QA histograms, including the
+original single-track PID diagnostics. The producer QA has its original fixed
+selection and population. It is not automatically copied into every replay
+output or reinterpreted as QA for a new pair-rapidity selection.
+
+Use the explicit `fullControl` profiles with `storePrePidControl: true` only
+when nonselected pre-PID pair studies are needed. They retain the full PID-pair
+QA definition and cost additional tree space. Both capability modes retain the
+ordinary SE/ME/CF inputs, selected-pair PID/rigidity diagnostics, merging and
+EP/rapidity controls. Compact stores cannot be upgraded to full controls by a
+replay setting: the capability is fingerprinted and mismatched requests fail.
+
+Replay profiles also save `hKstar{SE,ME}VsEpdBinVsCent_lambda_{he4,he3}`
+for the inclusive, signal, left-sideband and right-sideband mass classes.
+Their axes are k*, the **current processing-event** EPD bin (eight bins), and
+cent9. With EP8 mixing, both ME events have that EPD bin. With EP1 mixing, the
+bin refers to the current event, which need not be the Lambda event in both
+mixing directions. Summing the EPD-bin axis must recover the corresponding
+`hKstar{SE,ME}VsCent` histogram, including errors and flow bins.
+
+The pairY5 configuration changes only the pair-rapidity diagnostic bin count
+and matching histogram axes. It preserves the inclusive physics and EP8
+mixing; merging each adjacent pair of the default ten rapidity bins must
+recover its five-bin SE/ME histograms. Neither control rereads PicoDst.
+
+The tree retains target candidates, their daughter/relevant-track information,
+canonical pairing values, raw geometry and original event-order/pool-admission
+information. EP and pair-rapidity classifications are applied on replay within
+the stored reconstruction envelope. A looser reconstruction/PID selection than
+the stored envelope cannot recover candidates that were discarded. Keep the
+original producer boundaries for closure; use the explicit segment-reset and
+mixing settings when comparing another mixing scheme. CF normalization,
+sideband subtraction and purity corrections remain outside the Maker.
+
+The strict feature YAML requires `mode`, `speciesKeys`,
+`resetPoolAtSegmentBoundary`, `requireOriginalMixing`, `compressionLevel` and
+`autoFlush`, plus `storePrePidControl`. Keep original mixing for the first closure test. After closure,
+use a distinct replay configuration with `requireOriginalMixing: false` to
+change EP/Vz pool classes, and a distinct output for each comparison. Measure
+compressed tree/QA size, allocated space and peak memory before full input
+production; a compact QA key list does not by itself establish quota headroom.
+
 ### Cached Lambda–He4 pairing
 
 `anaFemtoLambda_4He` uses the optional `candidateStore:` mainconf key to select

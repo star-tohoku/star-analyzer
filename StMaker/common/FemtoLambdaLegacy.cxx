@@ -9,6 +9,7 @@
 #include "StPicoEvent/StPicoTrack.h"
 #include "StPicoEvent/StPicoPhysicalHelix.h"
 #include "StPicoEvent/StPicoBTofPidTraits.h"
+#include "StarClassLibrary/SystemOfUnits.h"
 #include "yaml-cpp/yaml.h"
 #include "TDirectory.h"
 #include "TH1.h"
@@ -25,6 +26,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <limits>
+#include <set>
 
 namespace {
 const char* const kSpecies[] = {"deuteron", "triton", "he3", "he4"};
@@ -69,6 +71,44 @@ void KeysAndRequireLoaded(const std::string& path, HistManager& hist, std::vecto
     if (!hist.HasHistogram(name.c_str())) throw std::runtime_error("Histogram was not created: " + name);
     keys.push_back(name);
   }
+}
+void RequireProducerQaMap(const std::string& path) {
+  const YAML::Node doc=YAML::LoadFile(path);
+  const YAML::Node hist=doc["histograms"];
+  if(!hist.IsMap() || hist.size()==0)
+    throw std::runtime_error("Producer QA requires a nonempty histogram map: "+path);
+  for(YAML::const_iterator it=hist.begin();it!=hist.end();++it) {
+    const std::string key=it->first.as<std::string>();
+    const YAML::Node definition=it->second;
+    if(!definition.IsMap())throw std::runtime_error("Invalid producer QA histogram: "+key);
+    // HistManager accepts omitted type and selects the dimensional F class
+    // from the supplied axes; inspect dimensions as well as an explicit type.
+    const std::string type=definition["type"]?definition["type"].as<std::string>():"";
+    if(key.find("hKstar")==0 || key.find("hQlab")==0 || key.find("hDphiDeta")==0 ||
+       key=="hMixSamplerQA" || key=="hNuclearPidPairJoint" ||
+       definition["zAxis"].IsDefined() ||
+       (!type.empty() && type.find("TH1")!=0 && type.find("TH2")!=0))
+      throw std::runtime_error("Producer QA must contain only non-pair TH1/TH2 histograms: "+key);
+  }
+}
+bool FiniteVector(const TVector3& value) {
+  return std::isfinite(value.X()) && std::isfinite(value.Y()) && std::isfinite(value.Z());
+}
+bool ForwardCylinderIntersection(const StPicoPhysicalHelix& helix,double radiusMeters,
+    double tpcHalfLengthCm,double radiusToleranceCm,TVector3& position) {
+  const double radiusCm=100.*radiusMeters;
+  const std::pair<double,double> roots=helix.pathLength(radiusCm);
+  double first=std::numeric_limits<double>::infinity();
+  const double paths[]={roots.first,roots.second};
+  for(unsigned i=0;i<2;++i)
+    if(std::isfinite(paths[i]) && paths[i]>=0 && paths[i]<StPicoHelix::NoSolution && paths[i]<first)
+      first=paths[i];
+  if(!std::isfinite(first)) return false;
+  const TVector3 intersection=helix.at(first);
+  if(!FiniteVector(intersection) || std::fabs(intersection.Perp()-radiusCm)>radiusToleranceCm ||
+     std::fabs(intersection.Z())>tpcHalfLengthCm) return false;
+  position=intersection;
+  return true;
 }
 void Need(HistManager& h, const std::string& key) {
   if (!h.HasHistogram(key.c_str())) throw std::runtime_error("Required histogram missing: " + key);
@@ -121,11 +161,18 @@ double LambdaPairKstar(const TLorentzVector& a,const TLorentzVector& b) {
 FemtoLambdaLegacy::FemtoLambdaLegacy()
     : mRoot(0), mNuclear(0), mNuclearPidPairQa(0), mNuclearPidPairSparse(0),
       mDedxCalibration(new FemtoNuclearDedxCalibration),
+      mProducerQaOnly(false), mCollectNuclearPidPairQa(false), mReplayTrackGeometryEnabled(false),
+      mPairGeometryConfigured(false), mMergingPairCutEnabled(false), mMergingPairQaEnabled(false),
+      mMergingPairPhiMax(0.), mMergingPairEtaMax(0.),
+      mReplayFieldKilogauss(0),
       mSpeciesIndex(-1), mHe3ControlEnabled(false), mMean(0), mWindow(0),
       mOuterFactor(0), mFieldTesla(0), mRadiusMeters(0),
-      mMergingIncludePion(false), mHe4RapiditySplitEnabled(false), mPairRapiditySplitEnabled(false),
+      mMergingIncludePion(false), mHe4RapiditySplitEnabled(false), mHe4RapidityBinningEnabled(false),
+      mPairRapiditySplitEnabled(false),
+      mPairEventPlaneSplitEnabled(false),
       mMergingTpcHalfLengthCm(0), mMergingRadiusToleranceCm(0), mHe4RapidityThreshold(0),
-      mPairRapidityNBins(0), mPairRapidityMin(0), mPairRapidityMax(0),
+      mHe4RapidityNBins(0), mPairRapidityNBins(0), mPairEventPlaneBin(-1), mPairEventPlaneNBins(0),
+      mHe4RapidityMin(0), mHe4RapidityMax(0), mPairRapidityMin(0), mPairRapidityMax(0),
       mDaughterProtonMass(0), mDaughterPionMass(0), mLambdaPairMass(0), mMinNHitsDedx(0),
       mMinPt(0), mNSigmaFill(0), mNSigmaExclude(0), mMaxNSigma(0), mM2SigmaCut(0),
       mMinPTofQa(0), mMinM2(0), mMaxM2(0), mMaxRigidity(0), mM2Selection(false),
@@ -140,8 +187,14 @@ FemtoLambdaLegacy::~FemtoLambdaLegacy() {
   delete mNuclearPidPairSparse; delete mDedxCalibration;
 }
 
-bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
+bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics,bool producerQaOnly,
+    bool collectPrePidControls) {
   try {
+    mProducerQaOnly=producerQaOnly;
+    mPairEventPlaneSplitEnabled=false;
+    mPairEventPlaneBin=-1;
+    mPairEventPlaneNBins=0;
+    ClearReplayTrackGeometry();
     if (!mainconf || !*mainconf) throw std::runtime_error("Explicit mainconf required");
     std::string mainPath(mainconf);
     if (mainPath[0] != '/') mainPath = std::string(gSystem->WorkingDirectory()) + "/" + mainPath;
@@ -219,6 +272,20 @@ bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
     if(!(mMergingTpcHalfLengthCm>0 && mMergingRadiusToleranceCm>0 &&
          mRadiusMeters>0 && mMergingRadiusToleranceCm<100*mRadiusMeters))
       throw std::runtime_error("Invalid mergingGeometry TPC extent or radius tolerance");
+    if(maker["mergingPairCut"]) {
+      const YAML::Node cut=maker["mergingPairCut"];
+      const char* keys[]={"enabled","nucleus","daughter","phiMax","etaMax","unreachablePolicy","writeQA"};
+      KnownKeys(cut,keys,7,"mergingPairCut");
+      mPairGeometryConfigured=true;
+      mMergingPairCutEnabled=Required<bool>(cut,"enabled");
+      mMergingPairQaEnabled=Required<bool>(cut,"writeQA");
+      mMergingPairPhiMax=Number(cut,"phiMax");mMergingPairEtaMax=Number(cut,"etaMax");
+      if(Required<std::string>(cut,"nucleus")!="he4"||Required<std::string>(cut,"daughter")!="proton"||
+         Required<std::string>(cut,"unreachablePolicy")!="keep"||
+         !std::isfinite(mMergingPairPhiMax)||!std::isfinite(mMergingPairEtaMax)||
+         !(mMergingPairPhiMax>0&&mMergingPairPhiMax<=TMath::Pi()&&mMergingPairEtaMax>0))
+        throw std::runtime_error("Invalid He4/proton mergingPairCut or unreachable policy");
+    }
     mHe4RapiditySplitEnabled=false;
     if(maker["he4RapiditySplit"]) {
       const YAML::Node rapidity=maker["he4RapiditySplit"];
@@ -228,6 +295,23 @@ bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
       mHe4RapidityThreshold=Number(rapidity,"yLabThreshold");
       if(mHe4RapiditySplitEnabled && !IsPairNucleus(3))
         throw std::runtime_error("he4RapiditySplit requires physical He4 candidates");
+    }
+    mHe4RapidityBinningEnabled=false;
+    if(maker["he4RapidityBinning"]) {
+      const YAML::Node rapidity=maker["he4RapidityBinning"];
+      const char* rapidityKeys[]={"enabled","frame","nBins","min","max"};
+      KnownKeys(rapidity,rapidityKeys,5,"he4RapidityBinning");
+      mHe4RapidityBinningEnabled=Required<bool>(rapidity,"enabled");
+      if(Required<std::string>(rapidity,"frame")!="lab")
+        throw std::runtime_error("he4RapidityBinning requires frame: lab");
+      mHe4RapidityNBins=Required<int>(rapidity,"nBins");
+      mHe4RapidityMin=Number(rapidity,"min");
+      mHe4RapidityMax=Number(rapidity,"max");
+      if(mHe4RapidityNBins<=0 || !(mHe4RapidityMin<mHe4RapidityMax) ||
+         !std::isfinite(mHe4RapidityMax-mHe4RapidityMin))
+        throw std::runtime_error("Invalid he4RapidityBinning binning");
+      if(mHe4RapidityBinningEnabled && !IsPairNucleus(3))
+        throw std::runtime_error("he4RapidityBinning requires physical He4 candidates");
     }
     mPairRapiditySplitEnabled=false;
     if(maker["pairRapiditySplit"]) {
@@ -416,6 +500,10 @@ bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
           mMinPt >= 0 && mMaxNSigma > 0 && mMaxM2 > mMinM2 && mM2SigmaCut > 0))
       throw std::runtime_error("Invalid legacy selection/window configuration");
     const std::string rootPath = Resolve(base, main, "femtoHist"), histPath = Resolve(base, main, "nuclearHist");
+    if(mProducerQaOnly) {
+      RequireProducerQaMap(rootPath);
+      RequireProducerQaMap(histPath);
+    }
     delete mRoot; mRoot = new HistManager;
     delete mNuclear; mNuclear = new HistManager;
     if (!mRoot->LoadFromFile(rootPath.c_str()) || !mNuclear->LoadFromFile(histPath.c_str()))
@@ -425,25 +513,36 @@ bool FemtoLambdaLegacy::Init(const char* mainconf, std::ostream& diagnostics) {
     delete mNuclearPidPairQa; mNuclearPidPairQa=0;
     delete mNuclearPidPairSparse; mNuclearPidPairSparse=0;
     mNuclearPidPairQaKeys.clear();
+    mCollectNuclearPidPairQa=false;
     if(main["nuclearPidPairQaHist"]) {
       const std::string qaPath=Resolve(base,main,"nuclearPidPairQaHist");
-      mNuclearPidPairQa=new HistManager;
-      if(!mNuclearPidPairQa->LoadFromFile(qaPath.c_str()))
-        throw std::runtime_error("Cannot load optional selected-pair nuclear PID QA: "+qaPath);
-      KeysAndRequireLoaded(qaPath,*mNuclearPidPairQa,mNuclearPidPairQaKeys);
+      const YAML::Node qa=YAML::LoadFile(qaPath);
+      if(!qa["histograms"].IsMap())
+        throw std::runtime_error("Invalid selected-pair nuclear PID QA histogram map: "+qaPath);
+      mCollectNuclearPidPairQa=collectPrePidControls;
+      if(!mProducerQaOnly) {
+        mNuclearPidPairQa=new HistManager;
+        if(!mNuclearPidPairQa->LoadFromFile(qaPath.c_str()))
+          throw std::runtime_error("Cannot load optional selected-pair nuclear PID QA: "+qaPath);
+        KeysAndRequireLoaded(qaPath,*mNuclearPidPairQa,mNuclearPidPairQaKeys);
+      }
       // A full mapping requests the joint histogram; explicit false keeps dense QA only.
-      const YAML::Node joint=YAML::LoadFile(qaPath)["jointSparse"];
+      const YAML::Node joint=qa["jointSparse"];
       if(joint.IsMap()) {
-        mNuclearPidPairSparse=new FemtoNuclearPairPidSparse;
-        if(!mNuclearPidPairSparse->Init(qaPath.c_str(),diagnostics))
-          throw std::runtime_error("Cannot initialize joint nuclear PID pair sparse: "+qaPath);
+        if(!mProducerQaOnly) {
+          mNuclearPidPairSparse=new FemtoNuclearPairPidSparse;
+          if(!mNuclearPidPairSparse->Init(qaPath.c_str(),diagnostics))
+            throw std::runtime_error("Cannot initialize joint nuclear PID pair sparse: "+qaPath);
+        }
       } else if(joint.IsScalar() && !joint.as<bool>()) {
         diagnostics << "[FemtoLambdaLegacy] joint nuclear PID pair sparse disabled explicitly" << std::endl;
       } else {
         throw std::runtime_error("jointSparse must be a complete histogram mapping or explicit false");
       }
-      diagnostics << "[FemtoLambdaLegacy] selected/pre-PID nuclear PID QA=" << qaPath
-                  << " (no change to nuclear selection or mixing)" << std::endl;
+      diagnostics << "[FemtoLambdaLegacy] selected-pair nuclear PID QA=" << qaPath
+                  << "; prePID controls=" << mCollectNuclearPidPairQa
+                  << (mProducerQaOnly?" (candidate payload only; pair histograms are not booked)":
+                      " (no change to nuclear selection or mixing)") << std::endl;
     }
     if (!ValidateHistograms(diagnostics)) return false;
     diagnostics << "[FemtoLambdaLegacy] mainconf(argument)=" << mainPath
@@ -478,7 +577,8 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
       "hNTracks_vs_Cent9","hTofMatchMult_vs_Cent9","hNProtonCand_vs_Cent9",
       "hNPionCand_vs_Cent9","hNLambdaPairs_vs_Cent9","hMixSamplerQA",
       "hLambdaKF_DecayLength","hLambdaKF_DecayLengthSignificance","hLambdaKF_Chi2Ndf","hLambdaKF_TopoChi2Ndf"};
-    for (unsigned i=0;i<sizeof(rootNames)/sizeof(rootNames[0]);++i) Need(*mRoot,rootNames[i]);
+    for (unsigned i=0;i<sizeof(rootNames)/sizeof(rootNames[0]);++i)
+      if(!mProducerQaOnly || std::string(rootNames[i])!="hMixSamplerQA") Need(*mRoot,rootNames[i]);
     for (int c=0;c<9;++c) Need(*mRoot,"hLambda_InvMass_CentBin"+Index(c));
     // Optional complete group: old histogram profiles retain their inventory.
     const char* betaNames[]={"hLambda_BetaVsEta_signal","hLambda_BetaVsYLab_signal",
@@ -517,6 +617,7 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
     Need(*mRoot,"hLambda_PtVsYLab_signal");
     Need(*mRoot,"hLambdaProton_PtVsYLab_signal");
     Need(*mRoot,"hLambdaPion_PtVsYLab_signal");
+    if(!mProducerQaOnly) {
     if(mHe4RapiditySplitEnabled) {
       const char* massSuffix[]={"","_signal","_leftSB","_rightSB"};
       const char* ySuffix[]={"_YLabBelow","_YLabAbove"};
@@ -541,6 +642,36 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
         if(mRootKeys[i].find("_YLabBelow")!=std::string::npos ||
            mRootKeys[i].find("_YLabAbove")!=std::string::npos)
           throw std::runtime_error("He4 lab-rapidity histograms require enabled he4RapiditySplit");
+    }
+    if(mHe4RapidityBinningEnabled) {
+      const char* massSuffix[]={"","_signal","_leftSB","_rightSB"};
+      for(int mode=0;mode<2;++mode) for(int mass=0;mass<4;++mass) {
+        const std::string stem="hKstar"+std::string(mode?"ME":"SE");
+        const std::string channel="_lambda_he4"+std::string(massSuffix[mass]);
+        const std::string key=stem+"VsHe4YLabVsCent"+channel;
+        const TH1* reference=mRoot->Get((stem+channel).c_str());
+        const TH2* centReference=dynamic_cast<TH2*>(mRoot->Get((stem+"VsCent"+channel).c_str()));
+        const TH3D* h=dynamic_cast<TH3D*>(mRoot->Get(key.c_str()));
+        if(!reference || reference->GetDimension()!=1 || !centReference ||
+           centReference->GetDimension()!=2 || !h ||
+           !SameAxis(*h->GetXaxis(),*reference->GetXaxis()) ||
+           h->GetYaxis()->GetNbins()!=mHe4RapidityNBins ||
+           h->GetYaxis()->GetXmin()!=mHe4RapidityMin ||
+           h->GetYaxis()->GetXmax()!=mHe4RapidityMax ||
+           !SameAxis(*h->GetZaxis(),*centReference->GetYaxis()))
+          throw std::runtime_error("Missing/invalid physical He4 rapidity TH3D or axes: "+key);
+        const double width=(mHe4RapidityMax-mHe4RapidityMin)/mHe4RapidityNBins;
+        for(int bin=1;bin<=mHe4RapidityNBins+1;++bin) {
+          const double expected=mHe4RapidityMin+(bin-1)*width;
+          if(std::fabs(h->GetYaxis()->GetBinLowEdge(bin)-expected)>
+             16*std::numeric_limits<double>::epsilon()*std::max(1.,std::fabs(expected)))
+            throw std::runtime_error("He4 rapidity axis must use the configured equal-width bins: "+key);
+        }
+      }
+    } else {
+      for(size_t i=0;i<mRootKeys.size();++i)
+        if(mRootKeys[i].find("VsHe4YLabVsCent")!=std::string::npos)
+          throw std::runtime_error("He4 rapidity histograms require enabled he4RapidityBinning");
     }
     if(mPairRapiditySplitEnabled) {
       const char* massSuffix[]={"","_signal","_leftSB","_rightSB"};
@@ -571,6 +702,7 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
         if(mRootKeys[i].find("VsPairYVsCent")!=std::string::npos)
           throw std::runtime_error("Pair-rapidity histograms require enabled pairRapiditySplit");
     }
+    }
     for(size_t i=0;i<mPairSpeciesIndices.size();++i)
       Need(*mRoot,std::string("hNucleus_PtVsYLab_")+kSpecies[mPairSpeciesIndices[i]]);
     if(mHe3ControlEnabled)Need(*mRoot,"hNucleus_PtVsYLab_he3_as_he4");
@@ -588,6 +720,67 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
         Need(*mNuclear,std::string("hPvs")+vars[q]+"_"+kLegacy[s]);
       }
       if (s<3) Need(*mNuclear,std::string("hDedxP_")+kLegacy[s]+"_m2");
+    }
+    if(mProducerQaOnly) return true;
+    if(PairGeometryEnabled()) {
+      TH2* qa=dynamic_cast<TH2*>(mNuclear->Get("hDphiDetaPairCutQA"));
+      if(!qa||qa->GetNbinsX()!=12||qa->GetXaxis()->GetXmin()!=-0.5||qa->GetXaxis()->GetXmax()!=11.5||
+         qa->GetNbinsY()!=2||qa->GetYaxis()->GetXmin()!=-0.5||qa->GetYaxis()->GetXmax()!=1.5)
+        throw std::runtime_error("Missing/invalid merging pair-cut QA");
+      const char* labels[]={"considered","passed","rejected","protonValid","protonUnreachable","pionValid",
+        "pionUnreachable","cutEnabled","signalConsidered","signalPassed","signalRejected","signalProtonUnreachable"};
+      for(int i=0;i<12;++i)qa->GetXaxis()->SetBinLabel(i+1,labels[i]);
+      qa->GetYaxis()->SetBinLabel(1,"SE");qa->GetYaxis()->SetBinLabel(2,"ME");
+      if(mMergingPairQaEnabled)for(int daughter=0;daughter<(mMergingIncludePion?2:1);++daughter)
+        for(int mixed=0;mixed<2;++mixed)for(int accepted=0;accepted<2;++accepted) {
+          const std::string key=std::string("hDphiDetaPair_")+(daughter?"pion_":"proton_")+
+            (mixed?"Mixed_":"")+"4He_"+(accepted?"after":"before");
+          const TH2* map=dynamic_cast<TH2*>(mNuclear->Get(key.c_str()));
+          const TH2* ref=dynamic_cast<TH2*>(mNuclear->Get("hDphiDeta_proton_4He"));
+          if(!map||!ref||!SameAxis(*map->GetXaxis(),*ref->GetXaxis())||!SameAxis(*map->GetYaxis(),*ref->GetYaxis()))
+            throw std::runtime_error("Missing/invalid merging map: "+key);
+        }
+    }
+    std::vector<std::string> actualEpdKeys;
+    for(size_t i=0;i<mRootKeys.size();++i)
+      if(mRootKeys[i].find("VsEpdBinVsCent_lambda_")!=std::string::npos)
+        actualEpdKeys.push_back(mRootKeys[i]);
+    if(!actualEpdKeys.empty()) {
+      std::vector<std::string> expectedEpdKeys;
+      const TAxis* epdAxis=0;
+      const char* suffix[]={"","_signal","_leftSB","_rightSB"};
+      for(size_t target=0;target<mPairSpeciesIndices.size();++target) {
+        const int type=mPairSpeciesIndices[target];
+        if(type<2)continue;
+        for(int mode=0;mode<2;++mode)for(int region=0;region<4;++region) {
+          const std::string stem="hKstar"+std::string(mode?"ME":"SE");
+          const std::string channel="_lambda_"+std::string(kSpecies[type])+suffix[region];
+          const std::string key=stem+"VsEpdBinVsCent"+channel;
+          const TH3* h=dynamic_cast<TH3*>(mRoot->Get(key.c_str()));
+          const TH1* reference=mRoot->Get((stem+channel).c_str());
+          const TH2* centReference=dynamic_cast<TH2*>(mRoot->Get((stem+"VsCent"+channel).c_str()));
+          if(!h || !reference || !centReference || h->GetDimension()!=3 ||
+             !SameAxis(*h->GetXaxis(),*reference->GetXaxis()) ||
+             h->GetYaxis()->GetNbins()<1 || h->GetYaxis()->GetXmin()!=-0.5 ||
+             h->GetYaxis()->GetXmax()!=h->GetYaxis()->GetNbins()-0.5 ||
+             h->GetZaxis()->GetNbins()!=9 || h->GetZaxis()->GetXmin()!=-0.5 || h->GetZaxis()->GetXmax()!=8.5 ||
+             !SameAxis(*h->GetZaxis(),*centReference->GetYaxis()))
+            throw std::runtime_error("Missing/invalid EPD-bin pair histogram or axes: "+key);
+          if(mPairEventPlaneNBins==0)mPairEventPlaneNBins=h->GetYaxis()->GetNbins();
+          if(!epdAxis)epdAxis=h->GetYaxis();
+          if(h->GetYaxis()->GetNbins()!=mPairEventPlaneNBins||!SameAxis(*h->GetYaxis(),*epdAxis))
+            throw std::runtime_error("EPD-bin pair histograms must share the same plane axis");
+          for(int bin=1;bin<=mPairEventPlaneNBins+1;++bin)
+            if(h->GetYaxis()->GetBinLowEdge(bin)!=bin-1.5)
+              throw std::runtime_error("EPD-bin pair histograms require consecutive integer labels");
+          expectedEpdKeys.push_back(key);
+        }
+      }
+      std::sort(actualEpdKeys.begin(),actualEpdKeys.end());
+      std::sort(expectedEpdKeys.begin(),expectedEpdKeys.end());
+      if(actualEpdKeys!=expectedEpdKeys)
+        throw std::runtime_error("EPD-bin pair histograms must match the complete physical helium group");
+      mPairEventPlaneSplitEnabled=true;
     }
     const TH2* mtReference=0;
     const TH2* pidQaReference[2]={0,0};
@@ -615,7 +808,7 @@ bool FemtoLambdaLegacy::ValidateHistograms(std::ostream& diagnostics) {
                    *mNuclear->Get(source.c_str()),mtReference);
         if(mNuclearPidPairQa && type>=2) {
           const char* variables[]={"NSigma","POverQ"};
-          for(int stage=0;stage<2;++stage) for(int v=0;v<2;++v) {
+          for(int stage=0;stage<(mCollectNuclearPidPairQa?2:1);++stage) for(int v=0;v<2;++v) {
             const std::string key="hKstar"+std::string(variables[v])+(stage?"PrePid":"")+"_"+prefix+legacy+mtSuffixes[r]+cent;
             TH2* qa=dynamic_cast<TH2*>(mNuclearPidPairQa->Get(key.c_str()));
             if(!qa || qa->GetDimension()!=2 || !SameAxis(*qa->GetXaxis(),*mNuclear->Get(source.c_str())->GetXaxis()))
@@ -700,6 +893,20 @@ void FemtoLambdaLegacy::FillHe4RapiditySplit(const FemtoCandidate& nucleus,doubl
   mRoot->Fill((stem+"VsCent"+channel).c_str(),kstar,cent9);
 }
 
+void FemtoLambdaLegacy::FillHe4RapidityBinning(const FemtoCandidate& nucleus,double kstar,
+    int cent9,bool mixed,const std::string& massSuffix) {
+  if(!mHe4RapidityBinningEnabled || nucleus.speciesKey!="he4") return;
+  const TLorentzVector p4=nucleus.P4();
+  if(!std::isfinite(p4.E()) || !std::isfinite(p4.Pz()) || p4.E()<=std::fabs(p4.Pz())) return;
+  const double rapidity=p4.Rapidity();
+  if(!std::isfinite(rapidity)) return;
+  // Use the physical nucleus from its own event in either mixing direction.
+  // Finite values outside the plotted interval remain in ROOT flow bins.
+  const std::string key="hKstar"+std::string(mixed?"ME":"SE")+
+      "VsHe4YLabVsCent_lambda_he4"+massSuffix;
+  mRoot->Fill(key.c_str(),kstar,rapidity,cent9);
+}
+
 void FemtoLambdaLegacy::FillHe4PairRapidity(const TLorentzVector& pair,double kstar,
     int cent9,bool mixed,const std::string& massSuffix) {
   if(!mPairRapiditySplitEnabled || !std::isfinite(pair.E()) ||
@@ -711,6 +918,15 @@ void FemtoLambdaLegacy::FillHe4PairRapidity(const TLorentzVector& pair,double ks
   const std::string key="hKstar"+std::string(mixed?"ME":"SE")+
       "VsPairYVsCent_lambda_he4"+massSuffix;
   mRoot->Fill(key.c_str(),kstar,rapidity,cent9);
+}
+
+void FemtoLambdaLegacy::FillPairEventPlane(const std::string& species,double kstar,
+    int cent9,bool mixed,const std::string& massSuffix) {
+  if(!mRoot || !mPairEventPlaneSplitEnabled || mPairEventPlaneBin<0 || mPairEventPlaneBin>=mPairEventPlaneNBins ||
+     (species!="he3" && species!="he4")) return;
+  const std::string key="hKstar"+std::string(mixed?"ME":"SE")+
+      "VsEpdBinVsCent_lambda_"+species+massSuffix;
+  if(mRoot->HasHistogram(key.c_str()))mRoot->Fill(key.c_str(),kstar,mPairEventPlaneBin,cent9);
 }
 
 int FemtoLambdaLegacy::SelectNuclearType(double p, const double pulls[4], bool tof, double m2) const {
@@ -865,7 +1081,7 @@ void FemtoLambdaLegacy::CollectNuclei(StPicoDst* dst,int eventIndex,int cent9,
       }
     }
     const int best=SelectNuclearType(p,pulls,tof,m2);
-    if(pidQa && mNuclearPidPairQa) for(size_t index=0;index<mPairSpeciesIndices.size();++index) {
+    if(pidQa && mCollectNuclearPidPairQa) for(size_t index=0;index<mPairSpeciesIndices.size();++index) {
       const int type=mPairSpeciesIndices[index];
       if(type<2 || !PassNuclearPidQaDomain(type,p,tof,m2)) continue;
       FemtoNuclearPidPairQaCandidate qa;
@@ -973,6 +1189,99 @@ void FemtoLambdaLegacy::FillLambda(const FemtoLambdaCandidate& c,int cent9,doubl
   mRoot->Fill("hLambdaKF_Chi2Ndf",c.chi2Ndf); mRoot->Fill("hLambdaKF_TopoChi2Ndf",c.topoChi2Ndf);
 }
 
+void FemtoLambdaLegacy::SetReplayTrackGeometry(const std::vector<TrackGeometry>& tracks,
+    double fieldKilogauss) {
+  ClearReplayTrackGeometry();
+  if(!std::isfinite(fieldKilogauss))
+    throw std::runtime_error("Nonfinite replay magnetic field");
+  mReplayTracks=tracks;
+  for(std::vector<TrackGeometry>::size_type i=0;i<mReplayTracks.size();++i) {
+    const int index=mReplayTracks[i].trackIndex;
+    if(index<0 || !mReplayTrackSlots.insert(std::make_pair(index,i)).second) {
+      ClearReplayTrackGeometry();
+      throw std::runtime_error("Invalid or duplicate replay track geometry index");
+    }
+  }
+  mReplayFieldKilogauss=fieldKilogauss;
+  mReplayTrackGeometryEnabled=true;
+}
+
+void FemtoLambdaLegacy::ClearReplayTrackGeometry() {
+  mReplayTrackGeometryEnabled=false;
+  mReplayFieldKilogauss=0.;
+  mReplayTracks.clear();
+  mReplayTrackSlots.clear();
+}
+
+void FemtoLambdaLegacy::BuildPairGeometry(int eventIndex,const FemtoCandidateStore& candidates,
+    StPicoDst* dst,femto_lambda_pair_geometry::EventGeometry& out) const {
+  out.Clear();out.eventIndex=eventIndex;
+  if(!PairGeometryEnabled())return;
+  if(eventIndex<1||(!dst&&!mReplayTrackGeometryEnabled))
+    throw std::runtime_error("merging pair geometry requires rich tracks and event identity");
+  std::set<int> indices;
+  for(FemtoCandidateStore::const_iterator s=candidates.begin();s!=candidates.end();++s)
+    for(size_t i=0;i<s->second.size();++i) {
+      const FemtoCandidate& c=s->second[i];
+      if(c.speciesKey!="lambda"&&c.speciesKey!="he4")continue;
+      if(c.eventIndex!=eventIndex)throw std::runtime_error("merging candidate/event identity mismatch");
+      if(c.speciesKey=="lambda"){indices.insert(c.reso.dau1Index);indices.insert(c.reso.dau2Index);}
+      else indices.insert(c.trk.trackIndex);
+    }
+  for(std::set<int>::const_iterator i=indices.begin();i!=indices.end();++i) {
+    TVector3 position,momentum;bool reached=false;
+    if(dst) {
+      if(!dst->event()||*i<0||*i>=int(dst->numberOfTracks())||!dst->track(*i))
+        throw std::runtime_error("missing native merging track");
+      const StPicoTrack* track=dst->track(*i);momentum=track->gMom();
+      reached=MergingTrackPositionAtRadius(track,dst->event()->bField(),mRadiusMeters,
+        mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,position);
+    } else {
+      const TrackGeometry* track=ReplayTrack(*i);
+      if(!track)throw std::runtime_error("missing saved merging track");
+      momentum=track->globalMomentum;
+      reached=MergingTrackPositionAtRadius(*track,mReplayFieldKilogauss,mRadiusMeters,
+        mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,position);
+    }
+    femto_lambda_pair_geometry::TrackPoint& point=out.points[*i];
+    if(reached){point.phi=position.Phi();point.eta=momentum.Eta();point.valid=std::isfinite(point.phi)&&std::isfinite(point.eta);}
+  }
+}
+
+bool FemtoLambdaLegacy::AcceptMergingPair(const FemtoCandidate& l,const FemtoCandidate& n,bool mixed,
+    const femto_lambda_pair_geometry::EventGeometry* lambdaGeometry,
+    const femto_lambda_pair_geometry::EventGeometry* nucleusGeometry) {
+  using namespace femto_lambda_pair_geometry;
+  const TrackPoint& nucleus=Find(nucleusGeometry,n.eventIndex,n.trk.trackIndex);
+  double phi[2]={0.,0.},eta[2]={0.,0.};bool valid[2]={false,false};
+  valid[0]=Difference(Find(lambdaGeometry,l.eventIndex,l.reso.dau1Index),nucleus,phi[0],eta[0]);
+  if(mMergingIncludePion)valid[1]=Difference(Find(lambdaGeometry,l.eventIndex,l.reso.dau2Index),nucleus,phi[1],eta[1]);
+  const bool signal=MassRegion(l.reso.invMass)==1;
+  const bool reject=mMergingPairCutEnabled&&valid[0]&&InsideRectangle(phi[0],eta[0],mMergingPairPhiMax,mMergingPairEtaMax);
+  const double mode=mixed?1.:0.;
+  mNuclear->Fill("hDphiDetaPairCutQA",0.,mode);mNuclear->Fill("hDphiDetaPairCutQA",reject?2.:1.,mode);
+  mNuclear->Fill("hDphiDetaPairCutQA",valid[0]?3.:4.,mode);
+  if(mMergingIncludePion)mNuclear->Fill("hDphiDetaPairCutQA",valid[1]?5.:6.,mode);
+  if(mMergingPairCutEnabled)mNuclear->Fill("hDphiDetaPairCutQA",7.,mode);
+  if(signal) {
+    mNuclear->Fill("hDphiDetaPairCutQA",8.,mode);mNuclear->Fill("hDphiDetaPairCutQA",reject?10.:9.,mode);
+    if(!valid[0])mNuclear->Fill("hDphiDetaPairCutQA",11.,mode);
+    if(mMergingPairQaEnabled)for(int d=0;d<(mMergingIncludePion?2:1);++d)if(valid[d]) {
+      const std::string key=std::string("hDphiDetaPair_")+(d?"pion_":"proton_")+(mixed?"Mixed_":"")+"4He_";
+      mNuclear->Fill((key+"before").c_str(),phi[d],eta[d]);
+      if(!reject)mNuclear->Fill((key+"after").c_str(),phi[d],eta[d]);
+    }
+  }
+  return !reject;
+}
+
+const FemtoLambdaLegacy::TrackGeometry* FemtoLambdaLegacy::ReplayTrack(int originalIndex) const {
+  if(!mReplayTrackGeometryEnabled) return 0;
+  const std::map<int,std::vector<TrackGeometry>::size_type>::const_iterator found=
+      mReplayTrackSlots.find(originalIndex);
+  return found==mReplayTrackSlots.end()?0:&mReplayTracks[found->second];
+}
+
 bool FemtoLambdaLegacy::FillLambdaAcceptance(const FemtoLambdaCandidate& c,StPicoDst* dst) {
   if (MassRegion(c.mass) != 1) return true;
   if (!mRoot || !dst || c.protonIndex < 0 || c.pionIndex < 0 ||
@@ -982,10 +1291,27 @@ bool FemtoLambdaLegacy::FillLambdaAcceptance(const FemtoLambdaCandidate& c,StPic
     std::cerr << "[FemtoLambdaLegacy] Invalid daughter source for acceptance QA" << std::endl;
     return false;
   }
-  TLorentzVector proton,pion;
   // Secondary daughters: global-track momentum, not PV-constrained primary pMom.
-  proton.SetVectM(dst->track(c.protonIndex)->gMom(),mDaughterProtonMass);
-  pion.SetVectM(dst->track(c.pionIndex)->gMom(),mDaughterPionMass);
+  return FillLambdaAcceptanceKinematics(c,dst->track(c.protonIndex)->gMom(),
+      dst->track(c.pionIndex)->gMom());
+}
+
+bool FemtoLambdaLegacy::FillLambdaAcceptanceFromReplay(const FemtoLambdaCandidate& c) {
+  if(MassRegion(c.mass)!=1) return true;
+  const TrackGeometry* proton=ReplayTrack(c.protonIndex);
+  const TrackGeometry* pion=ReplayTrack(c.pionIndex);
+  if(!mRoot || !proton || !pion) {
+    std::cerr << "[FemtoLambdaLegacy] Invalid saved daughter source for acceptance QA" << std::endl;
+    return false;
+  }
+  return FillLambdaAcceptanceKinematics(c,proton->globalMomentum,pion->globalMomentum);
+}
+
+bool FemtoLambdaLegacy::FillLambdaAcceptanceKinematics(const FemtoLambdaCandidate& c,
+    const TVector3& protonMomentum,const TVector3& pionMomentum) {
+  TLorentzVector proton,pion;
+  proton.SetVectM(protonMomentum,mDaughterProtonMass);
+  pion.SetVectM(pionMomentum,mDaughterPionMass);
   const TLorentzVector lambda=c.candidate.P4();
   if (!std::isfinite(lambda.Rapidity()) || !std::isfinite(lambda.Pt()) ||
       !std::isfinite(proton.Rapidity()) || !std::isfinite(proton.Pt()) ||
@@ -1003,7 +1329,10 @@ bool FemtoLambdaLegacy::FillLambdaAcceptance(const FemtoLambdaCandidate& c,StPic
 }
 
 bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n,
-    double kstar,double qlab,int cent9,bool mixed,StPicoDst* dst) {
+    double kstar,double qlab,int cent9,bool mixed,StPicoDst* dst,
+    const femto_lambda_pair_geometry::EventGeometry* lambdaGeometry,
+    const femto_lambda_pair_geometry::EventGeometry* nucleusGeometry,bool* rejectedByMerging) {
+  if(rejectedByMerging)*rejectedByMerging=false;
   int type=-1;
   for(size_t i=0;i<mPairSpeciesIndices.size();++i)
     if(n.speciesKey==kSpecies[mPairSpeciesIndices[i]])type=mPairSpeciesIndices[i];
@@ -1011,6 +1340,13 @@ bool FemtoLambdaLegacy::FillPair(const FemtoCandidate& l,const FemtoCandidate& n
      !std::isfinite(kstar) || !std::isfinite(qlab) || !std::isfinite(l.reso.invMass) ||
      cent9<0 || cent9>=9 || FemtoCandidatesShareTrack(l,n)) return false;
   if((mixed && l.eventIndex==n.eventIndex) || (!mixed && l.eventIndex!=n.eventIndex)) return false;
+  if(PairGeometryEnabled()&&type==3) {
+    if(!mixed&&MassRegion(l.reso.invMass)==1)FillMerging(l,n,dst,kLegacy[type],type);
+    if(!AcceptMergingPair(l,n,mixed,lambdaGeometry,nucleusGeometry)) {
+      if(rejectedByMerging)*rejectedByMerging=true;
+      return false;
+    }
+  }
   FemtoCandidate mapped;double mappedKstar=0.;
   if(mHe3ControlEnabled&&type==2) {
     mapped=MapHe3AsHe4(n);
@@ -1038,8 +1374,10 @@ bool FemtoLambdaLegacy::FillPairHistograms(const FemtoCandidate& l,const FemtoCa
   const std::string channel="lambda_"+species;
   mRoot->Fill(("hKstar"+mode+"_"+channel).c_str(),kstar);
   mRoot->Fill(("hKstar"+mode+"VsCent_"+channel).c_str(),kstar,cent9);
+  FillPairEventPlane(species,kstar,cent9,mixed,"");
   if(species=="he4" && selectedNuclearType==3) {
     FillHe4RapiditySplit(n,kstar,cent9,mixed,"");
+    FillHe4RapidityBinning(n,kstar,cent9,mixed,"");
     FillHe4PairRapidity(pair,kstar,cent9,mixed,"");
   }
   mNuclear->Fill(("hKstarMass_"+prefix+legacySpecies+"_CentBin"+Index(cent9)).c_str(),kstar,l.reso.invMass);
@@ -1054,8 +1392,10 @@ bool FemtoLambdaLegacy::FillPairHistograms(const FemtoCandidate& l,const FemtoCa
   mNuclear->Fill(("hKstarMt_"+stem+"_CentBin"+Index(cent9)).c_str(),kstar,pairMt);
   mRoot->Fill(("hKstar"+mode+"_"+channel+canonical[region]).c_str(),kstar);
   mRoot->Fill(("hKstar"+mode+"VsCent_"+channel+canonical[region]).c_str(),kstar,cent9);
+  FillPairEventPlane(species,kstar,cent9,mixed,canonical[region]);
   if(species=="he4" && selectedNuclearType==3) {
     FillHe4RapiditySplit(n,kstar,cent9,mixed,canonical[region]);
+    FillHe4RapidityBinning(n,kstar,cent9,mixed,canonical[region]);
     FillHe4PairRapidity(pair,kstar,cent9,mixed,canonical[region]);
   }
   if (region==1) {
@@ -1069,13 +1409,15 @@ bool FemtoLambdaLegacy::FillPairHistograms(const FemtoCandidate& l,const FemtoCa
   // Diagnostic-only: never reject a previously accepted pair for an invalid
   // new diagnostic, and never choose a nuclear species from the mass mapping.
   FillNuclearPidPairQa(l,n,kstar,cent9,mixed,legacySpecies,selectedNuclearType,false);
-  if(!mixed && region==1 && dst) FillMerging(l,n,dst,legacySpecies,massIndex);
+  if(!mixed && region==1 && (dst || mReplayTrackGeometryEnabled) &&
+     !(PairGeometryEnabled()&&species=="he4"))
+    FillMerging(l,n,dst,legacySpecies,massIndex);
   return true;
 }
 
 bool FemtoLambdaLegacy::FillPrePidNuclearPairQa(const FemtoCandidate& lambda,
     const FemtoCandidate& nucleus,double kstar,int cent9,bool mixed) {
-  if(!mNuclearPidPairQa || lambda.speciesKey!="lambda" || !std::isfinite(kstar) ||
+  if(!mCollectNuclearPidPairQa || !mNuclearPidPairQa || lambda.speciesKey!="lambda" || !std::isfinite(kstar) ||
      !std::isfinite(lambda.reso.invMass) || cent9<0 || cent9>=9 ||
      FemtoCandidatesShareTrack(lambda,nucleus) ||
      (mixed && lambda.eventIndex==nucleus.eventIndex) ||
@@ -1098,6 +1440,7 @@ void FemtoLambdaLegacy::FillNuclearPidPairQa(const FemtoCandidate& lambda,
     const FemtoCandidate& nucleus,double kstar,int cent9,bool mixed,
     const std::string& legacySpecies,int selectedNuclearType,bool prePid) {
   if(!mNuclearPidPairQa || selectedNuclearType<2 || selectedNuclearType>3) return;
+  if(prePid && !mCollectNuclearPidPairQa) return;
   const int region=MassRegion(lambda.reso.invMass);
   if(!region) return;
   // P4 already contains the physical Z=2 momentum (also for He3AsHe4).
@@ -1136,44 +1479,69 @@ bool FemtoLambdaLegacy::MergingTrackPositionAtRadius(const StPicoTrack* track,do
   // Pico global momenta are rigidity momenta. The stored track charge and
   // rigidity already give the right helix for Z=2; do not scale either again.
   const StPicoPhysicalHelix helix=track->helix(fieldKilogauss);
-  const double radiusCm=100.*radiusMeters;
-  const std::pair<double,double> roots=helix.pathLength(radiusCm);
-  double first=std::numeric_limits<double>::infinity();
-  const double paths[]={roots.first,roots.second};
-  for(unsigned i=0;i<2;++i)
-    if(std::isfinite(paths[i]) && paths[i]>=0 && paths[i]<StPicoHelix::NoSolution && paths[i]<first)
-      first=paths[i];
-  if(!std::isfinite(first)) return false;
-  const TVector3 intersection=helix.at(first);
-  if(!std::isfinite(intersection.X()) || !std::isfinite(intersection.Y()) ||
-     !std::isfinite(intersection.Z()) ||
-     std::fabs(intersection.Perp()-radiusCm)>radiusToleranceCm ||
-     std::fabs(intersection.Z())>tpcHalfLengthCm) return false;
-  position=intersection;
-  return true;
+  return ForwardCylinderIntersection(helix,radiusMeters,tpcHalfLengthCm,radiusToleranceCm,position);
+}
+
+bool FemtoLambdaLegacy::MergingTrackPositionAtRadius(const TrackGeometry& track,
+    double fieldKilogauss,double radiusMeters,double tpcHalfLengthCm,double radiusToleranceCm,
+    TVector3& position) {
+  if(!std::isfinite(fieldKilogauss) || !std::isfinite(radiusMeters) ||
+     !std::isfinite(tpcHalfLengthCm) || !std::isfinite(radiusToleranceCm) ||
+     radiusMeters<=0 || tpcHalfLengthCm<=0 || radiusToleranceCm<=0 ||
+     !FiniteVector(track.globalMomentum) || !(track.globalMomentum.Pt()>0) ||
+     !FiniteVector(track.origin) || (track.charge!=1 && track.charge!=-1)) return false;
+  // Match StPicoTrack::helix(Float_t B), including the narrowing of the field
+  // argument before STAR's kG-to-internal-units multiplication.
+  const float picoField=static_cast<float>(fieldKilogauss);
+  if(!std::isfinite(picoField)) return false;
+  const StPicoPhysicalHelix helix(track.globalMomentum,track.origin,picoField*kilogauss,
+      static_cast<float>(track.charge));
+  return ForwardCylinderIntersection(helix,radiusMeters,tpcHalfLengthCm,radiusToleranceCm,position);
 }
 
 void FemtoLambdaLegacy::FillMerging(const FemtoCandidate& l,const FemtoCandidate& n,StPicoDst* dst,
     const std::string& legacySpecies,int /*massIndex*/) {
-  if(!dst || !dst->event()) return;
   const int nucleusIndex=n.trk.trackIndex;
-  if(nucleusIndex<0 || nucleusIndex>=int(dst->numberOfTracks())) return;
-  const StPicoTrack* nucleus=dst->track(nucleusIndex);
-  const double fieldKilogauss=dst->event()->bField();
+  const StPicoTrack* nucleus=0;
+  const TrackGeometry* savedNucleus=0;
+  double fieldKilogauss=0;
+  if(dst) {
+    if(!dst->event() || nucleusIndex<0 || nucleusIndex>=int(dst->numberOfTracks())) return;
+    nucleus=dst->track(nucleusIndex);
+    if(!nucleus) return;
+    fieldKilogauss=dst->event()->bField();
+  } else {
+    savedNucleus=ReplayTrack(nucleusIndex);
+    if(!savedNucleus) return;
+    fieldKilogauss=mReplayFieldKilogauss;
+  }
   TVector3 nucleusPosition;
-  if(!MergingTrackPositionAtRadius(nucleus,fieldKilogauss,mRadiusMeters,
-      mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,nucleusPosition)) return;
-  const double nucleusEta=nucleus->gMom().Eta();
+  const bool nucleusReached=nucleus?
+      MergingTrackPositionAtRadius(nucleus,fieldKilogauss,mRadiusMeters,
+          mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,nucleusPosition):
+      MergingTrackPositionAtRadius(*savedNucleus,fieldKilogauss,mRadiusMeters,
+          mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,nucleusPosition);
+  if(!nucleusReached) return;
+  const double nucleusEta=(nucleus?nucleus->gMom():savedNucleus->globalMomentum).Eta();
   const int daughterIndex[]={l.reso.dau1Index,l.reso.dau2Index};
   const char* daughterName[]={"proton","pion"};
   const int daughters=mMergingIncludePion?2:1;
   for(int i=0;i<daughters;++i) {
-    if(daughterIndex[i]<0 || daughterIndex[i]>=int(dst->numberOfTracks())) continue;
-    const StPicoTrack* daughter=dst->track(daughterIndex[i]);
     TVector3 daughterPosition;
-    if(!MergingTrackPositionAtRadius(daughter,fieldKilogauss,mRadiusMeters,
-        mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,daughterPosition)) continue;
-    const double deltaEta=daughter->gMom().Eta()-nucleusEta;
+    double daughterEta=0;
+    if(dst) {
+      if(daughterIndex[i]<0 || daughterIndex[i]>=int(dst->numberOfTracks())) continue;
+      const StPicoTrack* daughter=dst->track(daughterIndex[i]);
+      if(!daughter || !MergingTrackPositionAtRadius(daughter,fieldKilogauss,mRadiusMeters,
+          mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,daughterPosition)) continue;
+      daughterEta=daughter->gMom().Eta();
+    } else {
+      const TrackGeometry* daughter=ReplayTrack(daughterIndex[i]);
+      if(!daughter || !MergingTrackPositionAtRadius(*daughter,fieldKilogauss,mRadiusMeters,
+          mMergingTpcHalfLengthCm,mMergingRadiusToleranceCm,daughterPosition)) continue;
+      daughterEta=daughter->globalMomentum.Eta();
+    }
+    const double deltaEta=daughterEta-nucleusEta;
     const double deltaPhi=TVector2::Phi_mpi_pi(daughterPosition.Phi()-nucleusPosition.Phi());
     if(!std::isfinite(deltaPhi) || !std::isfinite(deltaEta)) continue;
     const std::string key=std::string("hDphiDeta_")+daughterName[i]+"_"+legacySpecies;
@@ -1188,6 +1556,45 @@ bool FemtoLambdaLegacy::Write(TDirectory* out) {
   TDirectory* previous=gDirectory;
   out->cd();
   bool ok=true;
+  TNamed controls("FemtoLambdaPrePidControlCollection",mCollectNuclearPidPairQa?"enabled":"disabled");
+  if(controls.Write()<=0)ok=false;
+  if(mProducerQaOnly) {
+    TNamed scope("FemtoLambdaProducerQaScope",
+        "Fixed reconstruction-stage event, candidate and track QA; no SE/ME or pair QA; "
+        "histograms describe the producer selection and complete producer input, not a later pair selection.");
+    if(scope.Write()<=0) ok=false;
+    TNamed pid("FemtoNuclearDedxCalibration",NuclearDedxCalibrationMetadata().c_str());
+    if(pid.Write()<=0) ok=false;
+    if(!mPidDomainMetadata.empty()) {
+      TNamed domain("FemtoNuclearPidDomain",mPidDomainMetadata.c_str());
+      if(domain.Write()<=0) ok=false;
+    }
+    for(size_t i=0;i<mRootKeys.size();++i)
+      if(mRoot->Get(mRootKeys[i].c_str())->Write()<=0) ok=false;
+    TDirectory* tracks=out->GetDirectory("true");
+    if(!tracks) tracks=out->mkdir("true");
+    if(!tracks) ok=false;
+    else {
+      tracks->cd();
+      for(size_t i=0;i<mNuclearKeys.size();++i)
+        if(mNuclear->Get(mNuclearKeys[i].c_str())->Write()<=0) ok=false;
+    }
+    if(previous) previous->cd();
+    return ok;
+  }
+  if(mPairEventPlaneSplitEnabled) {
+    std::ostringstream planeDefinition;
+    planeDefinition<<"physical Lambda-He4 and Lambda-He3 accepted pairs; axes=(kstar,currentEventEpdBin,cent9); "
+        <<"diagnostic plane bins="<<mPairEventPlaneNBins<<" from the corrected physical EPD Psi1 using the canonical Float_t convention; "
+        <<"no He3AsHe4 mapping; the EP label is explicitly supplied by the caller; "
+        <<"SE uses its event; ME uses the currently processed event in both directions, not always the Lambda event; "
+        <<"when mixing uses this same binning both events share its label; one-bin mixing may combine distinct physical planes; "
+        <<"full mass, signal, leftSB and rightSB; negative or unavailable label skips this diagnostic only; "
+        <<"no additional pair loop, pair cut, pool admission or weight change";
+    TNamed definition("FemtoLambdaPairEpdBinDefinition",planeDefinition.str().c_str());
+    TParameter<Int_t> bins("FemtoLambdaPairEpdBinCount",mPairEventPlaneNBins,'f');
+    if(definition.Write()<=0 || bins.Write()<=0)ok=false;
+  }
   if(mHe4RapiditySplitEnabled) {
     TParameter<double> threshold("he4RapiditySplitYLabThreshold",mHe4RapidityThreshold,'f');
     if(threshold.Write()<=0)ok=false;
@@ -1199,6 +1606,28 @@ bool FemtoLambdaLegacy::Write(TDirectory* out) {
               <<"ME uses the nucleus candidate's own P4 in both mixing directions; "
               <<"full mass, signal, leftSB and rightSB; He3AsHe4 is excluded";
     TNamed description("FemtoHe4RapiditySplitDefinition",definition.str().c_str());
+    if(description.Write()<=0)ok=false;
+  }
+  if(mHe4RapidityBinningEnabled) {
+    TParameter<int> bins("he4RapidityLabNBins",mHe4RapidityNBins,'f');
+    TParameter<double> low("he4RapidityLabMin",mHe4RapidityMin,'f');
+    TParameter<double> high("he4RapidityLabMax",mHe4RapidityMax,'f');
+    if(bins.Write()<=0 || low.Write()<=0 || high.Write()<=0)ok=false;
+    std::ostringstream definition;definition.precision(17);
+    definition<<"selected physical He4 candidate rapidity from its stored physical P4; "
+              <<"laboratory frame, no CM shift or extra charge correction; "
+              <<"TH3D axes=(kstar,He4YLab,cent9); equal-width bins="<<mHe4RapidityNBins
+              <<"; minimum="<<mHe4RapidityMin<<"; maximum="<<mHe4RapidityMax
+              <<"; ROOT half-open bins [low,high), maximum enters overflow; "
+              <<"finite out-of-range rapidities retained in underflow/overflow; "
+              <<"invalid or nonfinite nucleus rapidity skips this diagnostic only; "
+              <<"same physical pair definition in SE and both ME directions; "
+              <<"ME always uses the nucleus candidate's own P4; "
+              <<"full mass, signal, leftSB and rightSB; He3AsHe4 excluded; "
+              <<"independent of the strict two-region He4 split and pair rapidity; "
+              <<"no event rejection, pair veto, pool or weight change; "
+              <<"merge adjacent rapidity bins at raw-count level before CF normalization";
+    TNamed description("FemtoHe4RapidityBinningDefinition",definition.str().c_str());
     if(description.Write()<=0)ok=false;
   }
   if(mPairRapiditySplitEnabled) {
@@ -1232,10 +1661,22 @@ bool FemtoLambdaLegacy::Write(TDirectory* out) {
     <<"deltaPhi=wrapped daughter-position phi minus nuclear-position phi; "
     <<"deltaEta=global daughter momentum eta minus nuclear momentum eta; "
     <<"bare and _EventField histogram keys are corrected aliases; "
-    <<"no primary-track fit requirement, asin clamp, fixed-field approximation or pair veto; "
+    <<"no primary-track fit requirement, asin clamp or fixed-field approximation; historical aliases are before any configured pair veto; "
     <<"helix prediction does not establish shared measured TPC hits or pair efficiency";
   TNamed mergingDescription("FemtoLambdaMergingDefinition",mergingDefinition.str().c_str());
   if(mergingDescription.Write()<=0)ok=false;
+  if(mPairGeometryConfigured) {
+    std::ostringstream text;text.precision(17);
+    text<<"enabled="<<mMergingPairCutEnabled<<"; physical He4/proton; reject pair iff abs(wrapped deltaPhi)<"
+      <<mMergingPairPhiMax<<" AND abs(deltaEta)<"<<mMergingPairEtaMax<<"; phi radians; eta dimensionless; "
+      <<"same SE/both ME directions; candidates/events/pool admission unchanged; own-event B; radiusMeters="<<mRadiusMeters
+      <<"; first forward STAR helix/TPC intersection; global raw-momentum eta; unreachable retained and counted; "
+      <<"missing track/event cache is an error; all Lambda mass views share cut; pion diagnostic only; He3 unchanged; "
+      <<"before/after maps are signal pairs; counters include all masses and separate signal totals";
+    TNamed description("FemtoLambdaMergingPairCutDefinition",text.str().c_str());
+    TParameter<Int_t> enabled("FemtoLambdaMergingPairCutEnabled",mMergingPairCutEnabled?1:0,'f');
+    if(description.Write()<=0||enabled.Write()<=0)ok=false;
+  }
   if(mRoot->HasHistogram(He4AcceptanceName(0,0).c_str())) {
     std::ostringstream description;description.precision(17);
     description << "population: final selected physical He4 tracks; one entry per track, independent of pairs"
@@ -1272,9 +1713,11 @@ bool FemtoLambdaLegacy::Write(TDirectory* out) {
       "X=kstar [GeV/c]; hKstarNSigma Y=selected source nuclear TPC pull; physical He3 and He3As4He both use nSigmaHe3, He4 uses nSigmaHe4; "
       "hKstarPOverQ Y=|physical Float-P4 momentum|/2 [GeV/c], physical Z=2 correction applied exactly once before storage; "
       "mapped He3As4He changes bachelor mass/energy and kstar only, not pull or rigidity; "
-      "signal is +/-3sigma, signalLow and signalHigh partition the same signal pairs, SBPos/SBNeg retain existing windows; "
-      "PrePid keys: same quality, target rigidity-domain and TOF gates, no TPC pull or best-species cut; "
-      "pre-PID payload never admits events to the physical CF pool; QA ME uses only the same stored physical events, recent depth and both directions; "
+      "signal is +/-3sigma, signalLow and signalHigh partition the same signal pairs, SBPos/SBNeg retain existing windows; " +
+      std::string(mCollectNuclearPidPairQa?
+        "PrePid keys: same quality, target rigidity-domain and TOF gates, no TPC pull or best-species cut; "
+        "pre-PID payload never admits events to the physical CF pool; QA ME uses only the same stored physical events, recent depth and both directions; ":
+        "PrePid candidate collection and pair histograms are disabled; selected-pair nSigma/rigidity QA is retained; ") +
       "histogram axes and under/overflow are stored; no purity fit; "
       "unit raw-count TH2 fills use Poisson errors unless ROOT allocated Sumw2; "
       "a nonfinite QA tuple skips all new QA views only, not existing pair acceptance or histograms; " +

@@ -66,3 +66,9 @@ channel_3_signalMin: 1.12484
 channel_3_signalMax: 1.15148
 channel_3_normQMin: 0.5
 channel_3_normQMax: 1.0
+
+mergingGeometry:
+  method: starHelixFixedGlobalEta
+  tpcHalfLengthCm: 210.0
+  radiusToleranceCm: 0.001
+  includePion: false

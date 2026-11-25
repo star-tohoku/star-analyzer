@@ -27,6 +27,23 @@ inline Int_t XialeiBin(Double_t physicalPsi1) {
   return bin >= 0 && bin < 8 ? bin : -1;
 }
 
+// Reclassify the stored physical first-order plane without changing its
+// canonical eight-bin validity. Power-of-two refinements retain the same
+// Float_t conversion and rounded-width boundaries as the original binning.
+inline Int_t MixingBin(Double_t physicalPsi1,Int_t bins) {
+  if(bins<1)return -1;
+  const Int_t canonical=XialeiBin(physicalPsi1);
+  if(canonical<0)return -1;
+  if(bins==1)return 0;
+  if(bins==8)return canonical;
+  const Float_t psi=physicalPsi1;
+  const Float_t half=psi/2;
+  const Double_t low=-TMath::Pi()/2.0,high=TMath::Pi()/2.0;
+  const Float_t width=(high-low)/Float_t(bins);
+  const Int_t bin=Int_t((half-low)/width);
+  return bin>=0&&bin<bins?bin:-1;
+}
+
 struct Result {
   Bool_t valid;
   Int_t status, bin, runIndex, calibrationCent, hits;

@@ -6,6 +6,7 @@
 #include "FemtoCandidate.h"
 #include "FemtoNuclearPidPairQaCandidate.h"
 #include "FemtoPhiMixSampler.h"
+#include "FemtoLambdaPairGeometry.h"
 #include "cuts/FemtoConfig.h"
 #include "StarClassLibrary/StPhysicalHelixD.hh"
 
@@ -28,6 +29,7 @@ class FemtoLambdaLegacy;
 class TTree;
 class TFile;
 namespace femto_candidate_store { struct Event; struct Settings; class Writer; class Reader; }
+namespace femto_lambda_tree { struct Settings; struct Payload; class Writer; class Reader; }
 namespace femto_epd { class Provider; struct Result; }
 
 class StFemtoMaker;
@@ -55,13 +57,27 @@ class StFemtoMaker : public StMaker {
   void SetCandidateStoreInput(const char* path) { mCandidateStoreInput = path ? path : ""; }
   Bool_t CandidateStoreInputFinished() const;
   Long64_t CandidateStoreInputEntries() const;
+  void SetReducedTreeInput(const char* path) { mReducedTreeInput = path ? path : ""; }
+  void SetReducedTreeProducerId(const char* id) { mReducedTreeProducerId = id ? id : ""; }
+  void SetReducedTreeSourceInput(const char* path) { mReducedTreeSourceInput = path ? path : ""; }
+  Bool_t ReducedTreeInputFinished() const;
+  Long64_t ReducedTreeInputEntries() const;
 
  private:
   Int_t InitLambda();
   Int_t MakeLambdaEvent();
   Int_t MakeLambdaReplayEvent();
+  Int_t MakeLambdaReducedReplayEvent();
   void ProcessLambdaPairs(Float_t vz, Int_t cent9, Double_t psi2);
   bool WriteCandidateStoreEvent(const StPicoEvent&, Int_t nTracks);
+  bool WriteReducedTreeEvent(const StPicoEvent&, Int_t nTracks);
+  void FillReducedEventRecord(femto_candidate_store::Event&, const StPicoEvent&, Int_t nTracks) const;
+  void FillLambdaEpdQa();
+  std::string mReducedTreeInput, mReducedTreeProducerId, mReducedTreeSourceInput;
+  femto_lambda_tree::Settings* mReducedTreeSettings;
+  femto_lambda_tree::Writer* mReducedTreeWriter;
+  femto_lambda_tree::Reader* mReducedTreeReader;
+  bool mReducedTreeFinished, mReducedHasAnyLegacyCandidate;
   femto_epd::Provider* mLambdaEpd;
   femto_epd::Result* mLambdaEpdResult;
   Long64_t mLambdaEpdSeen, mLambdaEpdValid, mLambdaEpdRejected;
@@ -136,6 +152,7 @@ class StFemtoMaker : public StMaker {
     FemtoCandidateStore candidates;
     // Payload only; excluded from physical pool admission and pair sampling.
     FemtoNuclearPidPairQaStore nuclearPidQaCandidates;
+    femto_lambda_pair_geometry::EventGeometry lambdaPairGeometry;
   };
 
   StPicoDstMaker* mPicoDstMaker;
@@ -153,6 +170,7 @@ class StFemtoMaker : public StMaker {
 
   FemtoCandidateStore m_eventCandidates;
   FemtoNuclearPidPairQaStore mLambdaNuclearPidQaCandidates;
+  femto_lambda_pair_geometry::EventGeometry mLambdaPairGeometry;
   std::vector<FemtoCandidate> m_phiQaLoose;
   std::vector<FemtoCandidate> m_phiQaPreMassLoose;
   std::vector<FemtoCandidate> m_phiQaPreMassTofStrict;

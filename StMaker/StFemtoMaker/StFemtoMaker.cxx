@@ -6,10 +6,13 @@
 #include "FemtoLambdaLegacy.h"
 #include "FemtoCandidateEventStore.h"
 #include "FemtoCandidateEventStoreConfig.h"
+#include "FemtoLambdaReducedTree.h"
+#include "FemtoLambdaReducedTreeConfig.h"
 #include "FemtoEpdEventPlane.h"
 #include "cuts/KfParticleCutConfig.h"
 #include "yaml-cpp/yaml.h"
 #include "TTree.h"
+#include "TChain.h"
 #include "TNamed.h"
 #include "TObjString.h"
 #include "TParameter.h"
@@ -35,6 +38,7 @@
 #include "StPicoEvent/StPicoTrack.h"
 #include "StPicoEvent/StPicoEvent.h"
 #include "StPicoEvent/StPicoBTofPidTraits.h"
+#include "StPicoEvent/StPicoPhysicalHelix.h"
 #include "StarClassLibrary/StPhysicalHelixD.hh"
 #include "StarClassLibrary/StThreeVectorF.hh"
 #include "StarClassLibrary/SystemOfUnits.h"
@@ -52,6 +56,7 @@
 #include <sstream>
 #include <ctime>
 #include <stdexcept>
+#include <fstream>
 #include <vector>
 
 namespace {
@@ -75,6 +80,8 @@ Bool_t ComputePhiBetaGamma(Bool_t tofPlus, Float_t betaPlus, Bool_t tofMinus, Fl
 
 StFemtoMaker::StFemtoMaker(const char* name, StPicoDstMaker* picoMaker, const char* outName)
     : StMaker(name),
+      mReducedTreeSettings(0), mReducedTreeWriter(0), mReducedTreeReader(0),
+      mReducedTreeFinished(false), mReducedHasAnyLegacyCandidate(false),
       mLambdaEpd(0), mLambdaEpdResult(0), mLambdaEpdSeen(0), mLambdaEpdValid(0), mLambdaEpdRejected(0),
       mCandidateStoreSettings(0), mCandidateStoreWriter(0), mCandidateStoreReader(0),
       mCandidateStoreFinished(false), mCandidateStoreSourceInputIndex(0), mCandidateStoreStream(-1),
@@ -100,6 +107,9 @@ StFemtoMaker::StFemtoMaker(const char* name, StPicoDstMaker* picoMaker, const ch
       m_phiMixSeedUsed(0) {}
 
 StFemtoMaker::~StFemtoMaker() {
+  delete mReducedTreeReader;
+  delete mReducedTreeWriter;
+  delete mReducedTreeSettings;
   delete mLambdaEpd;
   delete mLambdaEpdResult;
   delete mCandidateStoreReader;
@@ -141,7 +151,16 @@ Int_t StFemtoMaker::InitLambda() {
       throw std::runtime_error("Lambda requires explicit mainconf");
     mCandidateStoreSettings = new femto_candidate_store::Settings();
     mCandidateStoreSettings->Load(mMainConfigPath);
-    const bool replay = !mCandidateStoreInput.empty();
+    mReducedTreeSettings = new femto_lambda_tree::Settings();
+    mReducedTreeSettings->Load(mMainConfigPath);
+    const bool reduced=mReducedTreeSettings->enabled;
+    const bool producer=reduced && mReducedTreeSettings->mode=="write";
+    const bool replay = !mCandidateStoreInput.empty() || !mReducedTreeInput.empty();
+    if(reduced && mCandidateStoreSettings->enabled)
+      throw std::runtime_error("reducedTree and candidateStore cannot be enabled together");
+    if(reduced && ((mReducedTreeSettings->mode=="replay")!=!mReducedTreeInput.empty() ||
+                    mReducedTreeProducerId.empty() || mReducedTreeSourceInput.empty()))
+      throw std::runtime_error("reducedTree requires explicit matching mode/input, source input and producer job ID");
     femto_epd::Settings epd;
     epd.Load(mMainConfigPath);
     if(epd.enabled) {
@@ -151,7 +170,8 @@ Int_t StFemtoMaker::InitLambda() {
       mLambdaEpd->Init(epd,!replay);
       if(mCandidateStoreSettings->enabled)mCandidateStoreSettings->selectionProvenance+="\nEPD event plane\n"+epd.pairingDefinition;
     }
-    if (replay != (mCandidateStoreSettings->enabled && mCandidateStoreSettings->mode == "replay") ||
+    if (replay != ((mCandidateStoreSettings->enabled && mCandidateStoreSettings->mode == "replay") ||
+                    (reduced && mReducedTreeSettings->mode=="replay")) ||
         (!replay && !mLambdaProvider))
       throw std::runtime_error("candidate-store mode/input/provider mismatch");
     if (mOutName.IsNull() || !gSystem->AccessPathName(mOutName.Data()))
@@ -245,18 +265,19 @@ Int_t StFemtoMaker::InitLambda() {
     if (mixNode["vzOutOfRangePolicy"].as<std::string>() != "clamp" ||
         !std::isfinite(mLambdaMixMinVz) || !std::isfinite(mLambdaMixMaxVz) ||
         mLambdaMixMinVz >= mLambdaMixMaxVz ||
-        mix.mixingMode != "bufferAll" || !mix.mixBothDirections ||
+        mix.mixingMode != "bufferAll" || (!reduced && !mix.mixBothDirections) ||
         mix.nCentralityBins != 9 || mix.nEventPlaneBins < 1 ||
         (mix.nEventPlaneBins != 1 && !mLambdaEpd && (!replay || mCandidateStoreSettings->eventPlaneSource != "stored")) || mix.nVzBins <= 0 ||
         mix.bufferSize <= 0 || mLambdaMaxMixEvents <= 0 || mLambdaMaxMixEvents > mix.bufferSize)
       throw std::runtime_error("invalid Lambda mixing: requires explicit clamp, bufferAll, both directions, cent9");
-    if(mLambdaEpd && mix.nEventPlaneBins!=1 && mix.nEventPlaneBins!=mLambdaEpd->Configuration().bins)
-      throw std::runtime_error("EPD mixing requires one control bin or the configured eight bins");
     if (!ConfigManager::GetInstance().GetCentralityCuts().enabled)
       throw std::runtime_error("Lambda mixing requires enabled centrality");
     if (!replay && !mLambdaProvider->Init(mMainConfigPath.c_str(), std::cerr)) return kStErr;
     mLambdaLegacy = new FemtoLambdaLegacy();
-    if (!mLambdaLegacy->Init(mMainConfigPath.c_str(), std::cerr)) return kStErr;
+    if (!mLambdaLegacy->Init(mMainConfigPath.c_str(), std::cerr, producer,
+                            reduced ? mReducedTreeSettings->storePrePidControl : true)) return kStErr;
+    if(reduced && bool(mLambdaLegacy->NuclearPidPairQaEnabled())!=mReducedTreeSettings->storePrePidControl)
+      throw std::runtime_error("reducedTree.storePrePidControl and nuclearPidPairQaHist capability disagree");
     m_histManager = mLambdaLegacy->RootHistograms();
     if(mLambdaEpd) {
       TH1* angle=m_histManager->Get("hEpdPsi1VsCent");
@@ -266,12 +287,20 @@ Int_t StFemtoMaker::InitLambda() {
          !bin||bin->GetDimension()!=2||bin->GetXaxis()->GetNbins()!=mLambdaEpd->Configuration().bins||bin->GetXaxis()->GetXmin()!=-0.5||bin->GetXaxis()->GetXmax()!=mLambdaEpd->Configuration().bins-0.5||bin->GetYaxis()->GetNbins()!=9||
          !status||status->GetDimension()!=1||status->GetXaxis()->GetXmin()>0||status->GetXaxis()->GetXmax()<=8)
         throw std::runtime_error("EPD requires configured angle/bin-versus-cent9 and status QA histograms");
+      if(m_histManager->HasHistogram("hEpdPoolBinVsCent")) {
+        const TH1* pool=m_histManager->Get("hEpdPoolBinVsCent");
+        if(!pool||pool->GetDimension()!=2||pool->GetXaxis()->GetNbins()!=mix.nEventPlaneBins||
+           pool->GetXaxis()->GetXmin()!=-0.5||pool->GetXaxis()->GetXmax()!=mix.nEventPlaneBins-0.5||
+           pool->GetYaxis()->GetNbins()!=9||pool->GetYaxis()->GetXmin()!=-0.5||pool->GetYaxis()->GetXmax()!=8.5)
+          throw std::runtime_error("EPD pool-bin QA axes must match the configured mixing bins and cent9");
+      }
     }
     m_centrality = new CentralityHelper();
     if (!m_centrality->Init(ConfigManager::GetInstance().GetCentralityCuts())) return kStErr;
     // Stream ledgers into the new output, rather than retaining an entire production in RAM.
     mLambdaOutputFile = TFile::Open(mOutName.Data(), "CREATE");
     if (!mLambdaOutputFile || mLambdaOutputFile->IsZombie()) return kStErr;
+    if(producer)mLambdaOutputFile->SetCompressionLevel(mReducedTreeSettings->compressionLevel);
     mLambdaOutputFile->cd();
     mLambdaEventLedger = new TTree("eventLedger", "Input events; status 0 bad run,1 event,2 pileup,3 centrality,4 reconstructed,-1 error");
     mLambdaEventLedger->SetDirectory(mLambdaOutputFile);
@@ -289,7 +318,7 @@ Int_t StFemtoMaker::InitLambda() {
       mLambdaEventLedger->Branch("epdCalibrationCent",&mLambdaEpdResult->calibrationCent,"epdCalibrationCent/I");
       mLambdaEventLedger->Branch("epdRunIndex",&mLambdaEpdResult->runIndex,"epdRunIndex/I");
     }
-    if (mCandidateStoreSettings->enabled) {
+    if (mCandidateStoreSettings->enabled || reduced) {
       mLambdaEventLedger->Branch("sourceInputIndex", &mCandidateStoreSourceInputIndex, "sourceInputIndex/I");
       mLambdaEventLedger->Branch("candidateStoreStream", &mCandidateStoreStream, "candidateStoreStream/I");
     }
@@ -325,6 +354,24 @@ Int_t StFemtoMaker::InitLambda() {
       }
       std::cout << "[Femto candidate store] mode=" << mCandidateStoreSettings->mode
                 << " config=" << mCandidateStoreSettings->path << std::endl;
+    }
+    if(reduced) {
+      const femto_lambda_tree::Settings& setting=*mReducedTreeSettings;
+      if(producer) {
+        mReducedTreeWriter=new femto_lambda_tree::Writer();
+        if(!mReducedTreeWriter->Init(mLambdaOutputFile,setting.species,
+             setting.selectionProvenance,setting.mixingProvenance,mReducedTreeProducerId,
+             setting.compressionLevel,setting.autoFlush))
+          throw std::runtime_error(mReducedTreeWriter->LastError());
+      } else {
+        mReducedTreeReader=new femto_lambda_tree::Reader();
+        if(!mReducedTreeReader->Init(mReducedTreeInput.c_str(),setting.species,
+             setting.selectionProvenance,setting.mixingProvenance,setting.requireOriginalMixing))
+          throw std::runtime_error(mReducedTreeReader->LastError());
+        if(mReducedTreeReader->EntriesTotal()>std::numeric_limits<Int_t>::max())
+          throw std::runtime_error("reduced-tree replay exceeds event-reference index capacity");
+      }
+      std::cout<<"[Femto reduced tree] mode="<<setting.mode<<" config="<<setting.path<<std::endl;
     }
     std::cout << "[StFemtoMaker Lambda] original reference=anaLambdaNuclearId; mix Vz=["
               << mLambdaMixMinVz << "," << mLambdaMixMaxVz << "] clamp"
@@ -406,7 +453,10 @@ Int_t StFemtoMaker::MakeLambdaEvent() {
   mLambdaLegacy->CollectNuclei(mPicoDst, mEventCounter, m_cent9, m_eventCandidates,
     mLambdaLegacy->NuclearPidPairQaEnabled()?&mLambdaNuclearPidQaCandidates:0);
   if (mCandidateStoreWriter && !WriteCandidateStoreEvent(*event, nTracks)) return kStErr;
-  ProcessLambdaPairs(pv.Z(), m_cent9, m_psi2);
+  if(mReducedTreeWriter) {
+    if(!WriteReducedTreeEvent(*event,nTracks))return kStErr;
+    FillLambdaEpdQa();
+  } else ProcessLambdaPairs(pv.Z(), m_cent9, m_psi2);
   if (cent.fillCentralityQA) {
     const FemtoLambdaEventStats& stats = mLambdaProvider->Stats();
     m_histManager->Fill("hRawMult_vs_Cent9", m_cent9, rawMult);
@@ -430,14 +480,13 @@ Long64_t StFemtoMaker::CandidateStoreInputEntries() const {
 }
 
 void StFemtoMaker::ProcessLambdaPairs(Float_t vz, Int_t cent9, Double_t psi2) {
-  if(mLambdaEpd) {
-    ++mLambdaEpdSeen;
-    m_histManager->Fill("hEpdStatus",mLambdaEpdResult->status);
-    if(!mLambdaEpdResult->valid){++mLambdaEpdRejected;return;}
-    ++mLambdaEpdValid;
-    m_histManager->Fill("hEpdPsi1VsCent",mLambdaEpdResult->psi1,cent9);
-    m_histManager->Fill("hEpdMixingBinVsCent",mLambdaEpdResult->bin,cent9);
-  }
+  mLambdaLegacy->SetPairEventPlaneBin(mReducedTreeReader && mLambdaEpdResult && mLambdaEpdResult->valid ?
+                                    femto_epd::MixingBin(mLambdaEpdResult->psi1,mLambdaLegacy->PairEventPlaneBins()) : -1);
+  FillLambdaEpdQa();
+  if(mLambdaEpd && !mLambdaEpdResult->valid)return;
+  mLambdaPairGeometry.Clear();
+  if(mLambdaLegacy->PairGeometryEnabled())
+    mLambdaLegacy->BuildPairGeometry(mEventCounter,m_eventCandidates,mPicoDst,mLambdaPairGeometry);
   // Each base channel is evaluated once; its helper fans out all mass classes.
   const FemtoConfig& fc = ConfigManager::GetInstance().GetFemtoConfig();
   for (size_t i = 0; i < fc.channels.size(); ++i) {
@@ -449,6 +498,22 @@ void StFemtoMaker::ProcessLambdaPairs(Float_t vz, Int_t cent9, Double_t psi2) {
   if (vz < mLambdaMixMinVz || vz > mLambdaMixMaxVz) ++mLambdaMixClampedEvents;
   FillNuclearPidQaPairs(vz, cent9, psi2);
   StoreEventForMixing(vz, cent9, psi2);
+}
+
+void StFemtoMaker::FillLambdaEpdQa() {
+  if(!mLambdaEpd)return;
+  ++mLambdaEpdSeen;
+  m_histManager->Fill("hEpdStatus",mLambdaEpdResult->status);
+  if(!mLambdaEpdResult->valid){++mLambdaEpdRejected;return;}
+  ++mLambdaEpdValid;
+  m_histManager->Fill("hEpdPsi1VsCent",mLambdaEpdResult->psi1,m_cent9);
+  m_histManager->Fill("hEpdMixingBinVsCent",mLambdaEpdResult->bin,m_cent9);
+  if(m_histManager->HasHistogram("hEpdPoolBinVsCent")) {
+    const int bins=ConfigManager::GetInstance().GetMixingConfig().nEventPlaneBins;
+    const int bin=femto_epd::MixingBin(mLambdaEpdResult->psi1,bins);
+    if(bin<0)throw std::runtime_error("valid EPD plane cannot be classified into the configured pool bins");
+    m_histManager->Fill("hEpdPoolBinVsCent",bin,m_cent9);
+  }
 }
 
 bool StFemtoMaker::WriteCandidateStoreEvent(const StPicoEvent& event, Int_t nTracks) {
@@ -497,6 +562,93 @@ bool StFemtoMaker::WriteCandidateStoreEvent(const StPicoEvent& event, Int_t nTra
     std::cerr<<"[Femto candidate store] "<<mCandidateStoreWriter->LastError()<<std::endl;return false;
   }
   return true;
+}
+
+Bool_t StFemtoMaker::ReducedTreeInputFinished() const { return mReducedTreeFinished; }
+Long64_t StFemtoMaker::ReducedTreeInputEntries() const {
+  return mReducedTreeReader ? mReducedTreeReader->EntriesTotal() : 0;
+}
+
+void StFemtoMaker::FillReducedEventRecord(femto_candidate_store::Event& r,
+    const StPicoEvent& event,Int_t nTracks) const {
+  r.inputIndex=mEventCounter;r.runId=event.runId();r.eventId=event.eventId();
+  r.cent9=m_cent9;r.cent16=m_cent16;r.refMult=event.refMult();r.fxtMult=event.fxtMult();
+  r.nTracks=nTracks;r.nBTOFMatch=event.nBTOFMatch();
+  const TVector3 pv=event.primaryVertex();r.pvX=pv.X();r.pvY=pv.Y();r.pvZ=pv.Z();
+  r.bField=event.bField();r.refMultCorr=m_refMultCorr;r.centWeight=m_centWeight;
+  r.psi2=m_psi2;r.eventPlaneValid=std::isfinite(m_psi2)&&m_psi2>=0&&m_psi2<TMath::Pi();
+  if(mLambdaEpdResult) {
+    const femto_epd::Result& e=*mLambdaEpdResult;
+    r.epdPsi1=e.psi1;r.epdRawQx=e.rawQx;r.epdRawQy=e.rawQy;
+    r.epdRecenteredQx=e.recenteredQx;r.epdRecenteredQy=e.recenteredQy;r.epdWeight=e.weight;
+    r.epdStatus=e.status;r.epdBin=e.bin;r.epdRunIndex=e.runIndex;
+    r.epdCalibrationCent=e.calibrationCent;r.epdHits=e.hits;r.epdValid=e.valid;
+  }
+}
+
+bool StFemtoMaker::WriteReducedTreeEvent(const StPicoEvent& event,Int_t nTracks) {
+  try {
+    femto_lambda_tree::Event r;FillReducedEventRecord(r,event,nTracks);
+    femto_lambda_tree::Payload payload;
+    payload.lambdas=mLambdaProvider->Candidates();payload.stats=mLambdaProvider->Stats();
+    for(FemtoCandidateStore::const_iterator i=m_eventCandidates.begin();i!=m_eventCandidates.end();++i) {
+      payload.hasAnyLegacyCandidate=payload.hasAnyLegacyCandidate || !i->second.empty();
+      if(i->first=="deuteron")payload.originalDeuteronCount=i->second.size();
+      if(i->first=="triton")payload.originalTritonCount=i->second.size();
+    }
+    payload.baselinePoolEligible=payload.hasAnyLegacyCandidate && (!mLambdaEpd || r.epdValid);
+    payload.originalMixBin=GetMixingBin(r.pvZ,r.cent9,r.psi2);
+    if(mPicoDstMaker->chain() && mPicoDstMaker->chain()->GetTree()) {
+      payload.sourceFileIndex=mPicoDstMaker->chain()->GetTreeNumber();
+      payload.sourceEntry=mPicoDstMaker->chain()->GetTree()->GetReadEntry();
+    }
+    std::map<Int_t,UInt_t> roles;
+    for(size_t i=0;i<payload.lambdas.size();++i) {
+      roles[payload.lambdas[i].protonIndex]|=femto_lambda_tree::kProtonDaughter;
+      roles[payload.lambdas[i].pionIndex]|=femto_lambda_tree::kPionDaughter;
+    }
+    const char* nuclei[]={"he3","he4"};
+    const UInt_t flags[]={femto_lambda_tree::kHe3Track,femto_lambda_tree::kHe4Track};
+    for(unsigned species=0;species<2;++species) {
+      FemtoCandidateStore::const_iterator found=m_eventCandidates.find(nuclei[species]);
+      if(found==m_eventCandidates.end())continue;
+      for(size_t i=0;i<found->second.size();++i)roles[found->second[i].trk.trackIndex]|=flags[species];
+    }
+    for(std::map<Int_t,UInt_t>::const_iterator i=roles.begin();i!=roles.end();++i) {
+      if(i->first<0 || i->first>=nTracks)throw std::runtime_error("reduced-tree candidate references a missing Pico track");
+      const StPicoTrack* track=mPicoDst->track(i->first);
+      if(!track)throw std::runtime_error("reduced-tree candidate references a null Pico track");
+      femto_lambda_tree::Track saved;
+      saved.index=i->first;saved.id=track->id();saved.charge=track->charge();saved.roleFlags=i->second;
+      saved.pMom=track->pMom();saved.gMom=track->gMom();saved.origin=track->origin();
+      saved.nHitsFit=track->nHitsFit();saved.nHitsMax=track->nHitsMax();saved.nHitsDedx=track->nHitsDedx();
+      saved.dEdx=track->dEdx();saved.nSigmaElectron=track->nSigmaElectron();
+      saved.nSigmaPion=track->nSigmaPion();saved.nSigmaKaon=track->nSigmaKaon();saved.nSigmaProton=track->nSigmaProton();
+      saved.tofIndex=track->bTofPidTraitsIndex();
+      if(saved.tofIndex>=0 && static_cast<unsigned>(saved.tofIndex)<mPicoDst->numberOfBTofPidTraits()) {
+        const StPicoBTofPidTraits* tof=mPicoDst->btofPidTraits(saved.tofIndex);
+        if(tof) {
+          saved.hasTof=kTRUE;saved.tofCellId=tof->btofCellId();saved.tofMatchFlag=tof->btofMatchFlag();
+          saved.beta=tof->btofBeta();saved.tofTime=tof->btof();saved.tofLocalY=tof->btofYLocal();
+          saved.tofLocalZ=tof->btofZLocal();saved.tofHitPosition=tof->btofHitPos();
+          saved.tofValid=std::isfinite(saved.beta) && saved.beta>0;
+        }
+      }
+      if(saved.gMom.Perp()>0 && saved.charge!=0) {
+        const StPicoPhysicalHelix helix=track->helix(event.bField());
+        saved.helixCurvature=helix.curvature();saved.helixDipAngle=helix.dipAngle();
+        saved.helixPhase=helix.phase();saved.helixH=helix.h();
+        saved.helixValid=std::isfinite(saved.helixCurvature)&&std::isfinite(saved.helixDipAngle)&&std::isfinite(saved.helixPhase);
+      }
+      payload.tracks.push_back(saved);
+    }
+    mCandidateStoreSourceInputIndex=r.inputIndex;
+    if(!mReducedTreeWriter->Fill(r,m_eventCandidates,mLambdaNuclearPidQaCandidates,payload))
+      throw std::runtime_error(mReducedTreeWriter->LastError());
+    return true;
+  } catch(const std::exception& e) {
+    std::cerr<<"[Femto reduced-tree writer] "<<e.what()<<std::endl;return false;
+  }
 }
 
 namespace {
@@ -561,9 +713,75 @@ Int_t StFemtoMaker::MakeLambdaReplayEvent() {
   }
 }
 
+Int_t StFemtoMaker::MakeLambdaReducedReplayEvent() {
+  try {
+    femto_lambda_tree::Event r;femto_lambda_tree::Payload payload;
+    if(!mReducedTreeReader->Next(r,m_eventCandidates,mLambdaNuclearPidQaCandidates,payload)) {
+      if(mReducedTreeReader->Finished()){mReducedTreeFinished=true;return kStEOF;}
+      throw std::runtime_error(mReducedTreeReader->LastError());
+    }
+    if(!mReducedTreeSettings->storePrePidControl)
+      for(FemtoNuclearPidPairQaStore::const_iterator i=mLambdaNuclearPidQaCandidates.begin();i!=mLambdaNuclearPidQaCandidates.end();++i)
+        if(!i->second.empty())throw std::runtime_error("compact reduced-tree input unexpectedly contains pre-PID controls");
+    if(mReducedTreeReader->NewSegment()) {
+      ++mCandidateStoreStream;
+      if(mReducedTreeSettings->resetPoolAtSegmentBoundary)m_mixingPool.clear();
+    }
+    if(mEventCounter==std::numeric_limits<Int_t>::max())throw std::runtime_error("reduced-tree event index overflow");
+    ++mEventCounter;mCandidateStoreSourceInputIndex=r.inputIndex;mPicoDst=0;
+    for(FemtoCandidateStore::iterator i=m_eventCandidates.begin();i!=m_eventCandidates.end();++i)
+      for(size_t j=0;j<i->second.size();++j)RemapStoredCandidate(i->second[j],r.inputIndex,mEventCounter);
+    for(FemtoNuclearPidPairQaStore::iterator i=mLambdaNuclearPidQaCandidates.begin();i!=mLambdaNuclearPidQaCandidates.end();++i)
+      for(size_t j=0;j<i->second.size();++j)RemapStoredCandidate(i->second[j].candidate,r.inputIndex,mEventCounter);
+    mReducedHasAnyLegacyCandidate=payload.hasAnyLegacyCandidate;
+    mLambdaRunId=r.runId;mLambdaEventId=r.eventId;m_cent9=r.cent9;m_cent16=r.cent16;
+    m_refMultCorr=r.refMultCorr;m_centWeight=r.centWeight;m_psi2=r.psi2;
+    if(mLambdaEpdResult) {
+      femto_epd::Result& e=*mLambdaEpdResult;
+      e.psi1=r.epdPsi1;e.rawQx=r.epdRawQx;e.rawQy=r.epdRawQy;
+      e.recenteredQx=r.epdRecenteredQx;e.recenteredQy=r.epdRecenteredQy;e.weight=r.epdWeight;
+      e.status=r.epdStatus;e.bin=r.epdBin;e.runIndex=r.epdRunIndex;e.calibrationCent=r.epdCalibrationCent;
+      e.hits=r.epdHits;e.valid=r.epdValid;
+      if(e.valid && femto_epd::XialeiBin(e.psi1)!=e.bin)throw std::runtime_error("reduced-tree EPD angle/bin mismatch");
+    }
+    if(mReducedTreeSettings->requireOriginalMixing && GetMixingBin(r.pvZ,r.cent9,r.psi2)!=payload.originalMixBin)
+      throw std::runtime_error("reduced-tree original mixing-bin mismatch");
+    std::vector<FemtoLambdaLegacy::TrackGeometry> geometry;
+    for(size_t i=0;i<payload.tracks.size();++i) {
+      const femto_lambda_tree::Track& t=payload.tracks[i];
+      FemtoLambdaLegacy::TrackGeometry g;g.trackIndex=t.index;g.charge=t.charge;
+      g.globalMomentum=t.gMom;g.origin=t.origin;geometry.push_back(g);
+    }
+    mLambdaLegacy->SetReplayTrackGeometry(geometry,r.bField);
+    mLambdaEventSelected=0;
+    const std::vector<FemtoCandidate>& lambdas=m_eventCandidates["lambda"];
+    if(payload.lambdas.size()!=lambdas.size())throw std::runtime_error("reduced-tree Lambda detail count mismatch");
+    const TVector3 pv(r.pvX,r.pvY,r.pvZ);
+    for(size_t i=0;i<lambdas.size();++i) {
+      FemtoLambdaCandidate detail=payload.lambdas[i];detail.candidate=lambdas[i];
+      if(detail.protonIndex!=lambdas[i].reso.dau1Index || detail.pionIndex!=lambdas[i].reso.dau2Index)
+        throw std::runtime_error("reduced-tree Lambda daughter identity mismatch");
+      mLambdaLegacy->FillLambda(detail,m_cent9,m_refMultCorr,pv);
+      if(!mLambdaLegacy->FillLambdaAcceptanceFromReplay(detail))
+        throw std::runtime_error("reduced-tree daughter acceptance failed");
+      mLambdaProtonIndex=detail.protonIndex;mLambdaPionIndex=detail.pionIndex;
+      mLambdaRawMass=detail.mass;mLambdaPx=lambdas[i].px;mLambdaPy=lambdas[i].py;mLambdaPz=lambdas[i].pz;
+      if(mLambdaCandidateLedger->Fill()<0)throw std::runtime_error("reduced-tree Lambda ledger write failed");
+      ++mLambdaSelectedTotal;++mLambdaEventSelected;
+    }
+    ProcessLambdaPairs(r.pvZ,r.cent9,m_psi2);
+    ++mLambdaReconstructedEvents;mLambdaEventStatus=4;m_histManager->Fill("hN",0.);
+    if(mLambdaEventLedger->Fill()<0)throw std::runtime_error("reduced-tree event ledger write failed");
+    return kStOK;
+  } catch(const std::exception& e) {
+    std::cerr<<"[Femto reduced-tree replay] "<<e.what()<<std::endl;
+    mLambdaProcessingSucceeded=false;return kStErr;
+  }
+}
+
 Int_t StFemtoMaker::Init() {
   const FemtoConfig& requested = ConfigManager::GetInstance().GetFemtoConfig();
-  if (requested.FindSpecies("lambda") || mLambdaProvider || !mCandidateStoreInput.empty()) return InitLambda();
+  if (requested.FindSpecies("lambda") || mLambdaProvider || !mCandidateStoreInput.empty() || !mReducedTreeInput.empty()) return InitLambda();
   std::string histPath = ConfigManager::GetInstance().GetHistConfigPath(GetName());
   if (histPath.empty()) {
     std::cerr << "[StFemtoMaker] GetHistConfigPath() returned empty; no histograms will be filled." << std::endl;
@@ -638,11 +856,12 @@ void StFemtoMaker::Clear(Option_t* opt) {
 
 Int_t StFemtoMaker::Make() {
   if (mLambdaLegacy) {
+    if (mReducedTreeReader) return MakeLambdaReducedReplayEvent();
     if (mCandidateStoreReader) return MakeLambdaReplayEvent();
     if(mEventCounter==std::numeric_limits<Int_t>::max())return kStErr;
     ++mEventCounter;
     mCandidateStoreSourceInputIndex=mEventCounter;
-    if(mCandidateStoreWriter)mCandidateStoreStream=0;
+    if(mCandidateStoreWriter || mReducedTreeWriter)mCandidateStoreStream=0;
     mLambdaEventSelected = 0; mLambdaEventStatus = -1;
     mLambdaRunId = mLambdaEventId = 0;
     const Int_t status = MakeLambdaEvent();
@@ -1031,6 +1250,12 @@ Int_t StFemtoMaker::Finish() {
         ok=false;
       }
     }
+    if(mReducedTreeWriter) {
+      if(!mLambdaProcessingSucceeded || !ok)ok=false;
+      else if(!mReducedTreeWriter->Write()) {
+        std::cerr<<"[Femto reduced-tree writer] "<<mReducedTreeWriter->LastError()<<std::endl;ok=false;
+      }
+    }
     output.cd();
     if (mLambdaEventLedger && mLambdaEventLedger->Write() <= 0) ok = false;
     if (mLambdaCandidateLedger && mLambdaCandidateLedger->Write() <= 0) ok = false;
@@ -1052,6 +1277,43 @@ Int_t StFemtoMaker::Finish() {
         TNamed scope("FemtoCandidateReplayScope", "Pair physics and PID pair QA are recomputed; PicoDst-dependent reconstruction/helix merging QA is unavailable. inputEvents counts cached accepted events; sourceInputIndex records the original input index.");
         if(scope.Write()<=0)ok=false;
       }
+    }
+    if(mReducedTreeSettings && mReducedTreeSettings->enabled) {
+      TNamed mode("FemtoLambdaReducedTreeMode",mReducedTreeSettings->mode.c_str());
+      TNamed producer("FemtoLambdaReducedTreeJobId",mReducedTreeProducerId.c_str());
+      TObjString settings(YAML::Dump(YAML::LoadFile(mReducedTreeSettings->path)).c_str());
+      TObjString selection(mReducedTreeSettings->selectionProvenance.c_str());
+      TObjString mixing(mReducedTreeSettings->mixingProvenance.c_str());
+      TObjString input(mReducedTreeInput.c_str());
+      std::ostringstream source;source<<"source argument: "<<mReducedTreeSourceInput<<'\n';
+      if(mReducedTreeSourceInput.size()<5 || mReducedTreeSourceInput.compare(mReducedTreeSourceInput.size()-5,5,".root")!=0) {
+        std::ifstream manifest(mReducedTreeSourceInput.c_str());
+        if(!manifest)ok=false;
+        else source<<manifest.rdbuf();
+      }
+      TObjString sourceInfo(source.str().c_str());
+      const YAML::Node main=YAML::LoadFile(mMainConfigPath);
+      std::ostringstream qa;
+      const char* keys[]={"femtoHist","nuclearHist"};
+      for(unsigned i=0;i<2;++i) {
+        const std::string path=femto_candidate_store::ConfigReference(mMainConfigPath,main[keys[i]].as<std::string>());
+        qa<<keys[i]<<'\n'<<YAML::Dump(YAML::LoadFile(path))<<'\n';
+      }
+      TObjString qaManifest(qa.str().c_str());
+      TNamed scope("FemtoLambdaReducedQAScope",mReducedTreeWriter ?
+        "Fixed producer event/track/PID QA for the whole source input; no SE/ME or pair histograms. Keep this source QA once; do not add it to each replay or label it as a replay subset." :
+        "SE/ME, candidate/daughter acceptance and geometry are recomputed from stored events. All-track and cut-before-reconstruction QA remain in the producer ROOT and are not copied or added here.");
+      TNamed revision("FemtoLambdaReducedSourceRevision","unrecorded; use the submit-time source/config manifest");
+      TParameter<Int_t> prePidControl("FemtoLambdaReducedHasPrePidControl",mReducedTreeSettings->storePrePidControl?1:0);
+      TNamed controlScope("FemtoLambdaReducedControlScope",mReducedTreeSettings->storePrePidControl ?
+        "Pre-PID helium control candidates are retained for condition-dependent pre-PID pair QA." :
+        "Compact payload: pre-PID-only control tracks are omitted. Fixed single-track/PID QA remains in the producer; condition-dependent pre-PID pair QA is outside this payload.");
+      if(mode.Write()<=0 || producer.Write()<=0 || settings.Write("FemtoLambdaReducedTreeSettings")<=0 ||
+         selection.Write("FemtoLambdaReducedReplaySelection")<=0 || mixing.Write("FemtoLambdaReducedReplayMixing")<=0 ||
+         input.Write("FemtoLambdaReducedTreeInput")<=0 || sourceInfo.Write("FemtoLambdaReducedSourceInput")<=0 ||
+         qaManifest.Write("FemtoLambdaReducedQAHistogramDefinitions")<=0 || scope.Write()<=0 || revision.Write()<=0 ||
+         prePidControl.Write()<=0 || controlScope.Write()<=0)ok=false;
+      std::cerr<<"[Femto reduced tree] source revision is unrecorded in the payload; retain the submit-time manifest"<<std::endl;
     }
     if(mLambdaEpd) {
       TObjString definition(mLambdaEpd->Configuration().definition.c_str());
@@ -2881,7 +3143,8 @@ void StFemtoMaker::FillSameEventPairs(const FemtoConfig::ChannelDef& ch) {
       Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
       if (mLambdaLegacy) {
         const Double_t qlab = (CandidateP4(a).Vect() - CandidateP4(b).Vect()).Mag();
-        mLambdaLegacy->FillPair(a, b, kstar, qlab, m_cent9, false, mPicoDst);
+        mLambdaLegacy->FillPair(a,b,kstar,qlab,m_cent9,false,mPicoDst,
+                               &mLambdaPairGeometry,&mLambdaPairGeometry);
         continue;
       }
       if (m_histManager && a.source == kFemtoCandResonance && !hMkkWide.empty()) {
@@ -2929,9 +3192,10 @@ Int_t StFemtoMaker::GetMixingBin(Float_t vz, Int_t cent9, Double_t psi2) const {
     if (centBin >= mix.nCentralityBins) centBin = mix.nCentralityBins - 1;
   }
   Int_t epBin = 0;
-  if(mLambdaEpd && mix.nEventPlaneBins>1) {
-    if(!mLambdaEpdResult || !mLambdaEpdResult->valid || mLambdaEpdResult->bin<0 || mLambdaEpdResult->bin>=mix.nEventPlaneBins)return -1;
-    epBin=mLambdaEpdResult->bin;
+  if(mLambdaEpd) {
+    if(!mLambdaEpdResult || !mLambdaEpdResult->valid)return -1;
+    epBin=femto_epd::MixingBin(mLambdaEpdResult->psi1,mix.nEventPlaneBins);
+    if(epBin<0)return -1;
   } else if (mix.nEventPlaneBins > 1 && psi2 >= 0) {
     epBin = (Int_t)(psi2 / TMath::Pi() * mix.nEventPlaneBins);
     if (epBin < 0) epBin = 0;
@@ -2965,16 +3229,21 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
   enum MixedPairFillResult {
     kMixedPairFilled,
     kMixedPairSkippedOverlap,
-    kMixedPairSkippedSignalWindow
+    kMixedPairSkippedSignalWindow,
+    kMixedPairSkippedMerging
   };
 
-  auto fillMixedPair = [&](const FemtoCandidate& a, const FemtoCandidate& b) {
+  auto fillMixedPair = [&](const FemtoCandidate& a,const FemtoCandidate& b,
+                          const femto_lambda_pair_geometry::EventGeometry& firstGeometry,
+                          const femto_lambda_pair_geometry::EventGeometry& secondGeometry) {
     if (TracksOverlap(a, b)) return kMixedPairSkippedOverlap;
     Double_t kstar = ComputeKStar(CandidateP4(a), CandidateP4(b));
     if (mLambdaLegacy) {
       const Double_t qlab = (CandidateP4(a).Vect() - CandidateP4(b).Vect()).Mag();
-      return mLambdaLegacy->FillPair(a, b, kstar, qlab, cent9, true)
-          ? kMixedPairFilled : kMixedPairSkippedOverlap;
+      bool mergingRejected=false;
+      const bool accepted=mLambdaLegacy->FillPair(a,b,kstar,qlab,cent9,true,0,
+        &firstGeometry,&secondGeometry,&mergingRejected);
+      return accepted?kMixedPairFilled:(mergingRejected?kMixedPairSkippedMerging:kMixedPairSkippedOverlap);
     }
     if (m_histManager && a.source == kFemtoCandResonance && !hMkkWide.empty()) {
       if (m_histManager->Get(hMkkWide.c_str())) {
@@ -3032,6 +3301,7 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
     PairCount filledReverse = 0;
     PairCount skippedOverlap = 0;
     PairCount skippedSignalWindow = 0;
+    PairCount skippedMerging = 0;
     PairCount selectedEmptyBufferDirections = 0;
 
     auto processFlatIndex = [&](PairCount flatIndex) {
@@ -3050,7 +3320,8 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
           ++selectedEmptyBufferDirections;
           return;
         }
-        result = fillMixedPair(mixA->second[ref.firstIndex], itB->second[ref.secondIndex]);
+        result = fillMixedPair(mixA->second[ref.firstIndex],itB->second[ref.secondIndex],
+                              mixEvt.lambdaPairGeometry,mLambdaPairGeometry);
       } else {
         FemtoCandidateStore::const_iterator mixB = mixEvt.candidates.find(ch.partB);
         if (!hasCurrentA || mixB == mixEvt.candidates.end() || mixB->second.empty() ||
@@ -3058,7 +3329,8 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
           ++selectedEmptyBufferDirections;
           return;
         }
-        result = fillMixedPair(itA->second[ref.firstIndex], mixB->second[ref.secondIndex]);
+        result = fillMixedPair(itA->second[ref.firstIndex],mixB->second[ref.secondIndex],
+                              mLambdaPairGeometry,mixEvt.lambdaPairGeometry);
       }
       if (result == kMixedPairFilled) {
         ++filled;
@@ -3069,6 +3341,8 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
         }
       } else if (result == kMixedPairSkippedOverlap) {
         ++skippedOverlap;
+      } else if (result == kMixedPairSkippedMerging) {
+        ++skippedMerging;
       } else {
         ++skippedSignalWindow;
       }
@@ -3088,7 +3362,7 @@ void StFemtoMaker::FillMixedEventPairs(const FemtoConfig::ChannelDef& ch, Int_t 
     }
 
     const PairCount skippedByCap = plan.eligiblePairs - attempted;
-    const PairCount skippedByPairCut = skippedOverlap + skippedSignalWindow + selectedEmptyBufferDirections;
+    const PairCount skippedByPairCut = skippedOverlap + skippedSignalWindow + skippedMerging + selectedEmptyBufferDirections;
     const PairCount skipped = plan.eligiblePairs - filled;
     auto fillSamplerQa = [&](femto_mixing::SamplerQaBin bin, PairCount count) {
       if (m_histManager && count > 0) {
@@ -3150,9 +3424,9 @@ void StFemtoMaker::FillNuclearPidQaPairs(Float_t vz,Int_t cent9,Double_t psi2) {
 }
 
 void StFemtoMaker::StoreEventForMixing(Float_t vz, Int_t cent9, Double_t psi2) {
-  if (m_eventCandidates.empty()) return;
+  if (m_eventCandidates.empty() && !(mReducedTreeReader && mReducedHasAnyLegacyCandidate)) return;
   if (mLambdaLegacy) {
-    bool any = false;
+    bool any = mReducedTreeReader && mReducedHasAnyLegacyCandidate;
     for (FemtoCandidateStore::const_iterator it = m_eventCandidates.begin(); it != m_eventCandidates.end(); ++it)
       any = any || !it->second.empty();
     if (!any) return;
@@ -3160,6 +3434,7 @@ void StFemtoMaker::StoreEventForMixing(Float_t vz, Int_t cent9, Double_t psi2) {
   Int_t mixBin = GetMixingBin(vz, cent9, psi2);
   FemtoMixingEvent evt;
   evt.candidates = m_eventCandidates;
+  if(mLambdaLegacy&&mLambdaLegacy->PairGeometryEnabled())evt.lambdaPairGeometry=mLambdaPairGeometry;
   if(mLambdaLegacy && mLambdaLegacy->NuclearPidPairQaEnabled())
     evt.nuclearPidQaCandidates=mLambdaNuclearPidQaCandidates;
   std::deque<FemtoMixingEvent>& pool = m_mixingPool[mixBin];
